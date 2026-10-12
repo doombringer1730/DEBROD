@@ -75,12 +75,16 @@ export default function Room({ room, source, supabaseUrl, supabaseKey }: Props) 
     setNameLoaded(true)
   }, [])
 
-  function saveName(e: FormEvent) {
-    e.preventDefault()
-    const n = nameDraft.trim().slice(0, 24)
+  function rename(raw: string) {
+    const n = raw.trim().slice(0, 24)
     if (!n) return
     try { localStorage.setItem(NAME_KEY, n) } catch { /* private mode */ }
     setName(n)
+  }
+
+  function saveName(e: FormEvent) {
+    e.preventDefault()
+    rename(nameDraft)
   }
 
   if (!nameLoaded) return <main className="room" />
@@ -104,16 +108,18 @@ export default function Room({ room, source, supabaseUrl, supabaseKey }: Props) 
       </>
     )
   }
-  return <Player room={room} source={source} name={name} supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} />
+  return <Player room={room} source={source} name={name} onRename={rename} supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} />
 }
 
-function Player({ room, source, name, supabaseUrl, supabaseKey }: Props & { name: string }) {
+function Player({ room, source, name, onRename, supabaseUrl, supabaseKey }: Props & { name: string; onRename: (name: string) => void }) {
   const supabase = useMemo(() => createClient(supabaseUrl, supabaseKey), [supabaseUrl, supabaseKey])
   const [clientId] = useState(randomId)
   const urls = useMemo(() => [source.src, ...source.fallbacks.filter(f => f !== source.src)], [source])
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const channelRef = useRef<RealtimeChannel | null>(null)
+  const subscribed = useRef(false)
+  const nameRef = useRef(name)
   const applyingRemote = useRef(false)
   // Until we've heard from someone (or found we're alone) our heartbeats stay
   // quiet, so a late joiner at 0:00 doesn't drag everyone back to the start.
@@ -135,6 +141,8 @@ function Player({ room, source, name, supabaseUrl, supabaseKey }: Props & { name
   const [floating, setFloating] = useState<FloatingEmote[]>([])
   const [chatInput, setChatInput] = useState('')
   const [copied, setCopied] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [nameDraft, setNameDraft] = useState(name)
   const namesRef = useRef<Record<string, string>>({})
 
   function pushSample(ref: React.RefObject<number[]>, val: number) {
@@ -268,14 +276,17 @@ function Player({ room, source, name, supabaseUrl, supabaseKey }: Props & { name
       })
       .on('broadcast', { event: 'chat' }, ({ payload }) => showChat(payload as ChatMsg))
       .on('presence', { event: 'sync' }, () => {
-        const list = Object.values(channel.presenceState<Viewer>()).flat()
+        // One entry per viewer: after a rename a key can briefly hold the old
+        // and new meta, and the newest is last.
+        const list = Object.values(channel.presenceState<Viewer>()).map(metas => metas[metas.length - 1])
         namesRef.current = Object.fromEntries(list.map(v => [v.id, v.name]))
         setViewers(list)
       })
       .subscribe(async status => {
-        setConnected(status === 'SUBSCRIBED')
-        if (status !== 'SUBSCRIBED') return
-        await channel.track({ id: clientId, name, device: detectDevice() })
+        subscribed.current = status === 'SUBSCRIBED'
+        setConnected(subscribed.current)
+        if (!subscribed.current) return
+        await channel.track({ id: clientId, name: nameRef.current, device: detectDevice() })
         channel.send({ type: 'broadcast', event: 'hello', payload: { from: clientId } })
         aloneTimer = setTimeout(() => { synced.current = true }, ALONE_AFTER_MS)
       })
@@ -283,12 +294,20 @@ function Player({ room, source, name, supabaseUrl, supabaseKey }: Props & { name
     channelRef.current = channel
     return () => {
       clearTimeout(aloneTimer)
+      subscribed.current = false
       channelRef.current = null
       channel.untrack()
       supabase.removeChannel(channel)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, room, clientId, name])
+  }, [supabase, room, clientId])
+
+  // A new name just updates our presence; the room stays connected.
+  useEffect(() => {
+    if (nameRef.current === name) return
+    nameRef.current = name
+    if (subscribed.current) channelRef.current?.track({ id: clientId, name, device: detectDevice() })
+  }, [name, clientId])
 
   // ── Heartbeat ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -342,6 +361,12 @@ function Player({ room, source, name, supabaseUrl, supabaseKey }: Props & { name
     }
   }
 
+  function saveRename(e: FormEvent) {
+    e.preventDefault()
+    if (nameDraft.trim()) onRename(nameDraft)
+    setRenaming(false)
+  }
+
   const others = viewers.filter(v => v.id !== clientId)
 
   return (
@@ -350,9 +375,13 @@ function Player({ room, source, name, supabaseUrl, supabaseKey }: Props & { name
         <Link href="/" className="link" aria-label="Back to search">‹</Link>
         <p className="name truncate">{source.title}</p>
         <div className="viewers">
-          {viewers.map(v => (
+          <button type="button" className="viewer me" title="Change your display name"
+            onClick={() => { setNameDraft(name); setRenaming(true) }}>
+            <span className={`dot ${connected ? '' : 'wait'}`} /> {name} <span aria-hidden>✎</span>
+          </button>
+          {others.map(v => (
             <span key={v.id} className="viewer" title={`${v.name} · ${v.device}`}>
-              <span className="dot" /> {v.id === clientId ? 'You' : v.name}
+              <span className="dot" /> {v.name}
             </span>
           ))}
         </div>
@@ -374,6 +403,21 @@ function Player({ room, source, name, supabaseUrl, supabaseKey }: Props & { name
           }}
           onError={tryNextStream}
         />
+
+        {renaming && (
+          <div className="overlay rename" onKeyDown={e => { if (e.key === 'Escape') setRenaming(false) }}>
+            <form onSubmit={saveRename} className="card stack">
+              <label className="field">
+                <span>Display name</span>
+                <input value={nameDraft} onChange={e => setNameDraft(e.target.value)} autoFocus maxLength={24} />
+              </label>
+              <div className="row">
+                <button type="button" onClick={() => setRenaming(false)}>Cancel</button>
+                <button type="submit" className="primary grow" disabled={!nameDraft.trim()}>Save</button>
+              </div>
+            </form>
+          </div>
+        )}
 
         {streamError && (
           <div className="overlay">

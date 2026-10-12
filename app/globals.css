@@ -320,3 +320,10 @@ a { color: var(--cyan); }
   .grid-lines, .emote-float, .chat-line { animation: none; }
   * { transition: none !important; }
 }
+
+/* Your own chip in the room header doubles as the rename button. */
+.viewer.me { border-color: var(--magenta); color: var(--text); cursor: pointer; font: 12px var(--mono-font); background: none; }
+.viewer.me:hover:not(:disabled) { box-shadow: var(--glow-magenta); }
+.rename { z-index: 4; }
+.rename .card { text-align: left; }
+.grow { flex: 1; }
