@@ -386,4 +386,13 @@ a { color: var(--cyan); }
 .ttt button { padding: 0; display: grid; place-items: center; font: 900 clamp(36px, 12vw, 64px) var(--display); background: var(--bg); }
 .ttt .x { color: var(--cyan); text-shadow: var(--glow-cyan); }
 .ttt .o { color: var(--magenta); text-shadow: var(--glow-magenta); }
+
+.game-stage:has(.game-doom) { width: min(100%, 820px); }
+.doom-canvas { aspect-ratio: 4 / 3; image-rendering: pixelated; background: #000; }
+.doom-status { text-align: center; margin-top: 8px; font-family: var(--mono-font); text-shadow: 0 1px 3px #000, 0 0 8px var(--bg); }
+.doom-pad { display: none; grid-template-columns: repeat(4, 1fr) repeat(5, 1.4fr); gap: 6px; margin-top: 10px; }
+.doom-pad button { padding: 12px 0; font: 700 12px var(--display); letter-spacing: 0.08em; text-transform: uppercase; touch-action: none; }
+.doom-pad button:active { border-color: var(--magenta); box-shadow: var(--glow-magenta); }
+@media (hover: none) { .doom-pad { display: grid; } }
+@media (hover: none) and (max-width: 560px) { .doom-pad { grid-template-columns: repeat(4, 1fr); } .doom-pad button:last-child { grid-column: span 4; } }
 </style>

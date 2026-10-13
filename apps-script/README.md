@@ -30,6 +30,7 @@ keys live in the script's properties instead of environment variables.
 
 Or push it with [clasp](https://github.com/google/clasp): run
 `clasp clone <scriptId> --rootDir apps-script` once, then `clasp push`.
+`.claspignore` keeps `doom/` and the READMEs out of the project.
 
 ### As a web app (optional)
 
@@ -39,11 +40,19 @@ link.
 
 ## The arcade
 
-**Arcade** in the header, next to **Search**, opens nine small games:
-Snake, 2048, Blocks, Breakout, Flap, Pong, Minesweeper, Memory and
-Tic-tac-toe. They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
+**Arcade** in the header, next to **Search**, opens ten games: Snake, 2048,
+Blocks, Breakout, Flap, Pong, Minesweeper, Memory, Doom and Tic-tac-toe.
+They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
 timer shows how long you've been procrastinating. Switching back to
 **Search** pauses whatever's running.
+
+**Doom** is [DoomPDF](https://github.com/ading2210/doompdf)'s engine, taken
+out of the PDF and drawn on a canvas, with the shareware episode. Its files
+live in [`doom/`](doom) and load from jsDelivr the first time you open it
+(about 5 MB). There's no sound. Arrows or WASD move, Ctrl or Space fires, E
+uses, Shift runs, M shows the map, and Esc or <kbd>`</kbd> opens the menu. In
+the doc dialog, Esc may close the dialog, so use <kbd>`</kbd>. Phones get
+on-screen buttons. Doom's code is GPL v2: see [`doom/README.md`](doom/README.md).
 
 ## How it differs from the site
 

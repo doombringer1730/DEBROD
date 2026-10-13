@@ -1146,6 +1146,180 @@ const Arcade = (() => {
     return { restart: reset, stop() { clearTimeout(timer) } }
   }
 
+  // ── Doom ──
+  // DoomPDF's engine (github.com/ading2210/doompdf), built for a canvas
+  // instead of a PDF: see doom/ next to these files. The engine and the
+  // shareware WAD (about 5 MB together) come from jsDelivr the first time
+  // Doom is opened, so the rest of the page stays small.
+  const DOOM_BASE = 'https://cdn.jsdelivr.net/gh/doombringer1730/DEBROD@c36ea4da8b8fa7590431790c5ddbd28758423da3/apps-script/doom/'
+  const DK = {
+    left: 0xac, right: 0xae, up: 0xad, down: 0xaf, strafeL: 0xa0, strafeR: 0xa1,
+    use: 0xa2, fire: 0xa3, esc: 27, enter: 13, tab: 9, back: 0x7f, shift: 0x80 + 0x36, alt: 0x80 + 0x38,
+  }
+  const DOOM_CODES = {
+    ArrowLeft: DK.left, ArrowRight: DK.right, ArrowUp: DK.up, ArrowDown: DK.down,
+    KeyW: DK.up, KeyS: DK.down, KeyA: DK.strafeL, KeyD: DK.strafeR,
+    Space: DK.fire, ControlLeft: DK.fire, ControlRight: DK.fire, KeyE: DK.use,
+    Enter: DK.enter, NumpadEnter: DK.enter, Escape: DK.esc, Backquote: DK.esc, Backspace: DK.back,
+    Tab: DK.tab, KeyM: DK.tab, ShiftLeft: DK.shift, ShiftRight: DK.shift, AltLeft: DK.alt, AltRight: DK.alt,
+    Minus: 0x2d, Equal: 0x3d,
+  }
+  let doomEngine = null
+  let doomWad = null
+
+  function doomFiles() {
+    if (!doomEngine) {
+      doomEngine = new Promise((resolve, reject) => {
+        const s = document.createElement('script')
+        s.src = `${DOOM_BASE}doom.js`
+        s.onload = () => resolve(window.createDoom)
+        s.onerror = () => { doomEngine = null; s.remove(); reject(new Error('Could not load the Doom engine.')) }
+        document.head.append(s)
+      })
+    }
+    if (!doomWad) {
+      doomWad = fetch(`${DOOM_BASE}doom1.wad`)
+        .then(r => { if (!r.ok) throw new Error(`Could not load the WAD (${r.status}).`); return r.arrayBuffer() })
+        .then(b => new Uint8Array(b))
+        .catch(e => { doomWad = null; throw e })
+    }
+    return Promise.all([doomEngine, doomWad])
+  }
+
+  // Letters, digits and F-keys pass through, for weapons, y/n and cheats.
+  function doomKey(e) {
+    if (DOOM_CODES[e.code]) return DOOM_CODES[e.code]
+    let m = /^Key([A-Z])$/.exec(e.code) || /^Digit([0-9])$/.exec(e.code)
+    if (m) return m[1].toLowerCase().charCodeAt(0)
+    m = /^F([0-9]{1,2})$/.exec(e.code)
+    if (m) {
+      const n = Number(m[1])
+      if (n >= 1 && n <= 10) return 0x80 + 0x3a + n
+      if (n === 11 || n === 12) return 0x80 + 0x4c + n
+    }
+    return 0
+  }
+
+  function doom(host, ctx) {
+    const W = 320, H = 200
+    const c = el('canvas', { class: 'game-canvas doom-canvas', width: W, height: H })
+    const g = c.getContext('2d')
+    const image = g.createImageData(W, H)
+    const status = el('p', { class: 'muted small doom-status' }, 'Loading Doom…')
+    const pad = el('div', { class: 'doom-pad' })
+    host.append(c, status, pad)
+
+    let mod = null
+    let queue = []
+    let down = new Set()
+    let paused = false
+    let alive = true
+    let boots = 0 // so a restart mid-load drops the older boot
+
+    function send(key, pressed) {
+      if (!key) return
+      if (pressed) down.add(key)
+      else if (!down.delete(key)) return
+      queue.push((pressed ? 1 << 8 : 0) | key)
+    }
+
+    function releaseAll() {
+      for (const key of [...down]) send(key, false)
+    }
+
+    function draw(ptr, w, h) {
+      const src = mod.HEAPU8
+      const dst = image.data
+      // The engine's pixels are BGRX; a canvas wants RGBA.
+      for (let i = 0, p = ptr, n = w * h * 4; i < n; i += 4, p += 4) {
+        dst[i] = src[p + 2]
+        dst[i + 1] = src[p + 1]
+        dst[i + 2] = src[p]
+        dst[i + 3] = 255
+      }
+      g.putImageData(image, 0, 0)
+    }
+
+    // On-screen buttons, like the ones in the PDF, for phones and tablets.
+    const BUTTONS = [
+      ['◀', DK.left], ['▲', DK.up], ['▼', DK.down], ['▶', DK.right],
+      ['Fire', DK.fire], ['Use', DK.use], ['Enter', DK.enter], ['Menu', DK.esc], ['Map', DK.tab],
+    ]
+    for (const [label, key] of BUTTONS) {
+      const b = el('button', { type: 'button', class: label.length > 1 ? 'wide' : '' }, label)
+      const press = e => { e.preventDefault(); send(key, true) }
+      const release = e => { e.preventDefault(); send(key, false) }
+      b.addEventListener('pointerdown', press)
+      b.addEventListener('pointerup', release)
+      b.addEventListener('pointerleave', release)
+      b.addEventListener('pointercancel', release)
+      b.addEventListener('contextmenu', e => e.preventDefault())
+      pad.append(b)
+    }
+
+    function boot() {
+      const mine = ++boots
+      const current = () => alive && mine === boots
+      status.textContent = 'Loading Doom… (about 5 MB the first time)'
+      doomFiles()
+        .then(([createDoom, wad]) => {
+          if (!current()) return
+          return createDoom({
+            arguments: ['-iwad', '/doom1.wad'],
+            preRun: [m => m.FS.writeFile('/doom1.wad', wad)],
+            nextKey: () => queue.shift() || 0,
+            drawFrame: (ptr, w, h) => { if (mod) draw(ptr, w, h) },
+            print: () => {},
+            printErr: () => {},
+            onAbort: what => { status.textContent = `Doom stopped: ${what}` },
+          })
+        })
+        .then(m => {
+          if (!m) return
+          if (!current()) { m.pauseMainLoop(); return }
+          mod = m
+          if (paused) mod.pauseMainLoop()
+          status.textContent = 'Arrows / WASD move · Ctrl or Space fire · E use · Shift run · M map · Esc or ` menu'
+        })
+        .catch(e => { if (current()) status.textContent = `${e.message} Restart to try again.` })
+    }
+
+    window.addEventListener('blur', releaseAll)
+    boot()
+    return {
+      // Doom wants every key, held and released, not just arrows.
+      key(e, pressed) {
+        const k = doomKey(e)
+        if (!k) return false
+        if (pressed && e.repeat) return true
+        send(k, pressed)
+        return true
+      },
+      pause() {
+        paused = true
+        releaseAll()
+        if (mod) mod.pauseMainLoop()
+      },
+      resume() {
+        paused = false
+        if (mod) mod.resumeMainLoop()
+      },
+      restart() {
+        if (mod) mod.pauseMainLoop()
+        mod = null
+        queue = []
+        down = new Set()
+        boot()
+      },
+      stop() {
+        alive = false
+        window.removeEventListener('blur', releaseAll)
+        if (mod) mod.pauseMainLoop()
+        mod = null
+      },
+    }
+  }
+
   const GAMES = [
     { id: 'snake', name: 'Snake', icon: '🐍', blurb: 'Eat, grow, don\'t bite yourself.', hint: 'Arrow keys / WASD, or swipe.', start: snake },
     { id: '2048', name: '2048', icon: '🔢', blurb: 'Slide and merge to 2048.', hint: 'Arrow keys / WASD, or swipe.', start: twenty48 },
@@ -1155,6 +1329,7 @@ const Arcade = (() => {
     { id: 'pong', name: 'Pong', icon: '🏓', blurb: 'You against the machine.', hint: '↑ ↓, mouse or finger moves your paddle.', start: pong },
     { id: 'mines', name: 'Minesweeper', icon: '💣', blurb: 'Ten mines. Fastest clear wins.', hint: 'Click to dig, right-click or flag mode to flag.', start: mines, lowerIsBetter: true, unit: 's' },
     { id: 'memory', name: 'Memory', icon: '🃏', blurb: 'Find the eight pairs in as few moves as you can.', hint: 'Click or tap two cards.', start: memory, lowerIsBetter: true, unit: ' moves' },
+    { id: 'doom', name: 'Doom', icon: '👹', blurb: 'The real thing: DoomPDF\'s engine, shareware episode one.', hint: 'Loads about 5 MB the first time. No sound.', start: doom, noScore: true },
     { id: 'tictactoe', name: 'Tic-tac-toe', icon: '⭕', blurb: 'Beat the CPU as many rounds in a row as you can.', hint: 'You\'re ✕. Turns alternate who goes first.', start: tictactoe },
   ]
 
@@ -1187,7 +1362,7 @@ const Arcade = (() => {
           el('span', { class: 'game-icon', 'aria-hidden': 'true' }, game.icon),
           el('span', { class: 'name' }, game.name),
           el('span', { class: 'muted small' }, game.blurb),
-          el('span', { class: 'mono small' }, `Best ${fmtScore(game, bestOf(game))}`)))))
+          !game.noScore && el('span', { class: 'mono small' }, `Best ${fmtScore(game, bestOf(game))}`)))))
     updateWasted()
   }
 
@@ -1248,8 +1423,8 @@ const Arcade = (() => {
       el('div', { class: 'arcade-top' },
         el('button', { type: 'button', class: 'link back', onClick: hub }, '‹ Arcade'),
         el('div', { class: 'row' },
-          el('span', { class: 'pill' }, 'Score ', scoreEl),
-          el('span', { class: 'pill' }, 'Best ', bestEl),
+          !game.noScore && el('span', { class: 'pill' }, 'Score ', scoreEl),
+          !game.noScore && el('span', { class: 'pill' }, 'Best ', bestEl),
           el('button', { type: 'button', class: 'chip', onClick: restart }, 'Restart'))),
       el('div', { class: 'game-stage' }, host, toastEl, endEl),
       el('p', { class: 'muted small game-hint' }, game.hint))
@@ -1259,6 +1434,10 @@ const Arcade = (() => {
   document.addEventListener('keydown', e => {
     if (!current || !root.isConnected) return
     if (e.target.closest && e.target.closest('input, textarea')) return
+    if (current.api.key) {
+      if (current.api.key(e, true)) e.preventDefault()
+      return
+    }
     const d = KEYS[e.key]
     if (!d) return
     // Space on a focused button should still press it.
@@ -1267,7 +1446,11 @@ const Arcade = (() => {
     held.add(d)
     if (current.api.input) current.api.input(d)
   })
-  document.addEventListener('keyup', e => { const d = KEYS[e.key]; if (d) held.delete(d) })
+  document.addEventListener('keyup', e => {
+    const d = KEYS[e.key]
+    if (d) held.delete(d)
+    if (current && current.api.key && current.api.key(e, false)) e.preventDefault()
+  })
   window.addEventListener('blur', () => held.clear())
 
   function updateWasted() {
