@@ -1,189 +1,214 @@
-// DEBROD for Google Apps Script: the same app as the Next.js version, served
-// as an Apps Script web app. Settings live in Script Properties (Project
-// Settings → Script properties) under the same names as the Next.js
-// environment variables.
-//
-// Apps Script web apps can't set cookies, so signing in returns a token (an
-// HMAC of SITE_PASSWORD) that the page keeps and sends with every call.
-// Changing the password still signs everyone out.
+/**
+ * @OnlyCurrentDoc
+ *
+ * DEBROD for Google Docs: the same movie and TV search, player and watch
+ * together as the Next.js site, opened from a DEBROD menu in this doc.
+ *
+ * Who can use it is whoever can edit the doc, or whoever the web app
+ * deployment allows (there's no site password).
+ * Keys live in Script Properties, set from DEBROD → Settings.
+ */
 
 const TMDB = 'https://api.themoviedb.org/3'
+const DEFAULT_TORRENTIO = 'https://torrentio.strem.fun'
+const ROOM_TTL_SECONDS = 6 * 60 * 60 // CacheService's maximum
 
-function settings_() {
-  const p = PropertiesService.getScriptProperties().getProperties()
-  const v = name => (p[name] || '').trim()
-  return {
-    password: p.SITE_PASSWORD || '',
-    tmdbKey: v('TMDB_API_KEY'),
-    realDebrid: v('REALDEBRID_API_KEY'),
-    torBox: v('TORBOX_API_KEY'),
-    supabaseUrl: v('SUPABASE_URL'),
-    supabaseKey: v('SUPABASE_ANON_KEY'),
-    siteName: v('SITE_NAME') || 'DEBROD',
-    torrentio: (v('TORRENTIO_URL') || 'https://torrentio.strem.fun').replace(/\/+$/, ''),
-  }
+const SECRET_KEYS = ['TMDB_API_KEY', 'REALDEBRID_API_KEY', 'TORBOX_API_KEY', 'SUPABASE_ANON_KEY']
+const PLAIN_KEYS = ['SUPABASE_URL', 'TORRENTIO_URL', 'SITE_NAME']
+
+// ── Menu and dialogs ────────────────────────────────────────────────────────
+
+// The menu doesn't read settings: onOpen runs with limited access, and a
+// storage read there can fail before anything is authorized.
+function onOpen() {
+  DocumentApp.getUi()
+    .createMenu('DEBROD')
+    .addItem('Open', 'openDebrod')
+    .addSeparator()
+    .addItem('Settings', 'openSettings')
+    .addToUi()
 }
 
-// ── Page ─────────────────────────────────────────────────────────────────────
+function onInstall() {
+  onOpen()
+}
 
+function openDebrod() {
+  const t = HtmlService.createTemplateFromFile('Index')
+  t.room = ''
+  t.web = ''
+  const html = t.evaluate()
+    .setWidth(1200)
+    .setHeight(780)
+  DocumentApp.getUi().showModalDialog(html, siteName_())
+}
+
+function openSettings() {
+  const t = HtmlService.createTemplateFromFile('Settings')
+  t.web = ''
+  const html = t.evaluate()
+    .setWidth(460)
+    .setHeight(620)
+  DocumentApp.getUi().showModalDialog(html, `${siteName_()} settings`)
+}
+
+// Run as a web app (Deploy → Web app): the same page full screen, with
+// ?page=settings for the keys and ?room=CODE for an invite link.
 function doGet(e) {
-  const s = settings_()
-  if (!s.password) return ContentService.createTextOutput('Set SITE_PASSWORD in Script properties to use this site.')
-  const page = HtmlService.createTemplateFromFile('Index')
-  page.siteName = s.siteName
-  page.boot = json_({ siteName: s.siteName, appUrl: ScriptApp.getService().getUrl(), params: e.parameters || {} })
-  return page.evaluate()
-    .setTitle(s.siteName)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
+  const params = (e && e.parameter) || {}
+  const page = params.page === 'settings' ? 'Settings' : 'Index'
+  const t = HtmlService.createTemplateFromFile(page)
+  t.room = String(params.room || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 32)
+  t.web = 'web'
+  return t.evaluate()
+    .setTitle(page === 'Settings' ? `${siteName_()} settings` : siteName_())
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
 }
 
-function include_(name) {
+function appUrl_() {
+  try { return ScriptApp.getService().getUrl() || '' } catch (e) { return '' }
+}
+
+function include(name) {
   return HtmlService.createHtmlOutputFromFile(name).getContent()
 }
 
-// JSON that is safe to print inside a <script> tag.
-function json_(value) {
-  return JSON.stringify(value).replace(/</g, '\\u003c')
+// ── Settings ────────────────────────────────────────────────────────────────
+
+function prop_(key) {
+  return (PropertiesService.getScriptProperties().getProperty(key) || '').trim()
 }
 
-// ── Session ──────────────────────────────────────────────────────────────────
-
-function sessionToken_(password) {
-  if (!password) return ''
-  return Utilities.computeHmacSha256Signature('debrid-search session', password)
-    .map(b => ((b + 256) % 256).toString(16).padStart(2, '0'))
-    .join('')
+function siteName_() {
+  return prop_('SITE_NAME') || 'DEBROD'
 }
 
-function safeEqual_(a, b) {
-  a = String(a)
-  b = String(b)
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
-  return diff === 0
+// Secrets never go back to the page; it only learns whether each is set.
+function getSettings() {
+  const out = {}
+  for (const k of SECRET_KEYS) out[k] = { set: !!prop_(k) }
+  for (const k of PLAIN_KEYS) out[k] = { set: !!prop_(k), value: prop_(k) }
+  return out
 }
 
-function isValidSession_(token) {
-  const expected = sessionToken_(settings_().password)
-  return !!expected && !!token && safeEqual_(token, expected)
+// A blank secret keeps the stored one; `clear` lists keys to remove.
+function saveSettings(values, clear) {
+  const props = PropertiesService.getScriptProperties()
+  for (const k of SECRET_KEYS.concat(PLAIN_KEYS)) {
+    const v = String((values || {})[k] || '').trim()
+    if ((clear || []).indexOf(k) !== -1) props.deleteProperty(k)
+    else if (v) props.setProperty(k, v)
+    else if (PLAIN_KEYS.indexOf(k) !== -1) props.deleteProperty(k)
+  }
+  return getSettings()
 }
 
-class SignedOut extends Error {}
-
-// Every call the page makes goes through here: check the token, then run.
-function run_(token, fn) {
-  try {
-    if (!isValidSession_(token)) throw new SignedOut('Signed out. Sign in again.')
-    return { ok: true, data: fn(settings_()) }
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'Something went wrong.', signedOut: e instanceof SignedOut }
+// What the page needs to run. The Supabase anon key is meant for browsers.
+function getConfig() {
+  return {
+    siteName: siteName_(),
+    hasTmdb: !!prop_('TMDB_API_KEY'),
+    hasDebrid: !!(prop_('REALDEBRID_API_KEY') || prop_('TORBOX_API_KEY')),
+    supabaseUrl: prop_('SUPABASE_URL'),
+    supabaseKey: prop_('SUPABASE_ANON_KEY'),
+    appUrl: appUrl_(),
   }
 }
 
-function login(password) {
-  const expected = settings_().password
-  if (!expected || !safeEqual_(String(password || ''), expected)) {
-    Utilities.sleep(1000) // slows down guessing
-    return { ok: false, error: 'Wrong password.' }
-  }
-  return { ok: true, data: sessionToken_(expected) }
-}
+// ── TMDB ────────────────────────────────────────────────────────────────────
 
-function checkSession(token) {
-  return isValidSession_(token)
-}
-
-// The clock the watch-together sync measures itself against.
-function serverTime() {
-  return Date.now()
-}
-
-// ── TMDB ─────────────────────────────────────────────────────────────────────
-
-function tmdb_(s, path, params) {
-  if (!s.tmdbKey) throw new Error('TMDB_API_KEY is not set.')
-  const qs = Object.entries(Object.assign({}, params, { api_key: s.tmdbKey }))
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-    .join('&')
+function tmdb_(path, params) {
+  const key = prop_('TMDB_API_KEY')
+  if (!key) throw new Error('TMDB_API_KEY is not set. Open DEBROD → Settings.')
+  const all = Object.assign({}, params || {}, { api_key: key })
+  const qs = Object.keys(all).map(k => `${encodeURIComponent(k)}=${encodeURIComponent(all[k])}`).join('&')
   const res = UrlFetchApp.fetch(`${TMDB}/${path}?${qs}`, { muteHttpExceptions: true })
   let data = {}
   try { data = JSON.parse(res.getContentText()) } catch (e) { /* not JSON */ }
-  const code = res.getResponseCode()
-  if (code < 200 || code >= 300) throw new Error(data.status_message || `TMDB error ${code}`)
+  if (res.getResponseCode() >= 400) throw new Error(data.status_message || `TMDB error ${res.getResponseCode()}`)
   return data
 }
 
-function searchTitles(token, kind, query) {
-  return run_(token, s => {
-    const q = String(query || '').trim()
-    if (!q) return []
-    const data = tmdb_(s, `search/${kind === 'tv' ? 'tv' : 'movie'}`, { query: q, include_adult: 'false' })
-    return (data.results || []).map(r => ({
-      id: r.id,
-      name: r.title || r.name || 'Untitled',
-      year: (r.release_date || r.first_air_date || '').slice(0, 4),
-      poster: r.poster_path || null,
-    }))
-  })
+function kind_(kind) {
+  if (kind !== 'movie' && kind !== 'tv') throw new Error('Unknown kind.')
+  return kind
 }
 
-function getSeasons(token, showId) {
-  return run_(token, s => {
-    const data = tmdb_(s, `tv/${Number(showId)}`)
-    return (data.seasons || [])
-      .filter(x => x.season_number > 0)
-      .map(x => ({ number: x.season_number, name: x.name, episodes: x.episode_count }))
-  })
+function searchTitles(kind, query) {
+  const q = String(query || '').trim()
+  if (!q) return []
+  const data = tmdb_(`search/${kind_(kind)}`, { query: q, include_adult: 'false' })
+  return (data.results || []).map(r => ({
+    id: r.id,
+    name: r.title || r.name || 'Untitled',
+    year: (r.release_date || r.first_air_date || '').slice(0, 4),
+    poster: r.poster_path || null,
+  }))
 }
 
-function getEpisodes(token, showId, season) {
-  return run_(token, s => {
-    const data = tmdb_(s, `tv/${Number(showId)}/season/${Number(season)}`)
-    return (data.episodes || []).map(e => ({ number: e.episode_number, name: e.name }))
-  })
+function getSeasons(showId) {
+  const data = tmdb_(`tv/${Number(showId)}`)
+  return (data.seasons || [])
+    .filter(s => s.season_number > 0)
+    .map(s => ({ number: s.season_number, name: s.name, episodes: s.episode_count }))
 }
 
-// ── Torrentio ────────────────────────────────────────────────────────────────
-
-// Torrentio sits behind Cloudflare, which blocks many server IPs, so the
-// browser fetches the streams itself. This only hands a signed-in browser
-// the URLs to ask (which carry the debrid keys, as its stream links do).
-function getStreamSources(token, kind, tmdbId, season, episode) {
-  return run_(token, s => {
-    if (!s.realDebrid && !s.torBox) throw new Error('Set REALDEBRID_API_KEY or TORBOX_API_KEY.')
-    const movie = kind === 'movie'
-    const ext = tmdb_(s, `${movie ? 'movie' : 'tv'}/${Number(tmdbId)}/external_ids`)
-    if (!ext.imdb_id) throw new Error('No IMDb id for this title.')
-    const path = movie
-      ? `stream/movie/${ext.imdb_id}.json`
-      : `stream/series/${ext.imdb_id}:${Number(season)}:${Number(episode)}.json`
-
-    const sources = []
-    if (s.realDebrid) sources.push({ service: 'Real-Debrid', url: `${s.torrentio}/realdebrid=${encodeURIComponent(s.realDebrid)}/${path}` })
-    if (s.torBox) sources.push({ service: 'TorBox', url: `${s.torrentio}/torbox=${encodeURIComponent(s.torBox)}/${path}` })
-    return sources
-  })
+function getEpisodes(showId, season) {
+  const data = tmdb_(`tv/${Number(showId)}/season/${Number(season)}`)
+  return (data.episodes || []).map(e => ({ number: e.episode_number, name: e.name }))
 }
 
-// Fallback for when the browser can't reach Torrentio itself. Only the
-// configured Torrentio instance, so this never becomes an open proxy.
-function fetchTorrentio(token, url) {
-  return run_(token, s => {
-    if (typeof url !== 'string' || !url.startsWith(`${s.torrentio}/`)) throw new Error('Not a Torrentio link.')
-    const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true })
-    const code = res.getResponseCode()
-    if (code < 200 || code >= 300) throw new Error(`Torrentio answered ${code}`)
-    return res.getContentText()
-  })
+// Torrentio sits behind Cloudflare, which blocks many server IPs (Google's
+// included), so the page fetches the streams itself. This only hands it the
+// URLs to ask.
+function getStreamSources(kind, tmdbId, season, episode) {
+  const rd = prop_('REALDEBRID_API_KEY')
+  const tb = prop_('TORBOX_API_KEY')
+  if (!rd && !tb) throw new Error('Set a Real-Debrid or TorBox key in DEBROD → Settings.')
+
+  const ext = tmdb_(`${kind_(kind)}/${Number(tmdbId)}/external_ids`)
+  if (!ext.imdb_id) throw new Error('No IMDb id for this title.')
+  const path = kind === 'movie'
+    ? `stream/movie/${ext.imdb_id}.json`
+    : `stream/series/${ext.imdb_id}:${Number(season)}:${Number(episode)}.json`
+
+  const torrentio = (prop_('TORRENTIO_URL') || DEFAULT_TORRENTIO).replace(/\/+$/, '')
+  const sources = []
+  if (rd) sources.push({ service: 'Real-Debrid', url: `${torrentio}/realdebrid=${encodeURIComponent(rd)}/${path}` })
+  if (tb) sources.push({ service: 'TorBox', url: `${torrentio}/torbox=${encodeURIComponent(tb)}/${path}` })
+  return sources
 }
 
-// ── Watch together ───────────────────────────────────────────────────────────
+// ── Watch together ──────────────────────────────────────────────────────────
 
-// The Supabase keys only reach browsers that are signed in.
-function getRoomConfig(token) {
-  return run_(token, s => {
-    if (!s.supabaseUrl || !s.supabaseKey) throw new Error('Set SUPABASE_URL and SUPABASE_ANON_KEY to watch together.')
-    return { url: s.supabaseUrl, key: s.supabaseKey }
-  })
+// The site put what's playing in the invite link. Here the room is kept in
+// the cache for six hours under a short code: friends type it into DEBROD in
+// the doc, or open the web app link with ?room=CODE.
+
+const isHttps_ = u => typeof u === 'string' && u.indexOf('https://') === 0
+
+function createRoom(source) {
+  if (!source || !isHttps_(source.src)) throw new Error('That stream link is not usable.')
+  const clean = {
+    title: String(source.title || 'Watching together').slice(0, 200),
+    poster: source.poster && /^\/[\w./-]+$/.test(source.poster) ? source.poster : null,
+    src: source.src,
+    fallbacks: (source.fallbacks || []).filter(isHttps_).slice(0, 5),
+  }
+  const id = Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase()
+  CacheService.getScriptCache().put(`room:${id}`, JSON.stringify(clean), ROOM_TTL_SECONDS)
+  return id
+}
+
+function getRoom(id) {
+  const code = String(id || '').trim().toUpperCase()
+  if (!/^[A-Z0-9]{6,32}$/.test(code)) throw new Error('That room code looks wrong.')
+  const raw = CacheService.getScriptCache().get(`room:${code}`)
+  if (!raw) throw new Error('That room has ended or the code is wrong. Rooms last six hours.')
+  return { id: code, source: JSON.parse(raw) }
+}
+
+// The clock the watch-together sync measures itself against.
+function getTime() {
+  return Date.now()
 }

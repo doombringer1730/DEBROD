@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <?!= include('Styles') ?>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+</head>
+<body data-room="<?= room ?>" data-web="<?= web ?>">
+  <div id="backdrop" class="backdrop" aria-hidden="true">
+    <div class="sky"><div class="sun"></div></div>
+    <div class="horizon"></div>
+    <div class="floor"><div class="grid-lines"></div></div>
+  </div>
+  <div id="app"></div>
+  <?!= include('App') ?>
+</body>
+</html>
