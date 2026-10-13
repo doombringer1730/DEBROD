@@ -329,4 +329,49 @@ a { color: var(--cyan); }
 .rename { z-index: 4; }
 .rename .card { text-align: left; }
 .grow { flex: 1; }
+
+/* ── Arcade ───────────────────────────────────────────────────────────── */
+.tabs { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.tabs .on { color: var(--cyan); text-shadow: var(--glow-cyan); }
+.arcade-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.arcade-top .row { align-items: center; flex-wrap: wrap; }
+.arcade-top .back { align-self: center; }
+.arcade-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+.game-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left; padding: 18px 16px; background: var(--panel); border-left: 3px solid var(--magenta); }
+.game-card:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--magenta); box-shadow: var(--glow-magenta); }
+.game-icon { font-size: 34px; line-height: 1; filter: drop-shadow(0 0 8px rgba(255, 43, 214, 0.6)); }
+.game-card .mono { margin: 0; }
+.game-stage { position: relative; align-self: center; width: min(100%, 440px); touch-action: none; user-select: none; -webkit-user-select: none; }
+.game-canvas { display: block; width: 100%; height: auto; border: 1px solid var(--magenta); border-radius: 6px; box-shadow: var(--glow-magenta); background: var(--bg); }
+.game-end { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(13, 2, 33, 0.6); border-radius: 6px; z-index: 2; }
+.game-end[hidden] { display: none; }
+.game-end .card { text-align: center; }
+.game-end .wordmark { font-size: 22px; }
+.game-toast { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); color: var(--yellow); z-index: 1; white-space: nowrap; }
+.game-toast[hidden] { display: none; }
+.game-hint { text-align: center; }
+
+.g2048 { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); gap: 8px; padding: 8px; aspect-ratio: 1; background: var(--panel-solid); border: 1px solid var(--magenta); border-radius: 6px; box-shadow: var(--glow-magenta); }
+.g2048 .tile { display: grid; place-items: center; border-radius: 4px; background: rgba(0, 240, 255, 0.06); color: #1a0420; font: 700 clamp(16px, 6vw, 28px) var(--display); transition: background 0.1s; }
+.tile[data-v="2"] { background: #2b1a5e; color: var(--text); }
+.tile[data-v="4"] { background: #3d2580; color: var(--text); }
+.tile[data-v="8"] { background: var(--cyan); }
+.tile[data-v="16"] { background: var(--good); }
+.tile[data-v="32"] { background: var(--yellow); }
+.tile[data-v="64"] { background: var(--orange); }
+.tile[data-v="128"] { background: var(--magenta); box-shadow: var(--glow-magenta); }
+.tile[data-v="256"] { background: #c21fff; box-shadow: 0 0 14px rgba(194, 31, 255, 0.6); }
+.tile[data-v="512"] { background: #7b5cff; box-shadow: 0 0 14px rgba(123, 92, 255, 0.6); }
+.tile[data-v="1024"] { background: linear-gradient(180deg, var(--yellow), var(--orange)); box-shadow: 0 0 18px rgba(255, 122, 26, 0.6); }
+.tile[data-v="2048"] { background: var(--sunset); box-shadow: 0 0 22px rgba(255, 43, 214, 0.8); }
+.tile[data-v="4096"] { background: #fff; box-shadow: 0 0 22px rgba(255, 255, 255, 0.7); }
+.tile[data-v="1024"], .tile[data-v="2048"], .tile[data-v="4096"] { font-size: clamp(13px, 4.5vw, 22px); }
+
+.game-mines { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.game-mines .chip { align-self: center; }
+.mines { display: grid; grid-template-columns: repeat(9, 1fr); gap: 3px; width: 100%; padding: 6px; background: var(--panel-solid); border: 1px solid var(--magenta); border-radius: 6px; box-shadow: var(--glow-magenta); }
+.mines .cell { aspect-ratio: 1; padding: 0; display: grid; place-items: center; background: linear-gradient(180deg, rgba(0, 240, 255, 0.32), rgba(0, 240, 255, 0.14)); border-color: rgba(0, 240, 255, 0.5); font: 700 clamp(12px, 3.6vw, 18px) var(--display); }
+.mines .cell.open { background: rgba(13, 2, 33, 0.9); border-color: rgba(0, 240, 255, 0.1); cursor: default; }
+.mines .cell.open:hover { box-shadow: none; border-color: rgba(0, 240, 255, 0.1); }
+.mines .cell.blown { background: var(--bad); }
 </style>

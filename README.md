@@ -63,12 +63,6 @@ cp .env.example .env.local   # then fill it in
 npm run dev
 ```
 
-### Or run it in Google Apps Script
-
-[`apps-script/`](apps-script) is the same app as a Google Apps Script bound
-to a Google Doc, with no hosting needed. See its
-[README](apps-script/README.md).
-
 ## Watch together
 
 **Watch together** on a stream opens a room, and **Invite** copies its link.

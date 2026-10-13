@@ -83,8 +83,19 @@ function siteName_() {
   return prop_('SITE_NAME') || 'DEBROD'
 }
 
+// The settings decide where the debrid keys get sent (TORRENTIO_URL), so
+// only the account the script runs as can read or change them. From the doc
+// menu that's whoever opened it; in a web app run as you, it's only you.
+function requireOwner_() {
+  const owner = Session.getEffectiveUser().getEmail()
+  if (!owner || Session.getActiveUser().getEmail() !== owner) {
+    throw new Error('Only the owner can change these settings.')
+  }
+}
+
 // Secrets never go back to the page; it only learns whether each is set.
 function getSettings() {
+  requireOwner_()
   const out = {}
   for (const k of SECRET_KEYS) out[k] = { set: !!prop_(k) }
   for (const k of PLAIN_KEYS) out[k] = { set: !!prop_(k), value: prop_(k) }
@@ -93,6 +104,7 @@ function getSettings() {
 
 // A blank secret keeps the stored one; `clear` lists keys to remove.
 function saveSettings(values, clear) {
+  requireOwner_()
   const props = PropertiesService.getScriptProperties()
   for (const k of SECRET_KEYS.concat(PLAIN_KEYS)) {
     const v = String((values || {})[k] || '').trim()

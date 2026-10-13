@@ -133,6 +133,7 @@ const S = {
   loading: false,
   error: null,
   roomCode: '',
+  tab: 'search', // or 'arcade'
 }
 let inRoom = false
 
@@ -279,7 +280,14 @@ function header() {
     el('div', null,
       el('h1', { class: 'wordmark' }, S.cfg.siteName),
       el('p', { class: 'tagline' }, 'Stream search · est. 1984')),
-    S.cfg.appUrl && document.body.dataset.web && el('a', { class: 'link', href: `${S.cfg.appUrl}?page=settings`, target: '_top' }, 'Settings'))
+    el('nav', { class: 'tabs' },
+      tab('search', 'Search'),
+      tab('arcade', 'Arcade'),
+      S.cfg.appUrl && document.body.dataset.web && el('a', { class: 'link', href: `${S.cfg.appUrl}?page=settings`, target: '_top' }, 'Settings')))
+}
+
+function tab(id, text) {
+  return el('button', { type: 'button', class: `link ${S.tab === id ? 'on' : ''}`, onClick: () => { S.tab = id; render() } }, text)
 }
 
 function status(text) {
@@ -289,10 +297,24 @@ function status(text) {
   ]
 }
 
+// The inline player is kept across renders, so copying a link or flipping
+// the filter doesn't restart the video.
+let playerEl = null
+
+function player(s) {
+  if (!playerEl || playerEl.dataset.url !== s.url) {
+    playerEl = el('video', { src: s.url, controls: true, autoplay: true, playsinline: true, 'data-url': s.url })
+  }
+  return playerEl
+}
+
 function render() {
   if (inRoom || !S.cfg) return
+  if (!S.playing) playerEl = null
+  const arcade = S.tab === 'arcade'
+  if (!arcade) Arcade.hide()
   backdrop.hidden = false
-  mount(el('main', { class: 'page' }, header(), view()))
+  mount(el('main', { class: 'page' }, header(), arcade ? Arcade.view() : view()))
 }
 
 function view() {
@@ -344,7 +366,7 @@ function view() {
       el('button', { type: 'button', class: 'link back', onClick: back }, '‹ Back'),
       heading,
       S.playing && el('div', { class: 'player' },
-        el('video', { src: S.playing.url, controls: true, autoplay: true, playsinline: true }),
+        player(S.playing),
         el('p', { class: 'muted small' }, S.playing.title)),
       S.showLink && el('div', { class: 'card stack' },
         el('p', { class: 'muted small' }, 'Copying is blocked here. Select the link and press Ctrl+C:'),
