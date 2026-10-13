@@ -15,6 +15,14 @@ const Arcade = (() => {
   }
   const DIRS = { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } }
   const rand = n => Math.floor(Math.random() * n)
+  function shuffle(list) {
+    const a = list.slice()
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = rand(i + 1)
+      ;[a[i], a[j]] = [a[j], a[i]]
+    }
+    return a
+  }
 
   // ── Best scores ──
   const BEST_KEY = 'ds_arcade_best'
@@ -530,11 +538,624 @@ const Arcade = (() => {
     }
   }
 
+  // ── Blocks ──
+  function blocks(host, ctx) {
+    const COLS = 10, ROWS = 20, CELL = 22, SIDE = 110
+    const WELL = COLS * CELL, W = WELL + SIDE, H = ROWS * CELL
+    const SHAPES = {
+      I: [[1, 1, 1, 1]], O: [[1, 1], [1, 1]], T: [[0, 1, 0], [1, 1, 1]], S: [[0, 1, 1], [1, 1, 0]],
+      Z: [[1, 1, 0], [0, 1, 1]], J: [[1, 0, 0], [1, 1, 1]], L: [[0, 0, 1], [1, 1, 1]],
+    }
+    const COLORS = { I: C.cyan, O: C.yellow, T: C.magenta, S: C.good, Z: C.bad, J: '#7b5cff', L: C.orange }
+    const [c, g] = canvas(W, H)
+    host.append(c)
+    let board, piece, next, bag, score, lines, level, timer, state
+
+    const speed = () => Math.max(90, 800 - (level - 1) * 75)
+    const rotate = m => m[0].map((_, i) => m.map(r => r[i]).reverse())
+
+    // A shuffled bag of all seven, so droughts stay short.
+    function take() {
+      if (!bag.length) bag = shuffle(Object.keys(SHAPES))
+      const k = bag.pop()
+      return { k, m: SHAPES[k], x: 0, y: 0 }
+    }
+
+    function collides(m, x, y) {
+      return m.some((row, dy) => row.some((v, dx) => v && (
+        x + dx < 0 || x + dx >= COLS || y + dy >= ROWS || (y + dy >= 0 && board[y + dy][x + dx]))))
+    }
+
+    function spawn() {
+      piece = next
+      next = take()
+      piece.x = Math.floor((COLS - piece.m[0].length) / 2)
+      piece.y = 0
+      if (collides(piece.m, piece.x, piece.y)) {
+        state = 'over'
+        clearTimeout(timer)
+        draw()
+        ctx.end('Topped out', score)
+      }
+    }
+
+    function lock() {
+      piece.m.forEach((row, dy) => row.forEach((v, dx) => {
+        if (v && piece.y + dy >= 0) board[piece.y + dy][piece.x + dx] = piece.k
+      }))
+      let cleared = 0
+      for (let y = ROWS - 1; y >= 0; y--) {
+        if (!board[y].every(Boolean)) continue
+        board.splice(y, 1)
+        board.unshift(new Array(COLS).fill(null))
+        cleared++
+        y++
+      }
+      if (cleared) {
+        score += [0, 100, 300, 500, 800][cleared] * level
+        lines += cleared
+        const lv = Math.floor(lines / 10) + 1
+        if (lv > level) { level = lv; ctx.toast(`Level ${level}`) }
+        ctx.score(score)
+      }
+      spawn()
+    }
+
+    function fall() {
+      if (!collides(piece.m, piece.x, piece.y + 1)) piece.y++
+      else lock()
+    }
+
+    function tick() {
+      if (state !== 'play') return
+      fall()
+      draw()
+      if (state === 'play') timer = setTimeout(tick, speed())
+    }
+
+    function reset() {
+      clearTimeout(timer)
+      board = Array.from({ length: ROWS }, () => new Array(COLS).fill(null))
+      bag = []
+      next = take()
+      score = 0
+      lines = 0
+      level = 1
+      ctx.score(0)
+      state = 'ready'
+      spawn()
+      draw('Blocks', 'Any key or tap to start')
+    }
+
+    function block(x, y, color, size, alpha) {
+      g.globalAlpha = alpha || 1
+      g.fillStyle = color
+      g.shadowColor = color
+      g.shadowBlur = alpha ? 0 : 8
+      g.fillRect(x + 1, y + 1, size - 2, size - 2)
+      g.globalAlpha = 1
+    }
+
+    function draw(title, sub) {
+      g.fillStyle = C.bg
+      g.fillRect(0, 0, W, H)
+      g.strokeStyle = 'rgba(255, 43, 214, 0.1)'
+      for (let x = 1; x < COLS; x++) { g.beginPath(); g.moveTo(x * CELL + 0.5, 0); g.lineTo(x * CELL + 0.5, H); g.stroke() }
+      for (let y = 1; y < ROWS; y++) { g.beginPath(); g.moveTo(0, y * CELL + 0.5); g.lineTo(WELL, y * CELL + 0.5); g.stroke() }
+      board.forEach((row, y) => row.forEach((k, x) => { if (k) block(x * CELL, y * CELL, COLORS[k], CELL) }))
+      if (state !== 'over') {
+        let ghost = piece.y
+        while (!collides(piece.m, piece.x, ghost + 1)) ghost++
+        piece.m.forEach((row, dy) => row.forEach((v, dx) => {
+          if (!v) return
+          block((piece.x + dx) * CELL, (ghost + dy) * CELL, COLORS[piece.k], CELL, 0.2)
+          if (piece.y + dy >= 0) block((piece.x + dx) * CELL, (piece.y + dy) * CELL, COLORS[piece.k], CELL)
+        }))
+      }
+      g.shadowBlur = 0
+      g.fillStyle = 'rgba(22, 9, 52, 0.9)'
+      g.fillRect(WELL, 0, SIDE, H)
+      g.fillStyle = C.magenta
+      g.fillRect(WELL, 0, 2, H)
+      g.textAlign = 'left'
+      g.font = '12px "Share Tech Mono", monospace'
+      g.fillStyle = C.muted
+      g.fillText('NEXT', WELL + 16, 28)
+      next.m.forEach((row, dy) => row.forEach((v, dx) => {
+        if (v) block(WELL + 16 + dx * 18, 40 + dy * 18, COLORS[next.k], 18)
+      }))
+      g.shadowBlur = 0
+      g.fillStyle = C.muted
+      g.fillText('LINES', WELL + 16, 130)
+      g.fillText('LEVEL', WELL + 16, 180)
+      g.fillStyle = C.cyan
+      g.font = '700 20px Orbitron, sans-serif'
+      g.fillText(String(lines), WELL + 16, 154)
+      g.fillText(String(level), WELL + 16, 204)
+      if (title) banner(g, W, H, title, sub)
+    }
+
+    function input(d) {
+      if (state === 'over') return
+      if (state !== 'play') {
+        state = 'play'
+        draw()
+        timer = setTimeout(tick, speed())
+        return
+      }
+      if (d === 'left' && !collides(piece.m, piece.x - 1, piece.y)) piece.x--
+      if (d === 'right' && !collides(piece.m, piece.x + 1, piece.y)) piece.x++
+      if (d === 'down') fall()
+      if (d === 'up') {
+        // Rotate, nudging off a wall if that's all that's in the way.
+        const m = rotate(piece.m)
+        const kick = [0, -1, 1, -2, 2].find(k => !collides(m, piece.x + k, piece.y))
+        if (kick !== undefined) { piece.m = m; piece.x += kick }
+      }
+      if (d === 'action') {
+        while (!collides(piece.m, piece.x, piece.y + 1)) { piece.y++; score += 2 }
+        ctx.score(score)
+        lock()
+      }
+      if (state === 'play') draw()
+    }
+
+    c.addEventListener('click', () => input('up'))
+    reset()
+    return {
+      input,
+      // A swipe down drops all the way.
+      swipe(d) { input(d === 'down' ? 'action' : d) },
+      pause() {
+        if (state !== 'play') return
+        clearTimeout(timer)
+        state = 'paused'
+        draw('Paused', 'Any key to carry on')
+      },
+      restart: reset,
+      stop() { clearTimeout(timer) },
+    }
+  }
+
+  // ── Flap ──
+  function flap(host, ctx) {
+    const W = 360, H = 480, FLOOR = H - 24, GAP = 140, PIPE = 56, SPEED = 160, GRAVITY = 1250, LIFT = -390
+    const [c, g] = canvas(W, H)
+    host.append(c)
+    let bird, pipes, score, state, raf, last, spawnIn
+
+    function reset() {
+      cancelAnimationFrame(raf)
+      bird = { x: 90, y: H / 2, vy: 0, r: 11 }
+      pipes = []
+      score = 0
+      spawnIn = 0.6
+      state = 'ready'
+      ctx.score(0)
+      last = 0
+      raf = requestAnimationFrame(frame)
+    }
+
+    function up() {
+      if (state === 'over') return
+      state = 'play'
+      bird.vy = LIFT
+    }
+
+    function update(dt) {
+      if (state === 'ready') { bird.y = H / 2 + Math.sin(performance.now() / 300) * 6; return }
+      if (state !== 'play') return
+      bird.vy += GRAVITY * dt
+      bird.y += bird.vy * dt
+      if (bird.y < bird.r) { bird.y = bird.r; bird.vy = 0 }
+      spawnIn -= dt
+      if (spawnIn <= 0) {
+        spawnIn = 1.45
+        pipes.push({ x: W, top: 50 + Math.random() * (FLOOR - GAP - 100), passed: false })
+      }
+      for (const p of pipes) {
+        p.x -= SPEED * dt
+        if (!p.passed && p.x + PIPE < bird.x - bird.r) { p.passed = true; ctx.score(++score) }
+      }
+      pipes = pipes.filter(p => p.x > -PIPE)
+      const hit = bird.y + bird.r >= FLOOR || pipes.some(p =>
+        bird.x + bird.r > p.x && bird.x - bird.r < p.x + PIPE && (bird.y - bird.r < p.top || bird.y + bird.r > p.top + GAP))
+      if (hit) {
+        state = 'over'
+        ctx.end('Splat', score)
+      }
+    }
+
+    function draw() {
+      const sky = g.createLinearGradient(0, 0, 0, H)
+      sky.addColorStop(0, '#1a0b3d')
+      sky.addColorStop(1, C.bg)
+      g.fillStyle = sky
+      g.fillRect(0, 0, W, H)
+      g.shadowBlur = 12
+      for (const p of pipes) {
+        g.shadowColor = C.cyan
+        g.fillStyle = 'rgba(0, 240, 255, 0.16)'
+        g.strokeStyle = C.cyan
+        g.lineWidth = 2
+        g.fillRect(p.x, 0, PIPE, p.top)
+        g.strokeRect(p.x + 1, -2, PIPE - 2, p.top + 1)
+        g.fillRect(p.x, p.top + GAP, PIPE, FLOOR - p.top - GAP)
+        g.strokeRect(p.x + 1, p.top + GAP, PIPE - 2, FLOOR - p.top - GAP + 2)
+      }
+      g.shadowColor = C.magenta
+      g.fillStyle = C.magenta
+      g.fillRect(0, FLOOR, W, 2)
+      g.shadowColor = C.orange
+      g.fillStyle = C.yellow
+      g.beginPath()
+      g.arc(bird.x, bird.y, bird.r, 0, Math.PI * 2)
+      g.fill()
+      g.shadowBlur = 0
+      g.fillStyle = C.bg
+      g.beginPath()
+      g.arc(bird.x + 4, bird.y - 3, 2.5, 0, Math.PI * 2)
+      g.fill()
+      g.textAlign = 'center'
+      g.fillStyle = C.text
+      g.font = '900 34px Orbitron, sans-serif'
+      if (state !== 'ready') g.fillText(String(score), W / 2, 56)
+      if (state === 'ready') banner(g, W, H, 'Flap', 'Space, ↑ or tap to flap')
+      if (state === 'paused') banner(g, W, H, 'Paused', 'Flap to carry on')
+    }
+
+    function frame(t) {
+      const dt = last ? Math.min(0.032, (t - last) / 1000) : 0
+      last = t
+      update(dt)
+      draw()
+      if (state !== 'over') raf = requestAnimationFrame(frame)
+    }
+
+    c.addEventListener('pointerdown', e => { e.preventDefault(); up() })
+    reset()
+    return {
+      input(d) { if (d === 'action' || d === 'up') up() },
+      swipe() {},
+      pause() {
+        if (state === 'play') state = 'paused'
+        cancelAnimationFrame(raf)
+        draw()
+      },
+      resume() {
+        if (state === 'over') return
+        last = 0
+        raf = requestAnimationFrame(frame)
+      },
+      restart: reset,
+      stop() { cancelAnimationFrame(raf) },
+    }
+  }
+
+  // ── Pong ──
+  function pong(host, ctx) {
+    const W = 420, H = 300, PW = 10, PH = 60, MARGIN = 18, CPU_WINS_AT = 5
+    const [c, g] = canvas(W, H)
+    host.append(c)
+    let you, cpu, ball, yours, theirs, state, wait, raf, last
+
+    function serve(dir) {
+      ball = { x: W / 2, y: H / 2, vx: 0, vy: 0, r: 6, dir }
+      state = 'serve'
+      wait = 0.9
+    }
+
+    function reset() {
+      cancelAnimationFrame(raf)
+      you = H / 2
+      cpu = H / 2
+      yours = 0
+      theirs = 0
+      ctx.score(0)
+      serve(1)
+      last = 0
+      raf = requestAnimationFrame(frame)
+    }
+
+    function bounce(paddleY, toRight) {
+      const rel = Math.max(-1, Math.min(1, (ball.y - paddleY) / (PH / 2)))
+      const speed = Math.min(720, Math.hypot(ball.vx, ball.vy) * 1.05)
+      const angle = rel * (Math.PI / 4)
+      ball.vx = Math.cos(angle) * speed * (toRight ? 1 : -1)
+      ball.vy = Math.sin(angle) * speed
+    }
+
+    function update(dt) {
+      if (ctx.held.has('up')) you -= 380 * dt
+      if (ctx.held.has('down')) you += 380 * dt
+      you = Math.max(PH / 2, Math.min(H - PH / 2, you))
+      if (state === 'serve') {
+        wait -= dt
+        if (wait <= 0) {
+          const angle = Math.random() * 0.8 - 0.4
+          ball.vx = Math.cos(angle) * 260 * ball.dir
+          ball.vy = Math.sin(angle) * 260
+          state = 'play'
+        }
+        return
+      }
+      if (state !== 'play') return
+      // The CPU tracks the ball but can't move faster than this, so fast
+      // steep shots get past it.
+      const reach = 240 + yours * 12
+      const target = ball.vx > 0 ? ball.y : H / 2
+      cpu += Math.max(-reach * dt, Math.min(reach * dt, target - cpu))
+      cpu = Math.max(PH / 2, Math.min(H - PH / 2, cpu))
+
+      ball.x += ball.vx * dt
+      ball.y += ball.vy * dt
+      if (ball.y < ball.r) { ball.y = ball.r; ball.vy = Math.abs(ball.vy) }
+      if (ball.y > H - ball.r) { ball.y = H - ball.r; ball.vy = -Math.abs(ball.vy) }
+      if (ball.vx < 0 && ball.x - ball.r <= MARGIN + PW && ball.x > MARGIN && Math.abs(ball.y - you) <= PH / 2 + ball.r) {
+        ball.x = MARGIN + PW + ball.r
+        bounce(you, true)
+      }
+      if (ball.vx > 0 && ball.x + ball.r >= W - MARGIN - PW && ball.x < W - MARGIN && Math.abs(ball.y - cpu) <= PH / 2 + ball.r) {
+        ball.x = W - MARGIN - PW - ball.r
+        bounce(cpu, false)
+      }
+      if (ball.x > W + ball.r) {
+        ctx.score(++yours)
+        serve(-1)
+      } else if (ball.x < -ball.r) {
+        theirs++
+        if (theirs >= CPU_WINS_AT) {
+          state = 'over'
+          ctx.end(`CPU wins ${theirs}–${yours}`, yours)
+        } else {
+          serve(1)
+        }
+      }
+    }
+
+    function draw() {
+      g.fillStyle = C.bg
+      g.fillRect(0, 0, W, H)
+      g.fillStyle = 'rgba(255, 43, 214, 0.35)'
+      for (let y = 8; y < H; y += 20) g.fillRect(W / 2 - 1, y, 2, 10)
+      g.textAlign = 'center'
+      g.font = '900 36px Orbitron, sans-serif'
+      g.fillStyle = 'rgba(0, 240, 255, 0.5)'
+      g.fillText(String(yours), W / 2 - 50, 50)
+      g.fillStyle = 'rgba(255, 43, 214, 0.5)'
+      g.fillText(String(theirs), W / 2 + 50, 50)
+      g.shadowBlur = 12
+      g.shadowColor = C.cyan
+      g.fillStyle = C.cyan
+      g.fillRect(MARGIN, you - PH / 2, PW, PH)
+      g.shadowColor = C.magenta
+      g.fillStyle = C.magenta
+      g.fillRect(W - MARGIN - PW, cpu - PH / 2, PW, PH)
+      g.shadowColor = C.text
+      g.fillStyle = C.text
+      g.beginPath()
+      g.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2)
+      g.fill()
+      g.shadowBlur = 0
+      if (state === 'paused') banner(g, W, H, 'Paused', 'Space or tap to carry on')
+      if (state === 'serve' && yours === 0 && theirs === 0) {
+        g.fillStyle = C.muted
+        g.font = '13px "Share Tech Mono", monospace'
+        g.fillText(`You're cyan. First to let ${CPU_WINS_AT} past loses.`, W / 2, H - 20)
+      }
+    }
+
+    function frame(t) {
+      const dt = last ? Math.min(0.032, (t - last) / 1000) : 0
+      last = t
+      update(dt)
+      draw()
+      if (state !== 'over') raf = requestAnimationFrame(frame)
+    }
+
+    function steer(clientY) {
+      const rect = c.getBoundingClientRect()
+      you = ((clientY - rect.top) / rect.height) * H
+    }
+    c.addEventListener('mousemove', e => steer(e.clientY))
+    c.addEventListener('touchmove', e => { steer(e.touches[0].clientY); e.preventDefault() }, { passive: false })
+    c.addEventListener('touchstart', e => steer(e.touches[0].clientY), { passive: true })
+    c.addEventListener('click', () => { if (state === 'paused') state = 'play' })
+
+    reset()
+    return {
+      input(d) { if (d === 'action' && state === 'paused') state = 'play' },
+      swipe() {},
+      pause() {
+        if (state === 'play') state = 'paused'
+        cancelAnimationFrame(raf)
+        draw()
+      },
+      resume() {
+        if (state === 'over') return
+        last = 0
+        raf = requestAnimationFrame(frame)
+      },
+      restart: reset,
+      stop() { cancelAnimationFrame(raf) },
+    }
+  }
+
+  // ── Memory ──
+  function memory(host, ctx) {
+    const FACES = ['🍿', '🎬', '👾', '🕹️', '📼', '🚀', '🌴', '💾']
+    const grid = el('div', { class: 'memory' })
+    host.append(grid)
+    let cards, open, moves, matched, busy, timer
+
+    function reset() {
+      clearTimeout(timer)
+      cards = shuffle([...FACES, ...FACES]).map(face => ({ face, up: false, done: false }))
+      open = []
+      moves = 0
+      matched = 0
+      busy = false
+      ctx.score(0)
+      draw()
+    }
+
+    function flip(i) {
+      const card = cards[i]
+      if (busy || card.up || card.done) return
+      card.up = true
+      open.push(i)
+      if (open.length === 2) {
+        ctx.score(++moves)
+        const [a, b] = open
+        if (cards[a].face === cards[b].face) {
+          cards[a].done = cards[b].done = true
+          open = []
+          if (++matched === FACES.length) {
+            draw()
+            return ctx.end(`Cleared in ${moves} moves`, moves)
+          }
+        } else {
+          busy = true
+          timer = setTimeout(() => {
+            cards[a].up = cards[b].up = false
+            open = []
+            busy = false
+            draw()
+          }, 750)
+        }
+      }
+      draw()
+    }
+
+    function draw() {
+      grid.replaceChildren(...cards.map((card, i) => el('button', {
+        type: 'button',
+        class: `flip ${card.up || card.done ? 'up' : ''} ${card.done ? 'done' : ''}`,
+        'aria-label': card.up || card.done ? card.face : 'Hidden card',
+        onClick: () => flip(i),
+      }, card.up || card.done ? card.face : '')))
+    }
+
+    reset()
+    return { restart: reset, stop() { clearTimeout(timer) } }
+  }
+
+  // ── Tic-tac-toe ──
+  function tictactoe(host, ctx) {
+    const LINES = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]]
+    const SLOPPY = 0.3 // how often the CPU plays a random square instead of the best one
+    const grid = el('div', { class: 'ttt' })
+    const note = el('p', { class: 'muted small' })
+    host.append(grid, note)
+    let cells, wins, yourTurn, over, timer, round
+
+    function winner(b) {
+      for (const [a, x, y] of LINES) if (b[a] && b[a] === b[x] && b[a] === b[y]) return b[a]
+      return b.every(Boolean) ? 'draw' : null
+    }
+
+    function minimax(b, oTurn, depth) {
+      const w = winner(b)
+      if (w === 'O') return 10 - depth
+      if (w === 'X') return depth - 10
+      if (w === 'draw') return 0
+      let best = oTurn ? -Infinity : Infinity
+      b.forEach((v, i) => {
+        if (v) return
+        b[i] = oTurn ? 'O' : 'X'
+        const s = minimax(b, !oTurn, depth + 1)
+        b[i] = ''
+        best = oTurn ? Math.max(best, s) : Math.min(best, s)
+      })
+      return best
+    }
+
+    function cpuMove() {
+      const empty = cells.map((v, i) => (v ? -1 : i)).filter(i => i >= 0)
+      if (Math.random() < SLOPPY) return empty[rand(empty.length)]
+      let best = -Infinity, move = empty[0]
+      for (const i of empty) {
+        cells[i] = 'O'
+        const s = minimax(cells, false, 0)
+        cells[i] = ''
+        if (s > best) { best = s; move = i }
+      }
+      return move
+    }
+
+    function settle() {
+      const w = winner(cells)
+      if (!w) return false
+      over = true
+      if (w === 'O') {
+        draw()
+        ctx.end('The CPU wins', wins)
+        return true
+      }
+      if (w === 'X') ctx.score(++wins)
+      ctx.toast(w === 'X' ? 'You win! Next round…' : 'Draw. Next round…')
+      timer = setTimeout(newRound, 1100)
+      return true
+    }
+
+    // Who goes first alternates each round.
+    function newRound() {
+      cells = new Array(9).fill('')
+      over = false
+      round++
+      yourTurn = round % 2 === 1
+      draw()
+      if (!yourTurn) timer = setTimeout(cpuTurn, 400)
+    }
+
+    function cpuTurn() {
+      if (over) return
+      cells[cpuMove()] = 'O'
+      yourTurn = true
+      settle()
+      draw()
+    }
+
+    function press(i) {
+      if (over || !yourTurn || cells[i]) return
+      cells[i] = 'X'
+      yourTurn = false
+      if (!settle()) timer = setTimeout(cpuTurn, 350)
+      draw()
+    }
+
+    function draw() {
+      note.textContent = over ? '' : yourTurn ? 'Your move: you\'re ✕' : 'CPU is thinking…'
+      grid.replaceChildren(...cells.map((v, i) => el('button', {
+        type: 'button',
+        class: v === 'X' ? 'x' : v === 'O' ? 'o' : '',
+        'aria-label': v || `Square ${i + 1}`,
+        onClick: () => press(i),
+      }, v === 'X' ? '✕' : v === 'O' ? '◯' : '')))
+    }
+
+    function reset() {
+      clearTimeout(timer)
+      wins = 0
+      round = 0
+      ctx.score(0)
+      newRound()
+    }
+
+    reset()
+    return { restart: reset, stop() { clearTimeout(timer) } }
+  }
+
   const GAMES = [
     { id: 'snake', name: 'Snake', icon: '🐍', blurb: 'Eat, grow, don\'t bite yourself.', hint: 'Arrow keys / WASD, or swipe.', start: snake },
     { id: '2048', name: '2048', icon: '🔢', blurb: 'Slide and merge to 2048.', hint: 'Arrow keys / WASD, or swipe.', start: twenty48 },
+    { id: 'blocks', name: 'Blocks', icon: '🟪', blurb: 'Stack them, clear lines, don\'t top out.', hint: '← → move, ↑ or tap rotates, ↓ drops a row, Space drops all the way. Swipe works too.', start: blocks },
     { id: 'breakout', name: 'Breakout', icon: '🧱', blurb: 'Bounce the ball, break the wall.', hint: 'Mouse, finger or ← →. Space or tap to launch.', start: breakout },
+    { id: 'flap', name: 'Flap', icon: '🐤', blurb: 'One button. Many pipes.', hint: 'Space, ↑, click or tap to flap.', start: flap },
+    { id: 'pong', name: 'Pong', icon: '🏓', blurb: 'You against the machine.', hint: '↑ ↓, mouse or finger moves your paddle.', start: pong },
     { id: 'mines', name: 'Minesweeper', icon: '💣', blurb: 'Ten mines. Fastest clear wins.', hint: 'Click to dig, right-click or flag mode to flag.', start: mines, lowerIsBetter: true, unit: 's' },
+    { id: 'memory', name: 'Memory', icon: '🃏', blurb: 'Find the eight pairs in as few moves as you can.', hint: 'Click or tap two cards.', start: memory, lowerIsBetter: true, unit: ' moves' },
+    { id: 'tictactoe', name: 'Tic-tac-toe', icon: '⭕', blurb: 'Beat the CPU as many rounds in a row as you can.', hint: 'You\'re ✕. Turns alternate who goes first.', start: tictactoe },
   ]
 
   // ── The hub ──
@@ -619,7 +1240,8 @@ const Arcade = (() => {
       touch = null
       if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return
       const d = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up')
-      if (current && current.api.input) current.api.input(d)
+      const api = current && current.api
+      if (api && (api.swipe || api.input)) (api.swipe || api.input)(d)
     })
 
     root.replaceChildren(

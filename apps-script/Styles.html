@@ -349,7 +349,7 @@ a { color: var(--cyan); }
 .game-end .wordmark { font-size: 22px; }
 .game-toast { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); color: var(--yellow); z-index: 1; white-space: nowrap; }
 .game-toast[hidden] { display: none; }
-.game-hint { text-align: center; }
+.game-hint { text-align: center; text-shadow: 0 1px 3px #000, 0 0 8px var(--bg); }
 
 .g2048 { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); gap: 8px; padding: 8px; aspect-ratio: 1; background: var(--panel-solid); border: 1px solid var(--magenta); border-radius: 6px; box-shadow: var(--glow-magenta); }
 .g2048 .tile { display: grid; place-items: center; border-radius: 4px; background: rgba(0, 240, 255, 0.06); color: #1a0420; font: 700 clamp(16px, 6vw, 28px) var(--display); transition: background 0.1s; }
@@ -374,4 +374,16 @@ a { color: var(--cyan); }
 .mines .cell.open { background: rgba(13, 2, 33, 0.9); border-color: rgba(0, 240, 255, 0.1); cursor: default; }
 .mines .cell.open:hover { box-shadow: none; border-color: rgba(0, 240, 255, 0.1); }
 .mines .cell.blown { background: var(--bad); }
+
+.memory { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); gap: 8px; aspect-ratio: 1; padding: 8px; background: var(--panel-solid); border: 1px solid var(--magenta); border-radius: 6px; box-shadow: var(--glow-magenta); }
+.memory .flip { padding: 0; display: grid; place-items: center; font-size: clamp(22px, 7vw, 38px); background: var(--button); border: none; box-shadow: var(--glow-magenta); }
+.memory .flip.up { background: var(--bg); border: 1px solid var(--cyan); box-shadow: var(--glow-cyan); cursor: default; }
+.memory .flip.done { opacity: 0.45; box-shadow: none; }
+.memory .flip:hover:not(:disabled) { transform: translateY(-2px); }
+
+.game-tictactoe { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.ttt { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 8px; width: 100%; aspect-ratio: 1; padding: 8px; background: var(--panel-solid); border: 1px solid var(--magenta); border-radius: 6px; box-shadow: var(--glow-magenta); }
+.ttt button { padding: 0; display: grid; place-items: center; font: 900 clamp(36px, 12vw, 64px) var(--display); background: var(--bg); }
+.ttt .x { color: var(--cyan); text-shadow: var(--glow-cyan); }
+.ttt .o { color: var(--magenta); text-shadow: var(--glow-magenta); }
 </style>

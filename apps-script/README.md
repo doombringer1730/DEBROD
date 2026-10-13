@@ -11,7 +11,7 @@ keys live in the script's properties instead of environment variables.
 | `Code.gs` | Server side: the menu, settings, TMDB lookups, Torrentio URLs and room codes. |
 | `Index.html` | The page shell. |
 | `App.html` | The search, player and watch-together room (from `app/browser.tsx` and `app/watch/[room]/room.tsx`). |
-| `Games.html` | The arcade: Snake, 2048, Breakout and Minesweeper. |
+| `Games.html` | The arcade's games. |
 | `Settings.html` | The keys form. |
 | `Styles.html` | `app/globals.css`, wrapped in `<style>`. |
 | `appsscript.json` | The project manifest. |
@@ -39,9 +39,9 @@ link.
 
 ## The arcade
 
-**Arcade** in the header, next to **Search**, opens four small games: Snake,
-2048, Breakout and Minesweeper. They work with the keyboard, mouse or touch
-(swipe for Snake and 2048). Best scores are kept in your browser, and a
+**Arcade** in the header, next to **Search**, opens nine small games:
+Snake, 2048, Blocks, Breakout, Flap, Pong, Minesweeper, Memory and
+Tic-tac-toe. They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
 timer shows how long you've been procrastinating. Switching back to
 **Search** pauses whatever's running.
 
