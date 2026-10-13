@@ -1,0 +1,3 @@
+# clasp would push doom/doom.js as a server script; Doom loads from jsDelivr.
+doom/**
+**/*.md
