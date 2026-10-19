@@ -13,6 +13,7 @@ keys live in the script's properties instead of environment variables.
 | `App.html` | The search, player and watch-together room (from `app/browser.tsx` and `app/watch/[room]/room.tsx`). |
 | `Games.html` | The arcade's games. |
 | `Scribble.html` | Scribble, the multiplayer draw-and-guess game. |
+| `Showdown.html` | Pokémon Showdown battles, on Showdown's own simulator. |
 | `Settings.html` | The keys form. |
 | `Styles.html` | `app/globals.css`, wrapped in `<style>`. |
 | `appsscript.json` | The project manifest. |
@@ -21,7 +22,7 @@ keys live in the script's properties instead of environment variables.
 
 1. Create a Google Doc, then open **Extensions → Apps Script**.
 2. Replace `Code.gs` with the one here. Add the HTML files with **+ → HTML**,
-   named `Index`, `App`, `Games`, `Scribble`, `Settings` and `Styles` (no `.html`), and paste each
+   named `Index`, `App`, `Games`, `Scribble`, `Showdown`, `Settings` and `Styles` (no `.html`), and paste each
    one in. To edit `appsscript.json`, turn on **Project Settings → Show
    "appsscript.json" manifest file in editor**.
 3. Save, reload the doc, and open **DEBROD → Settings**. Approve the
@@ -31,7 +32,7 @@ keys live in the script's properties instead of environment variables.
 
 Or push it with [clasp](https://github.com/google/clasp): run
 `clasp clone <scriptId> --rootDir apps-script` once, then `clasp push`.
-`.claspignore` keeps `doom/` and the READMEs out of the project.
+`.claspignore` keeps `doom/`, `showdown/` and the READMEs out of the project.
 
 ### As a web app (optional)
 
@@ -68,8 +69,14 @@ only goes out as a salted hash until the turn ends, so nobody can read it
 off the network by accident, but it isn't cheat-proof. Your room survives a
 trip to **Search**; going back to the arcade's game list leaves it.
 
-**Pokémon Showdown** blocks being shown inside other pages, so its card
-opens it in a new tab.
+**Pokémon Showdown** runs Showdown's own battle simulator right in the page
+(play.pokemonshowdown.com won't load inside other sites): Gen 9 Random
+Battles, six random Pokémon a side, with Terastallization. Battle the CPU,
+or **Battle a friend** over the same Supabase as Scribble: the host's page
+runs the battle and the guest sends their moves, and the host can start a
+rematch. **Invite** gives a `?showdown=CODE` link in the web app. The engine
+lives in [`showdown/`](showdown) and loads from jsDelivr the first time
+(about 640 KB). Sprites come from Showdown's sprite server.
 
 ### Built-in Supabase
 

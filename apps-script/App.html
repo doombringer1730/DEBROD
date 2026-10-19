@@ -870,11 +870,14 @@ call('getConfig')
       S.roomCode = code
       joinRoom({ preventDefault() {} })
     }
-    const scribbleCode = document.body.dataset.scribble
-    if (scribbleCode && !code) {
-      S.tab = 'arcade'
-      render()
-      Arcade.open('scribble', { code: scribbleCode })
+    for (const game of ['scribble', 'showdown']) {
+      const invite = document.body.dataset[game]
+      if (invite && !code) {
+        S.tab = 'arcade'
+        render()
+        Arcade.open(game, { code: invite })
+        break
+      }
     }
   })
   .catch(e => mount(el('main', { class: 'login' }, el('div', { class: 'card stack' }, el('p', { class: 'error' }, e.message)))))

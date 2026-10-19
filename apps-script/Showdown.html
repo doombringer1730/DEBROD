@@ -1,0 +1,631 @@
+<script>
+// Pokémon Showdown in the arcade: Showdown's own battle simulator (MIT,
+// bundled from the @pkmn packages in showdown/) running in the page, since
+// play.pokemonshowdown.com won't load inside other sites. Gen 9 Random
+// Battles against the CPU, or against a friend over Supabase Realtime: the
+// host's page runs the battle and forwards the guest their side of it,
+// and the guest sends back their choices.
+//
+// Loaded before Games.html (which lists it) and after App.html, whose el(),
+// S, randomId(), storedName(), storeName() and copyText() it uses.
+
+const SHOWDOWN_BASE = 'https://cdn.jsdelivr.net/gh/doombringer1730/DEBROD@0c06007b822385ffea34490bf7c7f7f3249b17b9/apps-script/showdown/'
+const SHOWDOWN_SPRITES = 'https://play.pokemonshowdown.com/sprites/'
+const SHOWDOWN_FORMAT = 'gen9randombattle'
+const TYPE_COLORS = {
+  Normal: '#a8a77a', Fire: '#ee8130', Water: '#6390f0', Electric: '#f7d02c', Grass: '#7ac74c', Ice: '#96d9d6',
+  Fighting: '#c22e28', Poison: '#a33ea1', Ground: '#e2bf65', Flying: '#a98ff3', Psychic: '#f95587', Bug: '#a6b91a',
+  Rock: '#b6a136', Ghost: '#735797', Dragon: '#6f35fc', Dark: '#705746', Steel: '#b7b7ce', Fairy: '#d685ad', Stellar: '#40b5a5',
+}
+let showdownEngine = null
+
+// The engine is about 800 KB over the wire, so it loads the first time.
+function loadShowdown() {
+  if (!showdownEngine) {
+    showdownEngine = new Promise((resolve, reject) => {
+      const s = document.createElement('script')
+      s.src = `${SHOWDOWN_BASE}showdown.js`
+      s.onload = () => (window.PkmnShowdown ? resolve(window.PkmnShowdown) : reject(new Error('The battle engine didn\'t start.')))
+      s.onerror = () => { showdownEngine = null; s.remove(); reject(new Error('Could not load the battle engine.')) }
+      document.head.append(s)
+    })
+  }
+  return showdownEngine
+}
+
+function showdown(host, ctx, opts) {
+  const cfg = (typeof S !== 'undefined' && S.cfg) || {}
+  const canOnline = !!(cfg.supabaseUrl && cfg.supabaseKey && window.supabase)
+  const me = randomId()
+  const wrap = el('div', { class: 'pk' })
+  host.append(wrap)
+
+  let PS = null
+  let name = storedName() || ''
+  let dead = false
+  let match = null      // the battle in progress (see startLocal / joinOnline)
+  let net = null        // { sb, channel, code, role }
+
+  // ── Menu ──
+  function menu(err) {
+    let draftName = name
+    let draftCode = (opts && opts.code) || ''
+    const nameInput = el('input', { value: draftName, maxlength: 18, placeholder: 'Trainer name', autofocus: true, onInput: e => { draftName = e.target.value } })
+    const okName = () => {
+      const n = draftName.trim().slice(0, 18)
+      if (!n) { nameInput.focus(); return false }
+      name = n
+      storeName(n)
+      return true
+    }
+    wrap.replaceChildren(el('div', { class: 'card stack pk-menu' },
+      el('div', null,
+        el('p', { class: 'wordmark' }, 'Showdown'),
+        el('p', { class: 'tagline' }, 'Gen 9 Random Battles')),
+      el('p', { class: 'muted small' }, 'Six random Pokémon each, on Pokémon Showdown\'s own battle engine. Terastallize once per battle.'),
+      err && el('p', { class: 'error' }, err),
+      el('label', { class: 'field' }, el('span', null, 'Trainer name'), nameInput),
+      el('button', { type: 'button', class: 'primary', onClick: () => { if (okName()) startLocal() } }, 'Battle the CPU'),
+      canOnline
+        ? [
+          el('button', { type: 'button', onClick: () => { if (okName()) online(newCode(), 'host') } }, 'Battle a friend'),
+          el('form', { class: 'row', onSubmit: e => {
+            e.preventDefault()
+            const c = draftCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+            if (c && okName()) online(c, 'guest')
+          } },
+            el('input', { value: draftCode, maxlength: 8, placeholder: 'Room code', onInput: e => { draftCode = e.target.value } }),
+            el('button', { type: 'submit' }, 'Join')),
+        ]
+        : el('p', { class: 'muted small' }, 'Battling a friend needs Supabase, like watch together (DEBROD → Settings).'),
+      el('a', { class: 'small', href: 'https://play.pokemonshowdown.com/', target: '_blank', rel: 'noreferrer' }, 'Open the real Pokémon Showdown ↗')))
+    const f = wrap.querySelector('[autofocus]')
+    if (f) f.focus()
+  }
+
+  function newCode() {
+    const abc = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+    return Array.from(crypto.getRandomValues(new Uint8Array(5)), b => abc[b % abc.length]).join('')
+  }
+
+  function loading(text) {
+    wrap.replaceChildren(el('div', { class: 'card stack pk-menu' }, el('p', { class: 'muted' }, text)))
+  }
+
+  async function engine() {
+    if (PS) return PS
+    loading('Loading the battle engine… (about 800 KB the first time)')
+    PS = await loadShowdown()
+    return PS
+  }
+
+  // ── Running a battle (CPU, or the host's side of an online one) ──
+  // The simulator runs here; we play p1. `p2` is either the CPU or a
+  // function that forwards the guest their side.
+  function runSim(p1Name, p2Name, onP1, onP2) {
+    const stream = new PS.BattleStreams.BattleStream()
+    const streams = PS.BattleStreams.getPlayerStreams(stream)
+    let over = false
+    const pump = async (s, fn) => {
+      try {
+        for await (const chunk of s) {
+          if (over || dead) break
+          try { fn(chunk) } catch (e) { console.error('Showdown:', e) }
+        }
+      } catch (e) { /* stream closed */ }
+    }
+    pump(streams.p1, onP1)
+    pump(streams.p2, onP2)
+    streams.omniscient.write(`>start ${JSON.stringify({ formatid: SHOWDOWN_FORMAT })}\n` +
+      `>player p1 ${JSON.stringify({ name: p1Name })}\n>player p2 ${JSON.stringify({ name: p2Name })}`)
+    return {
+      stream,
+      choose: (side, choice) => { if (!over) streams[side].write(choice) },
+      end() {
+        over = true
+        try { streams.omniscient.writeEnd() } catch (e) { /* already closed */ }
+      },
+    }
+  }
+
+  async function startLocal() {
+    try { await engine() } catch (e) { return menu(e.message) }
+    if (dead) return
+    const view = viewer('p1', { me: name, foe: 'CPU' }, choice => sim.choose('p1', choice), {
+      again: () => { endMatch(); startLocal() },
+      back: () => { endMatch(); menu() },
+    })
+    const sim = runSim(name, 'CPU', chunk => view.feed(chunk), chunk => {
+      for (const line of chunk.split('\n')) {
+        if (!line.startsWith('|request|')) continue
+        const req = JSON.parse(line.slice(9))
+        // A beat before the CPU answers, so it doesn't feel instant.
+        setTimeout(() => { const c = cpuChoice(req, sim.stream.battle); if (c) sim.choose('p2', c) }, 350 + Math.random() * 500)
+      }
+    })
+    match = { sim, view }
+  }
+
+  function endMatch() {
+    if (match && match.sim) match.sim.end()
+    if (match && match.view) match.view.destroy()
+    match = null
+  }
+
+  // A CPU that mostly picks its hardest-hitting move, now and then
+  // something else, and switches out when nothing it has will land.
+  function cpuChoice(req, battle) {
+    if (!req || req.wait || !battle) return null
+    const team = req.side.pokemon
+    const healthy = team.map((p, i) => ({ p, i })).filter(({ p }) => !p.active && !p.condition.endsWith(' fnt'))
+    const pick = list => list[Math.floor(Math.random() * list.length)]
+    if (req.forceSwitch) return healthy.length ? `switch ${pick(healthy).i + 1}` : 'pass'
+    const active = req.active && req.active[0]
+    if (!active) return 'default'
+    const mine = battle.p2.active[0]
+    const foe = battle.p1.active[0]
+    const dex = battle.dex
+    const score = id => {
+      const move = dex.moves.get(id)
+      if (move.category === 'Status') return 35 * (0.6 + Math.random() * 0.8)
+      let s = move.basePower || 70
+      if (foe && !foe.fainted) {
+        const types = foe.getTypes()
+        if (!dex.getImmunity(move.type, types)) return 0
+        s *= Math.pow(2, dex.getEffectiveness(move.type, types))
+      }
+      if (mine && mine.hasType(move.type)) s *= 1.5
+      if (move.accuracy !== true) s *= move.accuracy / 100
+      return s * (0.85 + Math.random() * 0.3)
+    }
+    const moves = active.moves.map((m, i) => ({ i, s: m.disabled ? -1 : score(m.id) })).filter(m => m.s >= 0)
+    moves.sort((a, b) => b.s - a.s)
+    const trapped = active.trapped || active.maybeTrapped
+    if ((!moves.length || moves[0].s < 30) && healthy.length && !trapped && Math.random() < 0.6) {
+      return `switch ${pick(healthy).i + 1}`
+    }
+    if (!moves.length) return 'move 1'
+    const choice = Math.random() < 0.8 ? moves[0] : pick(moves)
+    const tera = active.canTerastallize && Math.random() < 0.3 ? ' terastallize' : ''
+    return `move ${choice.i + 1}${tera}`
+  }
+
+  // ── Online: the host runs the battle, the guest follows ──
+  function online(code, role) {
+    leaveNet()
+    endMatch()
+    loading(role === 'host' ? 'Making a room…' : `Joining room ${code}…`)
+    const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey)
+    const channel = sb.channel(`ds-showdown:${code}`, { config: { presence: { key: me }, broadcast: { self: false } } })
+    net = { sb, channel, code, role, players: [], guestId: null, chunks: [], seq: 0, expect: 0, buffer: {}, joinedAt: Date.now(), timers: [] }
+    const n = net
+    const send = (event, payload) => channel.send({ type: 'broadcast', event, payload: Object.assign({ from: me }, payload) })
+    n.send = send
+
+    channel.on('presence', { event: 'sync' }, () => {
+      n.players = Object.values(channel.presenceState()).map(m => m[m.length - 1]).sort((a, b) => a.joinedAt - b.joinedAt)
+      if (role === 'host') hostPresence()
+      else guestPresence()
+    })
+    for (const ev of ['meta', 'chunk', 'reset', 'choice', 'resend', 'hello', 'full']) {
+      channel.on('broadcast', { event: ev }, ({ payload }) => (role === 'host' ? hostEvent : guestEvent)(ev, payload || {}))
+    }
+    channel.subscribe(async status => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        if (!n.subscribed) menu('Can\'t reach Supabase. Check SUPABASE_URL and SUPABASE_ANON_KEY in DEBROD → Settings.')
+        return
+      }
+      if (status !== 'SUBSCRIBED') return
+      n.subscribed = true
+      await channel.track({ id: me, name, role, joinedAt: n.joinedAt })
+      if (role === 'host') waitingRoom()
+      else {
+        send('hello', {})
+        n.timers.push(setTimeout(() => { if (net === n && !n.hostId) menu(`Nobody is hosting room ${code}.`) }, 6000))
+      }
+    })
+  }
+
+  function leaveNet() {
+    if (!net) return
+    for (const t of net.timers) clearTimeout(t)
+    try { net.channel.untrack(); net.sb.removeChannel(net.channel) } catch (e) { /* gone */ }
+    net = null
+  }
+
+  function waitingRoom(note) {
+    const n = net
+    const link = cfg.appUrl ? `${cfg.appUrl}?showdown=${n.code}` : ''
+    wrap.replaceChildren(el('div', { class: 'card stack pk-menu' },
+      el('p', { class: 'wordmark' }, 'Showdown'),
+      note && el('p', { class: 'muted small' }, note),
+      el('p', null, 'Waiting for your opponent…'),
+      el('p', { class: 'pk-code' }, n.code),
+      el('p', { class: 'muted small' }, link ? 'Send the link, or have them open Arcade → Pokémon Showdown and enter the code.' : 'Have them open Arcade → Pokémon Showdown and enter this code.'),
+      el('button', { type: 'button', class: 'primary', onClick: async () => {
+        const ok = await copyText(link || n.code)
+        if (!ok) window.prompt('Send this:', link || n.code)
+      } }, link ? 'Copy invite link' : 'Copy code'),
+      el('button', { type: 'button', class: 'link', onClick: () => { leaveNet(); menu() } }, '‹ Cancel')))
+  }
+
+  // Host side
+  function hostPresence() {
+    const n = net
+    const guests = n.players.filter(p => p.id !== me)
+    if (n.guestId && !guests.some(p => p.id === n.guestId)) {
+      // Our opponent dropped. Pause on our side; whoever joins next takes over.
+      n.guestId = null
+      if (match) match.view.notice('Your opponent left. Waiting for them to come back…')
+    }
+    if (!n.guestId && guests.length) {
+      n.guestId = guests[0].id
+      n.guestName = guests[0].name
+      if (match) {
+        match.view.notice(`${n.guestName} is back.`)
+        hostReplay()
+      } else {
+        hostStart()
+      }
+    }
+  }
+
+  async function hostStart() {
+    const n = net
+    try { await engine() } catch (e) { return menu(e.message) }
+    if (dead || net !== n) return
+    n.chunks = []
+    n.battleId = randomId()
+    const view = viewer('p1', { me: name, foe: n.guestName }, choice => sim.choose('p1', choice), {
+      again: () => { if (n.guestId) { endMatch(); hostStart() } },
+      back: () => { endMatch(); leaveNet(); menu() },
+      online: true,
+    })
+    const sim = runSim(name, n.guestName, chunk => view.feed(chunk), chunk => {
+      const seq = n.chunks.push(chunk) - 1
+      n.send('chunk', { battle: n.battleId, seq, data: chunk })
+    })
+    match = { sim, view }
+    n.send('meta', { battle: n.battleId, guestId: n.guestId, hostName: name, guestName: n.guestName })
+  }
+
+  function hostReplay() {
+    const n = net
+    n.send('meta', { battle: n.battleId, guestId: n.guestId, hostName: name, guestName: n.guestName })
+    n.send('reset', { battle: n.battleId })
+    n.chunks.forEach((data, seq) => n.send('chunk', { battle: n.battleId, seq, data }))
+  }
+
+  function hostEvent(ev, p) {
+    const n = net
+    if (!n) return
+    if (ev === 'hello') {
+      if (p.from === n.guestId && match) hostReplay()
+      else if (n.guestId && p.from !== n.guestId) n.send('full', { to: p.from })
+      return
+    }
+    if (p.from !== n.guestId || !match) return
+    if (ev === 'choice' && p.battle === n.battleId) match.sim.choose('p2', String(p.data || '').slice(0, 80))
+    if (ev === 'resend' && p.battle === n.battleId) {
+      for (let seq = Math.max(0, p.from_seq | 0); seq < n.chunks.length; seq++) n.send('chunk', { battle: n.battleId, seq, data: n.chunks[seq] })
+    }
+  }
+
+  // Guest side
+  function guestPresence() {
+    const n = net
+    const hostP = n.players.find(p => p.role === 'host')
+    n.hostId = hostP ? hostP.id : n.hostId
+    if (n.started && !hostP) {
+      if (match) match.view.notice('The host left, so the battle is over.')
+      n.started = false
+    }
+  }
+
+  async function guestEvent(ev, p) {
+    const n = net
+    if (!n) return
+    if (ev === 'full' && p.to === me) { leaveNet(); return menu('That room already has two trainers.') }
+    if (ev === 'meta') {
+      if (p.guestId !== me) return
+      n.hostId = p.from
+      n.hostName = p.hostName
+      n.started = true
+      if (n.battle === p.battle && match) return
+      // A new battle (or our first): keep whatever arrives while the engine
+      // loads, then ask for anything we missed.
+      n.battle = p.battle
+      n.expect = 0
+      n.buffer = {}
+      try { await engine() } catch (e) { return menu(e.message) }
+      if (dead || net !== n || n.battle !== p.battle) return
+      guestNewView()
+      n.send('resend', { battle: n.battle, from_seq: n.expect })
+      return
+    }
+    if (p.from !== n.hostId || p.battle !== n.battle) return
+    if (ev === 'reset') {
+      n.expect = 0
+      n.buffer = {}
+      if (match) guestNewView()
+      return
+    }
+    if (ev === 'chunk' && Number.isInteger(p.seq) && p.seq >= n.expect) {
+      n.buffer[p.seq] = String(p.data || '')
+      guestFlush()
+    }
+  }
+
+  function guestFlush() {
+    const n = net
+    if (!n || !match) return
+    while (n.buffer[n.expect] !== undefined) {
+      match.view.feed(n.buffer[n.expect])
+      delete n.buffer[n.expect]
+      n.expect++
+    }
+    // Something got lost on the way: ask for it again.
+    if (Object.keys(n.buffer).length && !n.asked) {
+      n.asked = true
+      n.timers.push(setTimeout(() => {
+        n.asked = false
+        if (net === n && Object.keys(n.buffer).length) n.send('resend', { battle: n.battle, from_seq: n.expect })
+      }, 1500))
+    }
+  }
+
+  function guestNewView() {
+    const n = net
+    if (match) match.view.destroy()
+    const view = viewer('p2', { me: name, foe: n.hostName || 'Host' }, choice => n.send('choice', { battle: n.battle, data: choice }), {
+      back: () => { endMatch(); leaveNet(); menu() },
+      online: true,
+      guest: true,
+    })
+    match = { view }
+    guestFlush()
+  }
+
+  // ── The battle screen ──
+  // Follows one side's view of the battle (what that player is allowed to
+  // see) and offers that player's choices.
+  function viewer(side, names, choose, actions) {
+    const battle = new PS.Battle(new PS.Generations(PS.Dex))
+    const fmt = new PS.LogFormatter(side, battle)
+    const foeSide = side === 'p1' ? 'p2' : 'p1'
+    let request = null
+    let waiting = false
+    let tera = false
+    let result = null
+    let destroyed = false
+
+    const foeSprite = el('img', { class: 'pk-sprite foe', alt: '' })
+    const meSprite = el('img', { class: 'pk-sprite me', alt: '' })
+    const foeBox = el('div', { class: 'pk-box foe' })
+    const meBox = el('div', { class: 'pk-box me' })
+    const foeTeam = el('div', { class: 'pk-balls foe' })
+    const meTeam = el('div', { class: 'pk-balls me' })
+    const banner = el('div', { class: 'pk-banner', hidden: true })
+    const field = el('div', { class: 'pk-field' }, foeTeam, foeBox, foeSprite, meSprite, meBox, meTeam, banner)
+    const controls = el('div', { class: 'pk-controls' })
+    const log = el('div', { class: 'pk-log', 'aria-live': 'polite' })
+    wrap.replaceChildren(el('div', { class: 'pk-main' }, field, controls), log)
+
+    function sprite(img, poke, back) {
+      if (!poke) { img.hidden = true; img.dataset.id = ''; return }
+      const species = PS.Dex.species.get(poke.speciesForme)
+      const id = species.spriteid || PS.toID(poke.speciesForme)
+      const key = `${id}${back ? ':b' : ''}${poke.shiny ? ':s' : ''}`
+      img.hidden = false
+      img.classList.toggle('fainted', !!poke.fainted)
+      if (img.dataset.id === key) return
+      img.dataset.id = key
+      const shiny = poke.shiny ? '-shiny' : ''
+      const tries = [
+        `${SHOWDOWN_SPRITES}ani${back ? '-back' : ''}${shiny}/${id}.gif`,
+        `${SHOWDOWN_SPRITES}gen5${back ? '-back' : ''}${shiny}/${id}.png`,
+        `${SHOWDOWN_SPRITES}gen5${back ? '-back' : ''}/${PS.toID(species.baseSpecies || poke.speciesForme)}.png`,
+      ]
+      let n = 0
+      // Hidden until the new one loads, so the last Pokémon doesn't linger.
+      img.style.visibility = 'hidden'
+      img.onload = () => { img.style.visibility = '' }
+      img.onerror = () => { if (++n < tries.length) img.src = tries[n] }
+      img.src = tries[0]
+    }
+
+    function hpClass(frac) {
+      return frac > 0.5 ? 'good' : frac > 0.2 ? 'warn' : 'bad'
+    }
+
+    function infoBox(box, poke, exact) {
+      if (!poke) { box.hidden = true; return }
+      box.hidden = false
+      const frac = poke.maxhp ? poke.hp / poke.maxhp : 0
+      const pct = Math.round(frac * 100)
+      const status = poke.fainted ? 'fnt' : poke.status
+      const boosts = Object.entries(poke.boosts || {}).filter(([, v]) => v)
+      box.replaceChildren(
+        el('div', { class: 'pk-name' },
+          el('strong', null, poke.name),
+          el('span', { class: 'muted' }, ` L${poke.level}`),
+          poke.isTerastallized && el('span', { class: 'pk-type', style: `background: ${TYPE_COLORS[poke.teraType] || '#888'}` }, `Tera ${poke.teraType}`)),
+        el('div', { class: 'pk-hp' }, el('div', { class: `pk-hp-fill ${hpClass(frac)}`, style: `width: ${Math.max(0, pct)}%` })),
+        el('div', { class: 'pk-hp-text' },
+          exact && request && request.side ? `${Math.max(0, Math.round(poke.hp))}/${poke.maxhp} HP` : `${pct}%`,
+          status && el('span', { class: `pk-status ${status}` }, status.toUpperCase()),
+          boosts.map(([stat, v]) => el('span', { class: `pk-boost ${v > 0 ? 'up' : 'down'}` }, `${v > 0 ? '+' : ''}${v} ${stat}`))))
+    }
+
+    // Six balls per side: who's still standing, and (for the foe) how many
+    // we've seen.
+    function balls(target, sideObj, total) {
+      const team = sideObj.team || []
+      const out = []
+      for (let i = 0; i < Math.max(total, team.length); i++) {
+        const p = team[i]
+        out.push(el('span', { class: `pk-ball ${!p ? 'unknown' : p.fainted ? 'out' : ''}`, title: p ? p.name : 'Not seen yet' }))
+      }
+      target.replaceChildren(...out)
+    }
+
+    function renderField() {
+      const mine = battle[side]
+      const theirs = battle[foeSide]
+      // A fainted Pokémon leaves its slot empty; keep showing it, greyed out,
+      // until the next one comes in.
+      const shown = s => s && (s.active[0] || (s.lastPokemon && s.lastPokemon.fainted ? s.lastPokemon : null))
+      const a = shown(mine)
+      const b = shown(theirs)
+      sprite(foeSprite, b, false)
+      sprite(meSprite, a, true)
+      infoBox(foeBox, b, false)
+      infoBox(meBox, a, true)
+      if (theirs) balls(foeTeam, theirs, theirs.totalPokemon || 6)
+      if (mine) balls(meTeam, mine, mine.totalPokemon || 6)
+    }
+
+    function moveButton(m, i) {
+      const move = PS.Dex.moves.get(m.id)
+      const type = move.type || 'Normal'
+      return el('button', {
+        type: 'button', class: 'pk-move', disabled: !!m.disabled || waiting,
+        style: `--type: ${TYPE_COLORS[type] || '#888'}`,
+        title: `${type} · ${move.category}${move.basePower ? ` · ${move.basePower} power` : ''}${move.accuracy === true ? '' : ` · ${move.accuracy}% accuracy`}\n${move.shortDesc || ''}`,
+        onClick: () => send(`move ${i + 1}${tera ? ' terastallize' : ''}`),
+      },
+        el('span', { class: 'pk-move-name' }, m.name || move.name),
+        el('span', { class: 'pk-move-meta' }, `${type}${m.maxpp ? ` · ${m.pp}/${m.maxpp}` : ''}`))
+    }
+
+    function teamButton(p, i, enabled) {
+      const id = PS.Dex.species.get(p.speciesForme).spriteid || PS.toID(p.speciesForme)
+      const frac = p.maxhp ? p.hp / p.maxhp : 0
+      return el('button', {
+        type: 'button', class: `pk-mon ${p.fainted ? 'out' : ''} ${p.active ? 'active' : ''}`, disabled: !enabled || waiting,
+        title: `${p.speciesForme}${p.item ? ` @ ${PS.Dex.items.get(p.item).name}` : ''}${p.ability ? ` · ${PS.Dex.abilities.get(p.ability).name}` : ''}${p.teraType ? ` · Tera ${p.teraType}` : ''}`,
+        onClick: () => send(`switch ${i + 1}`),
+      },
+        el('img', { src: `${SHOWDOWN_SPRITES}gen5/${id}.png`, alt: '', loading: 'lazy', onError: e => { e.target.style.visibility = 'hidden' } }),
+        el('span', { class: 'pk-mon-name' }, p.name),
+        el('span', { class: `pk-mon-hp ${hpClass(frac)}` }, p.fainted ? 'fainted' : `${Math.round(frac * 100)}%`))
+    }
+
+    function renderControls() {
+      if (result) {
+        controls.replaceChildren(el('div', { class: 'row pk-end' },
+          actions.again && !actions.guest && el('button', { type: 'button', class: 'primary', onClick: actions.again }, actions.online ? 'Rematch' : 'Battle again'),
+          actions.guest && el('p', { class: 'muted small' }, 'The host can start a rematch.'),
+          el('button', { type: 'button', onClick: actions.back }, '‹ Back')))
+        return
+      }
+      if (!request || request.requestType === 'wait' || waiting) {
+        controls.replaceChildren(el('div', { class: 'row pk-wait' },
+          el('p', { class: 'muted' }, request ? (waiting ? `Waiting for ${names.foe}…` : 'Waiting…') : 'Starting the battle…'),
+          el('button', { type: 'button', class: 'link', onClick: actions.back }, 'Leave')))
+        return
+      }
+      const team = (request.side && request.side.pokemon) || []
+      if (request.requestType === 'switch') {
+        controls.replaceChildren(
+          el('p', { class: 'pk-prompt' }, 'Choose a Pokémon to send in.'),
+          el('div', { class: 'pk-team' }, team.map((p, i) => teamButton(p, i, !p.active && !p.fainted))))
+        return
+      }
+      const active = request.active && request.active[0]
+      if (!active) return
+      const now = team.find(p => p.active)
+      const trapped = active.trapped || active.maybeTrapped
+      controls.replaceChildren(
+        el('p', { class: 'pk-prompt' }, `What will ${now ? now.name : 'your Pokémon'} do?`),
+        el('div', { class: 'pk-moves' }, active.moves.map(moveButton)),
+        active.canTerastallize && el('label', { class: 'pk-tera', style: `--type: ${TYPE_COLORS[active.canTerastallize] || '#888'}` },
+          el('input', { type: 'checkbox', checked: tera, onChange: e => { tera = e.target.checked } }),
+          ` Terastallize (${active.canTerastallize})`),
+        el('p', { class: 'muted small pk-switch-label' }, trapped ? 'You can\'t switch out right now.' : 'Switch'),
+        el('div', { class: 'pk-team' }, team.map((p, i) => teamButton(p, i, !trapped && !p.active && !p.fainted))))
+    }
+
+    function send(choice) {
+      if (waiting || result) return
+      waiting = true
+      tera = false
+      renderControls()
+      choose(choice)
+    }
+
+    // The log formatter writes **bold** and ||exact||rounded|| for HP; we show
+    // the rounded part, like the Showdown client does for the other side.
+    function addText(text) {
+      for (const raw of text.split('\n')) {
+        if (!raw.trim()) continue
+        const turn = /^== Turn (\d+) ==$/.exec(raw.trim())
+        if (turn) { log.append(el('p', { class: 'pk-turn' }, `Turn ${turn[1]}`)); continue }
+        const clean = raw.replace(/\|\|([^|]*)\|\|([^|]*)\|\|/g, '$2')
+        const parts = clean.trim().split('**')
+        log.append(el('p', { class: raw.startsWith('  ') ? 'minor' : '' }, parts.map((t, i) => (i % 2 ? el('strong', null, t) : t))))
+      }
+      while (log.children.length > 400) log.firstChild.remove()
+      log.scrollTop = log.scrollHeight
+    }
+
+    function feed(chunk) {
+      if (destroyed) return
+      for (const line of chunk.split('\n')) {
+        if (!line) continue
+        if (line.startsWith('|request|')) {
+          const json = line.slice(9)
+          if (!json) continue
+          request = PS.Protocol.parseRequest(json)
+          battle.update(request)
+          waiting = false
+          continue
+        }
+        if (line.startsWith('|error|')) {
+          addText(`  ${line.slice(7).replace(/^\[[^\]]*\]\s*/, '')}`)
+          waiting = false
+          continue
+        }
+        for (const { args, kwArgs } of PS.Protocol.parse(line)) {
+          let text = ''
+          try { text = fmt.formatText(args, kwArgs) } catch (e) { /* unformatted line */ }
+          battle.add(args, kwArgs)
+          if (text) addText(text)
+          if (args[0] === 'win') finish(args[1] === battle[side].name ? 'win' : 'lose', args[1])
+          if (args[0] === 'tie') finish('tie')
+        }
+      }
+      renderField()
+      renderControls()
+    }
+
+    function finish(kind, who) {
+      result = kind
+      banner.hidden = false
+      banner.replaceChildren(
+        el('p', { class: 'wordmark' }, kind === 'win' ? 'You won!' : kind === 'lose' ? `${who} won` : 'It\'s a tie'),
+        el('p', { class: 'muted small' }, kind === 'win' ? 'GG.' : kind === 'lose' ? 'Better luck next time.' : 'Nobody\'s left standing.'))
+    }
+
+    renderField()
+    renderControls()
+    return {
+      feed,
+      notice: text => addText(`  ${text}`),
+      destroy() { destroyed = true },
+    }
+  }
+
+  // Opened from an invite link with a name we already know: straight in.
+  if (opts && opts.code && name && canOnline) online(String(opts.code).toUpperCase(), 'guest')
+  else menu()
+
+  return {
+    stop() {
+      dead = true
+      endMatch()
+      leaveNet()
+    },
+  }
+}
+</script>

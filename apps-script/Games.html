@@ -1320,10 +1320,8 @@ const Arcade = (() => {
     }
   }
 
-  // ── Games on their own sites ──
-  // Pokémon Showdown breaks out of frames on purpose ("Please visit
-  // Showdown directly"), so its card opens a tab. Scribble, the draw-and-
-  // guess game, is in Scribble.html.
+  // Scribble (Scribble.html) and Pokémon Showdown (Showdown.html) live in
+  // their own files.
 
   const GAMES = [
     { id: 'snake', name: 'Snake', icon: '🐍', blurb: 'Eat, grow, don\'t bite yourself.', hint: 'Arrow keys / WASD, or swipe.', start: snake },
@@ -1336,7 +1334,7 @@ const Arcade = (() => {
     { id: 'memory', name: 'Memory', icon: '🃏', blurb: 'Find the eight pairs in as few moves as you can.', hint: 'Click or tap two cards.', start: memory, lowerIsBetter: true, unit: ' moves' },
     { id: 'doom', name: 'Doom', icon: '👹', blurb: 'The real thing: DoomPDF\'s engine, shareware episode one.', hint: 'Loads about 5 MB the first time. No sound.', start: doom, noScore: true },
     { id: 'scribble', name: 'Scribble', icon: '✏️', blurb: 'Draw and guess with friends, skribbl.io style, right here.', hint: 'Plays over your Supabase, like watch together. Make a room, then Invite. Switching to Search keeps you in the room.', start: scribble, noScore: true, noRestart: true },
-    { id: 'showdown', name: 'Pokémon Showdown', icon: '⚔️', blurb: 'Build a team and battle people online.', href: 'https://play.pokemonshowdown.com/', noScore: true },
+    { id: 'showdown', name: 'Pokémon Showdown', icon: '⚔️', blurb: 'Random battles on Showdown\'s own engine, vs the CPU or a friend.', hint: 'Gen 9 Random Battles. Battling a friend runs over your Supabase, like Scribble. Hover a move for what it does.', start: showdown, noScore: true, noRestart: true },
     { id: 'tictactoe', name: 'Tic-tac-toe', icon: '⭕', blurb: 'Beat the CPU as many rounds in a row as you can.', hint: 'You\'re ✕. Turns alternate who goes first.', start: tictactoe },
   ]
 
