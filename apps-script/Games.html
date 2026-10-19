@@ -1323,6 +1323,21 @@ const Arcade = (() => {
   // Scribble (Scribble.html) and Pokémon Showdown (Showdown.html) live in
   // their own files.
 
+  // Scribble and Pokémon Showdown come from their own files. If one isn't in
+  // the Apps Script project (or Index doesn't include it), its card says so
+  // instead of the whole arcade failing to load.
+  function fromFile(fn, file) {
+    if (typeof fn === 'function') return fn
+    return host => {
+      host.append(el('div', { class: 'card stack pk-menu' },
+        el('p', { class: 'name' }, `${file}.html is missing`),
+        el('p', { class: 'muted small' },
+          `Add it in the Apps Script editor with + → HTML, named ${file} (no .html), paste in ${file}.html, ` +
+          `and make sure Index has <?!= include('${file}') ?> before include('Games'). Then save and reload.`)))
+      return { stop() {} }
+    }
+  }
+
   const GAMES = [
     { id: 'snake', name: 'Snake', icon: '🐍', blurb: 'Eat, grow, don\'t bite yourself.', hint: 'Arrow keys / WASD, or swipe.', start: snake },
     { id: '2048', name: '2048', icon: '🔢', blurb: 'Slide and merge to 2048.', hint: 'Arrow keys / WASD, or swipe.', start: twenty48 },
@@ -1333,8 +1348,8 @@ const Arcade = (() => {
     { id: 'mines', name: 'Minesweeper', icon: '💣', blurb: 'Ten mines. Fastest clear wins.', hint: 'Click to dig, right-click or flag mode to flag.', start: mines, lowerIsBetter: true, unit: 's' },
     { id: 'memory', name: 'Memory', icon: '🃏', blurb: 'Find the eight pairs in as few moves as you can.', hint: 'Click or tap two cards.', start: memory, lowerIsBetter: true, unit: ' moves' },
     { id: 'doom', name: 'Doom', icon: '👹', blurb: 'The real thing: DoomPDF\'s engine, shareware episode one.', hint: 'Loads about 5 MB the first time. No sound.', start: doom, noScore: true },
-    { id: 'scribble', name: 'Scribble', icon: '✏️', blurb: 'Draw and guess with friends, skribbl.io style, right here.', hint: 'Plays over your Supabase, like watch together. Make a room, then Invite. Switching to Search keeps you in the room.', start: scribble, noScore: true, noRestart: true },
-    { id: 'showdown', name: 'Pokémon Showdown', icon: '⚔️', blurb: 'Random battles on Showdown\'s own engine, vs the CPU or a friend.', hint: 'Gen 9 Random Battles. Battling a friend runs over your Supabase, like Scribble. Hover a move for what it does.', start: showdown, noScore: true, noRestart: true },
+    { id: 'scribble', name: 'Scribble', icon: '✏️', blurb: 'Draw and guess with friends, skribbl.io style, right here.', hint: 'Plays over your Supabase, like watch together. Make a room, then Invite. Switching to Search keeps you in the room.', start: fromFile(typeof scribble === 'function' ? scribble : null, 'Scribble'), noScore: true, noRestart: true },
+    { id: 'showdown', name: 'Pokémon Showdown', icon: '⚔️', blurb: 'Random battles on Showdown\'s own engine, vs the CPU or a friend.', hint: 'Gen 9 Random Battles. Battling a friend runs over your Supabase, like Scribble. Hover a move for what it does.', start: fromFile(typeof showdown === 'function' ? showdown : null, 'Showdown'), noScore: true, noRestart: true },
     { id: 'tictactoe', name: 'Tic-tac-toe', icon: '⭕', blurb: 'Beat the CPU as many rounds in a row as you can.', hint: 'You\'re ✕. Turns alternate who goes first.', start: tictactoe },
   ]
 
