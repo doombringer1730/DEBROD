@@ -60,8 +60,10 @@ everyone else races to guess it, 2 to 12 players. It runs over the same
 Supabase Realtime as watch together, with nothing stored. **Create a room**,
 then **Invite** copies a `?scribble=CODE` link (in the web app) or the room
 code (in the doc). Friends sign in to your DEBROD and land in the room. The
-room's creator hosts: they set the rounds and draw time, and run the clock
-and scores. If they leave, the longest-present player takes over. The word
+room's creator hosts: they set the rounds and draw time, can add their own
+words (mixed in with the built-in list, or on their own), and run the clock
+and scores. Everyone picks an icon, and the board sizes itself to fit the
+screen. If they leave, the longest-present player takes over. The word
 only goes out as a salted hash until the turn ends, so nobody can read it
 off the network by accident, but it isn't cheat-proof. Your room survives a
 trip to **Search**; going back to the arcade's game list leaves it.

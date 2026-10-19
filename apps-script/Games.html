@@ -1444,7 +1444,7 @@ const Arcade = (() => {
 
   document.addEventListener('keydown', e => {
     if (!current || !visibleSince || !root.isConnected) return
-    if (e.target.closest && e.target.closest('input, textarea')) return
+    if (e.target.closest && e.target.closest('input, textarea, select')) return
     if (current.api.key) {
       if (current.api.key(e, true)) e.preventDefault()
       return

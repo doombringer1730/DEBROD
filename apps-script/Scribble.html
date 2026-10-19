@@ -36,6 +36,24 @@ const SCRIBBLE_WORDS = (
   'spaceship,planet,comet,black hole,earth,eclipse,tornado,iceberg,cave,quicksand,traffic light,stop sign'
 ).split(',').filter((w, i, all) => all.indexOf(w) === i)
 
+const SCRIBBLE_ICONS = ['🐱', '🐶', '🦊', '🐼', '🐸', '🐵', '🦁', '🐯', '🐨', '🐷', '🐙', '🦄',
+  '🐲', '🦖', '🐧', '🦉', '👾', '🤖', '👻', '🎃', '💀', '🤠', '🥷', '🧙', '🧛', '🧜', '🦸', '👽', '🍕', '🌵']
+
+// Host's own words: commas or new lines between them.
+function scribbleParseWords(text) {
+  const out = []
+  const seen = new Set()
+  for (const raw of String(text || '').split(/[,\n]/)) {
+    const w = raw.trim().replace(/\s+/g, ' ')
+    const key = w.toLowerCase()
+    if (w.length < 1 || w.length > 32 || seen.has(key)) continue
+    seen.add(key)
+    out.push(w)
+    if (out.length >= 300) break
+  }
+  return out
+}
+
 function scribble(host, ctx, opts) {
   const W = 800, H = 600
   const COLORS = ['#000000', '#ffffff', '#7f7f7f', '#c1c1c1', '#ef130b', '#ff7100', '#ffe400', '#00cc00',
@@ -63,6 +81,9 @@ function scribble(host, ctx, opts) {
 
   const me = randomId()
   let name = storedName() || ''
+  const ICON_KEY = 'ds_scribble_icon'
+  let icon = SCRIBBLE_ICONS[Math.floor(Math.random() * SCRIBBLE_ICONS.length)]
+  try { const saved = localStorage.getItem(ICON_KEY); if (SCRIBBLE_ICONS.includes(saved)) icon = saved } catch (e) { /* private mode */ }
   let sb = null, channel = null, code = ''
   let joinedAt = 0
   let players = []          // present, in join order: { id, name, joinedAt }
@@ -78,7 +99,8 @@ function scribble(host, ctx, opts) {
   let left = false
 
   // ── Words and hashes ──
-  const norm = w => w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  // Accents, case and punctuation don't matter; letters in any script do.
+  const norm = w => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 
   async function hashWord(turnId, word) {
     const bytes = new TextEncoder().encode(`${code}|${turnId}|${norm(word)}`)
@@ -86,16 +108,23 @@ function scribble(host, ctx, opts) {
     return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('')
   }
 
+  // The host's custom words: on their own, or mixed in with ours.
   function pickWords(n) {
+    const custom = (G && G.custom) || []
+    const only = !!(G && G.customOnly) && custom.length >= n
+    const pool = only ? custom : SCRIBBLE_WORDS
+    const any = list => list[Math.floor(Math.random() * list.length)]
     const out = []
+    if (!only && custom.length && Math.random() < 0.6) out.push(any(custom))
     while (out.length < n) {
-      const w = SCRIBBLE_WORDS[Math.floor(Math.random() * SCRIBBLE_WORDS.length)]
+      const w = any(pool)
       if (!out.includes(w)) out.push(w)
     }
     return out
   }
 
   const nameOf = id => (players.find(p => p.id === id) || {}).name || (G && G.names && G.names[id]) || 'Someone'
+  const iconOf = id => (players.find(p => p.id === id) || {}).icon || (G && G.icons && G.icons[id]) || '🙂'
   const remaining = () => Math.max(0, endsAt - Date.now())
 
   // ── The page ──
@@ -125,8 +154,15 @@ function scribble(host, ctx, opts) {
       if (!n) { nameInput.focus(); return null }
       name = n
       storeName(n)
+      try { localStorage.setItem(ICON_KEY, icon) } catch (e) { /* private mode */ }
       return n
     }
+    const picker = el('div', { class: 'sc-icons', role: 'radiogroup', 'aria-label': 'Your icon' })
+    const drawPicker = () => picker.replaceChildren(...SCRIBBLE_ICONS.map(i => el('button', {
+      type: 'button', class: `sc-icon ${i === icon ? 'on' : ''}`, role: 'radio', 'aria-checked': String(i === icon),
+      onClick: () => { icon = i; drawPicker() },
+    }, i)))
+    drawPicker()
     wrap.replaceChildren(el('div', { class: 'card stack sc-join' },
       el('div', null,
         el('p', { class: 'wordmark' }, 'Scribble'),
@@ -134,6 +170,7 @@ function scribble(host, ctx, opts) {
       el('p', { class: 'muted small' }, 'Take turns drawing a word while everyone else races to guess it. Two to twelve players.'),
       err && el('p', { class: 'error' }, err),
       el('label', { class: 'field' }, el('span', null, 'Your name'), nameInput),
+      el('div', { class: 'field' }, el('span', null, 'Your icon'), picker),
       el('button', { type: 'button', class: 'primary', onClick: () => { if (ok()) connect(newCode(), true) } }, 'Create a room'),
       el('form', { class: 'row', onSubmit: e => {
         e.preventDefault()
@@ -150,19 +187,33 @@ function scribble(host, ctx, opts) {
     return Array.from(crypto.getRandomValues(new Uint8Array(5)), b => abc[b % abc.length]).join('')
   }
 
+  const canvasWrap = el('div', { class: 'sc-canvas-wrap' }, canvas, overlay)
+  const board = el('div', { class: 'sc-board' }, canvasWrap, tools)
+
   function gameScreen() {
-    wrap.replaceChildren(
-      top,
-      playersEl,
-      el('div', { class: 'sc-board' }, el('div', { class: 'sc-canvas-wrap' }, canvas, overlay), tools),
-      el('div', { class: 'sc-chat' }, log, chatForm))
+    wrap.replaceChildren(top, playersEl, board, el('div', { class: 'sc-chat' }, log, chatForm))
     blank()
     renderTools()
+    fit()
   }
 
+  // As big as the board column allows, but short enough that the canvas,
+  // and the drawer's tools under it, fit on screen without scrolling.
+  function fit() {
+    if (!canvasWrap.isConnected || !board.clientWidth) return
+    if (window.innerWidth <= 820) { canvasWrap.style.width = ''; return }
+    const topPx = canvasWrap.getBoundingClientRect().top + window.scrollY
+    const below = (tools.hidden ? 0 : tools.offsetHeight + 8) + 44
+    const tall = window.innerHeight - topPx - below
+    canvasWrap.style.width = `${Math.round(Math.max(300, Math.min(board.clientWidth, (tall * 4) / 3)))}px`
+  }
+  const resizer = new ResizeObserver(() => fit())
+  resizer.observe(board)
+  window.addEventListener('resize', fit)
+
   // ── Chat log ──
-  function line(text, kind, who) {
-    const row = el('p', { class: kind || '' }, who && el('strong', null, `${who}: `), text)
+  function line(text, kind, who, face) {
+    const row = el('p', { class: kind || '' }, face && el('span', { class: 'sc-face', 'aria-hidden': 'true' }, face), who && el('strong', null, `${who}: `), text)
     log.append(row)
     while (log.children.length > 150) log.firstChild.remove()
     log.scrollTop = log.scrollHeight
@@ -216,7 +267,7 @@ function scribble(host, ctx, opts) {
       }
       if (status !== 'SUBSCRIBED') return
       joinedAt = joinedAt || Date.now()
-      await ch.track({ id: me, name, joinedAt })
+      await ch.track({ id: me, name, icon, joinedAt })
       send('hello', { from: me })
       timers.push(setTimeout(() => {
         if (G || left) return
@@ -302,7 +353,8 @@ function scribble(host, ctx, opts) {
       rounds: prev ? prev.rounds : 3,
       drawTime: prev ? prev.drawTime : 80,
       round: 0, turn: -1, turnId: '', order: [], drawer: null,
-      hash: '', shape: '', hints: {}, guessed: {}, gains: {}, scores: {}, word: '', names: {},
+      hash: '', shape: '', hints: {}, guessed: {}, gains: {}, scores: {}, word: '', names: {}, icons: {},
+      custom: prev ? prev.custom || [] : [], customOnly: prev ? !!prev.customOnly : false,
       remaining: 0,
     }
   }
@@ -319,7 +371,8 @@ function scribble(host, ctx, opts) {
 
   function hostPublish() {
     if (!isHost()) return
-    for (const p of players) G.names[p.id] = p.name
+    G.icons = G.icons || {}
+    for (const p of players) { G.names[p.id] = p.name; G.icons[p.id] = p.icon }
     G.seq++
     G.remaining = remaining()
     const copy = JSON.parse(JSON.stringify(G))
@@ -462,7 +515,7 @@ function scribble(host, ctx, opts) {
     if (!text || !G) return
     chatInput.value = ''
     const drawingNow = G.phase === 'drawing'
-    if (drawingNow && G.hash && (await hashWord(G.turnId, text)) === G.hash) {
+    if (drawingNow && G.hash && norm(text) && (await hashWord(G.turnId, text)) === G.hash) {
       if (G.drawer === me || G.guessed[me]) return sys('No giving the word away!', 'bad')
       myWord = { turnId: G.turnId, word: text }
       return emit('correct', { turnId: G.turnId })
@@ -478,9 +531,9 @@ function scribble(host, ctx, opts) {
     if (p.secret) {
       const inTheKnow = G && p.turnId === G.turnId && (G.drawer === me || G.guessed[me])
       if (!inTheKnow && p.from !== me) return
-      return line(text, 'secret', nameOf(p.from))
+      return line(text, 'secret', nameOf(p.from), iconOf(p.from))
     }
-    line(text, '', p.from === me ? 'You' : nameOf(p.from))
+    line(text, '', p.from === me ? 'You' : nameOf(p.from), iconOf(p.from))
   }
 
   // ── Drawing ──
@@ -688,7 +741,8 @@ function scribble(host, ctx, opts) {
     playersEl.replaceChildren(...list.map((p, i) => el('div', {
       class: `sc-player ${p.id === me ? 'me' : ''} ${G.guessed && G.guessed[p.id] ? 'guessed' : ''}`,
     },
-      el('span', { class: 'truncate' },
+      el('span', { class: 'sc-avatar', 'aria-hidden': 'true' }, p.icon || '🙂'),
+      el('span', { class: 'truncate grow' },
         inGame && el('span', { class: 'muted' }, `#${i + 1} `),
         p.name, p.id === me ? ' (you)' : '',
         p.id === G.hostId ? ' 👑' : '',
@@ -697,28 +751,79 @@ function scribble(host, ctx, opts) {
       G.phase === 'reveal' && G.gains[p.id] && el('span', { class: 'sc-gain' }, `+${G.gains[p.id]}`))))
   }
 
+  // The lobby is built once and then updated in place: it redraws on every
+  // state, and rebuilding it would eat whatever the host is typing.
+  let lobby = null
+
+  function lobbyPanel() {
+    const hosting = isHost()
+    if (!lobby || lobby.hosting !== hosting) {
+      const count = el('p', { class: 'muted small' })
+      const start = el('button', { type: 'button', class: 'primary', onClick: hostStart }, 'Start game')
+      const waiting = el('p')
+      const info = el('p', { class: 'muted small' })
+      const rounds = el('select', { onChange: e => { G.rounds = Number(e.target.value); hostPublish() } },
+        [2, 3, 4, 5, 6, 8].map(n => el('option', { value: n }, String(n))))
+      const time = el('select', { onChange: e => { G.drawTime = Number(e.target.value); hostPublish() } },
+        [40, 60, 80, 100, 120, 180].map(n => el('option', { value: n }, `${n}s`)))
+      let typing = null
+      const words = el('textarea', {
+        class: 'sc-words', rows: 3, maxlength: 6000,
+        placeholder: 'Your own words, separated by commas: inside jokes, names, places…',
+      })
+      const saveWords = () => {
+        clearTimeout(typing)
+        if (!isHost()) return
+        G.custom = scribbleParseWords(words.value)
+        hostPublish()
+      }
+      words.addEventListener('input', () => { clearTimeout(typing); typing = setTimeout(saveWords, 600) })
+      words.addEventListener('change', saveWords)
+      const only = el('input', { type: 'checkbox', onChange: e => { G.customOnly = e.target.checked; hostPublish() } })
+      const wordsNote = el('span', { class: 'muted small' })
+      lobby = {
+        hosting, count, start, waiting, info, rounds, time, words, only, wordsNote,
+        el: el('div', { class: 'stack sc-lobby' },
+          el('p', { class: 'wordmark' }, 'Scribble'),
+          count,
+          hosting
+            ? [
+              el('div', { class: 'row sc-settings' },
+                el('label', { class: 'field' }, el('span', null, 'Rounds'), rounds),
+                el('label', { class: 'field' }, el('span', null, 'Draw time'), time)),
+              el('label', { class: 'field sc-custom' }, el('span', null, 'Custom words'), words),
+              el('label', { class: 'sc-only' }, only, ' Use only my words ', wordsNote),
+              start,
+            ]
+            : [waiting, info],
+          el('button', { type: 'button', class: 'chip', onClick: invite }, 'Invite friends')),
+      }
+    }
+    const n = players.length
+    const custom = G.custom || []
+    lobby.count.textContent = `${n} player${n === 1 ? '' : 's'} here.${n < 2 ? ' You need at least two.' : ''}`
+    if (hosting) {
+      lobby.start.disabled = n < 2
+      lobby.rounds.value = String(G.rounds)
+      lobby.time.value = String(G.drawTime)
+      if (document.activeElement !== lobby.words && !lobby.words.value.trim()) lobby.words.value = custom.join(', ')
+      lobby.only.checked = !!G.customOnly
+      lobby.wordsNote.textContent = custom.length
+        ? `(${custom.length} word${custom.length === 1 ? '' : 's'}${G.customOnly && custom.length < 3 ? ', needs at least 3' : ''})`
+        : ''
+    } else {
+      lobby.waiting.textContent = `Waiting for ${iconOf(G.hostId)} ${nameOf(G.hostId)} to start…`
+      lobby.info.textContent = `${G.rounds} rounds · ${G.drawTime}s to draw${custom.length ? ` · ${custom.length} custom word${custom.length === 1 ? '' : 's'}${G.customOnly ? ' only' : ''}` : ''}`
+    }
+    return lobby.el
+  }
+
   function renderOverlay() {
     let content = null
     if (!G) {
       content = el('p', { class: 'muted' }, 'Connecting…')
     } else if (G.phase === 'lobby') {
-      const canStart = players.length >= 2
-      content = el('div', { class: 'stack sc-lobby' },
-        el('p', { class: 'wordmark' }, 'Scribble'),
-        el('p', { class: 'muted small' }, `${players.length} player${players.length === 1 ? '' : 's'} here. ${canStart ? '' : 'You need at least two.'}`),
-        isHost()
-          ? [
-            el('div', { class: 'row sc-settings' },
-              el('label', { class: 'field' }, el('span', null, 'Rounds'),
-                el('select', { onChange: e => { G.rounds = Number(e.target.value); hostPublish() } },
-                  [2, 3, 4, 5, 6, 8].map(n => el('option', { value: n, selected: n === G.rounds }, String(n))))),
-              el('label', { class: 'field' }, el('span', null, 'Draw time'),
-                el('select', { onChange: e => { G.drawTime = Number(e.target.value); hostPublish() } },
-                  [40, 60, 80, 100, 120, 180].map(n => el('option', { value: n, selected: n === G.drawTime }, `${n}s`))))),
-            el('button', { type: 'button', class: 'primary', disabled: !canStart, onClick: hostStart }, 'Start game'),
-          ]
-          : el('p', null, `Waiting for ${nameOf(G.hostId)} to start…`),
-        el('button', { type: 'button', class: 'chip', onClick: invite }, 'Invite friends'))
+      content = lobbyPanel()
     } else if (G.phase === 'choosing') {
       content = G.drawer === me && choices
         ? el('div', { class: 'stack' },
@@ -731,27 +836,30 @@ function scribble(host, ctx, opts) {
         el('p', { class: 'muted' }, 'The word was'),
         el('p', { class: 'wordmark' }, G.word || '…'),
         gains.length
-          ? el('div', { class: 'stack tight' }, gains.map(p => el('p', null, `${p.name} `, el('span', { class: 'sc-gain' }, `+${G.gains[p.id]}`))))
+          ? el('div', { class: 'stack tight' }, gains.map(p => el('p', null, `${p.icon || ''} ${p.name} `, el('span', { class: 'sc-gain' }, `+${G.gains[p.id]}`))))
           : el('p', { class: 'muted small' }, 'Nobody got it.'))
     } else if (G.phase === 'over') {
       const ranked = Object.keys(G.scores).sort((a, b) => G.scores[b] - G.scores[a])
       content = el('div', { class: 'stack' },
         el('p', { class: 'wordmark' }, 'Game over'),
         el('div', { class: 'stack tight sc-podium' }, ranked.slice(0, 8).map((id, i) => el('p', null,
-          `${['🥇', '🥈', '🥉'][i] || `#${i + 1}`} ${nameOf(id)} `, el('span', { class: 'mono' }, String(G.scores[id]))))),
+          `${['🥇', '🥈', '🥉'][i] || `#${i + 1}`} ${iconOf(id)} ${nameOf(id)} `, el('span', { class: 'mono' }, String(G.scores[id]))))),
         isHost()
           ? el('button', { type: 'button', class: 'primary', onClick: () => { G = newState(G); hostPublish() } }, 'Back to the lobby')
           : el('p', { class: 'muted small' }, `${nameOf(G.hostId)} can start another game.`))
     }
     overlay.hidden = !content
-    overlay.replaceChildren(...(content ? [content] : []))
+    if (!content || overlay.firstChild !== content) overlay.replaceChildren(...(content ? [content] : []))
+    if (G && G.phase !== 'lobby') lobby = null
   }
 
   function renderAll() {
     renderTop()
     renderPlayers()
     renderOverlay()
+    const toolsWere = tools.hidden
     renderTools()
+    if (tools.hidden !== toolsWere) fit()
     canvas.classList.toggle('can-draw', !!canDraw())
     chatInput.placeholder = canDraw() ? 'Chat (no spoilers)…' : 'Type your guess here…'
   }
@@ -761,7 +869,11 @@ function scribble(host, ctx, opts) {
   else joinScreen()
 
   return {
-    stop() { leave() },
+    stop() {
+      resizer.disconnect()
+      window.removeEventListener('resize', fit)
+      leave()
+    },
   }
 }
 </script>
