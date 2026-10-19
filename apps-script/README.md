@@ -12,6 +12,7 @@ keys live in the script's properties instead of environment variables.
 | `Index.html` | The page shell. |
 | `App.html` | The search, player and watch-together room (from `app/browser.tsx` and `app/watch/[room]/room.tsx`). |
 | `Games.html` | The arcade's games. |
+| `Scribble.html` | Scribble, the multiplayer draw-and-guess game. |
 | `Settings.html` | The keys form. |
 | `Styles.html` | `app/globals.css`, wrapped in `<style>`. |
 | `appsscript.json` | The project manifest. |
@@ -20,7 +21,7 @@ keys live in the script's properties instead of environment variables.
 
 1. Create a Google Doc, then open **Extensions → Apps Script**.
 2. Replace `Code.gs` with the one here. Add the HTML files with **+ → HTML**,
-   named `Index`, `App`, `Games`, `Settings` and `Styles` (no `.html`), and paste each
+   named `Index`, `App`, `Games`, `Scribble`, `Settings` and `Styles` (no `.html`), and paste each
    one in. To edit `appsscript.json`, turn on **Project Settings → Show
    "appsscript.json" manifest file in editor**.
 3. Save, reload the doc, and open **DEBROD → Settings**. Approve the
@@ -41,7 +42,7 @@ link.
 ## The arcade
 
 **Arcade** in the header, next to **Search**, opens Snake, 2048, Blocks,
-Breakout, Flap, Pong, Minesweeper, Memory, Doom, skribbl.io, Pokémon
+Breakout, Flap, Pong, Minesweeper, Memory, Doom, Scribble, Pokémon
 Showdown and Tic-tac-toe. They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
 timer shows how long you've been procrastinating. Switching back to
 **Search** pauses whatever's running.
@@ -54,11 +55,27 @@ uses, Shift runs, M shows the map, and Esc or <kbd>`</kbd> opens the menu. In
 the doc dialog, Esc may close the dialog, so use <kbd>`</kbd>. Phones get
 on-screen buttons. Doom's code is GPL v2: see [`doom/README.md`](doom/README.md).
 
-**skribbl.io** runs inside the arcade straight from skribbl.io. Make a
-private room there and send friends its invite link. Your room survives a
+**Scribble** is DEBROD's own skribbl.io: take turns drawing a word while
+everyone else races to guess it, 2 to 12 players. It runs over the same
+Supabase Realtime as watch together, with nothing stored. **Create a room**,
+then **Invite** copies a `?scribble=CODE` link (in the web app) or the room
+code (in the doc). Friends sign in to your DEBROD and land in the room. The
+room's creator hosts: they set the rounds and draw time, and run the clock
+and scores. If they leave, the longest-present player takes over. The word
+only goes out as a salted hash until the turn ends, so nobody can read it
+off the network by accident, but it isn't cheat-proof. Your room survives a
 trip to **Search**; going back to the arcade's game list leaves it.
+
 **Pokémon Showdown** blocks being shown inside other pages, so its card
 opens it in a new tab.
+
+### Built-in Supabase
+
+`DEFAULT_SUPABASE_URL` and `DEFAULT_SUPABASE_ANON_KEY` at the top of
+`Code.gs` are used when Settings leaves the Supabase fields blank, so a copy
+can ship ready for watch together and Scribble. They're empty here because
+this repo is public. Everyone who opens your DEBROD uses your settings, so
+friends never need a key of their own.
 
 ## How it differs from the site
 

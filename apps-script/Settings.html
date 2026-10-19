@@ -77,9 +77,10 @@
         if (old) old.remove()
         if ('value' in s) {
           input.value = s.value || ''
+          if (s.builtIn) input.placeholder = 'Built in (leave blank to use it)'
         } else {
           input.value = ''
-          input.placeholder = s.set ? '•••••••• saved' : 'Not set'
+          input.placeholder = s.set ? '•••••••• saved' : s.builtIn ? 'Built in (leave blank to use it)' : 'Not set'
           if (s.set) {
             const box = document.createElement('label')
             box.className = 'clear'

@@ -13,6 +13,14 @@ const TMDB = 'https://api.themoviedb.org/3'
 const DEFAULT_TORRENTIO = 'https://torrentio.strem.fun'
 const ROOM_TTL_SECONDS = 6 * 60 * 60 // CacheService's maximum
 
+// Built-in Supabase project for watch together and Scribble, used when
+// Settings leaves those blank. Fill these in to ship a copy that works for
+// everyone without setup. The publishable key is meant for browsers, but
+// keep a filled-in copy out of public repos anyway.
+const DEFAULT_SUPABASE_URL = ''
+const DEFAULT_SUPABASE_ANON_KEY = ''
+const BUILT_IN = { SUPABASE_URL: DEFAULT_SUPABASE_URL, SUPABASE_ANON_KEY: DEFAULT_SUPABASE_ANON_KEY }
+
 const SECRET_KEYS = ['TMDB_API_KEY', 'REALDEBRID_API_KEY', 'TORBOX_API_KEY', 'SUPABASE_ANON_KEY']
 const PLAIN_KEYS = ['SUPABASE_URL', 'TORRENTIO_URL', 'SITE_NAME']
 
@@ -36,6 +44,7 @@ function onInstall() {
 function openDebrod() {
   const t = HtmlService.createTemplateFromFile('Index')
   t.room = ''
+  t.scribble = ''
   t.web = ''
   const html = t.evaluate()
     .setWidth(1200)
@@ -53,12 +62,14 @@ function openSettings() {
 }
 
 // Run as a web app (Deploy → Web app): the same page full screen, with
-// ?page=settings for the keys and ?room=CODE for an invite link.
+// ?page=settings for the keys, ?room=CODE for a watch-together invite and
+// ?scribble=CODE for a Scribble one.
 function doGet(e) {
   const params = (e && e.parameter) || {}
   const page = params.page === 'settings' ? 'Settings' : 'Index'
   const t = HtmlService.createTemplateFromFile(page)
   t.room = String(params.room || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 32)
+  t.scribble = String(params.scribble || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8)
   t.web = 'web'
   return t.evaluate()
     .setTitle(page === 'Settings' ? `${siteName_()} settings` : siteName_())
@@ -97,8 +108,8 @@ function requireOwner_() {
 function getSettings() {
   requireOwner_()
   const out = {}
-  for (const k of SECRET_KEYS) out[k] = { set: !!prop_(k) }
-  for (const k of PLAIN_KEYS) out[k] = { set: !!prop_(k), value: prop_(k) }
+  for (const k of SECRET_KEYS) out[k] = { set: !!prop_(k), builtIn: !!BUILT_IN[k] }
+  for (const k of PLAIN_KEYS) out[k] = { set: !!prop_(k), value: prop_(k), builtIn: !!BUILT_IN[k] }
   return out
 }
 
@@ -121,8 +132,8 @@ function getConfig() {
     siteName: siteName_(),
     hasTmdb: !!prop_('TMDB_API_KEY'),
     hasDebrid: !!(prop_('REALDEBRID_API_KEY') || prop_('TORBOX_API_KEY')),
-    supabaseUrl: prop_('SUPABASE_URL'),
-    supabaseKey: prop_('SUPABASE_ANON_KEY'),
+    supabaseUrl: prop_('SUPABASE_URL') || DEFAULT_SUPABASE_URL,
+    supabaseKey: prop_('SUPABASE_ANON_KEY') || DEFAULT_SUPABASE_ANON_KEY,
     appUrl: appUrl_(),
   }
 }

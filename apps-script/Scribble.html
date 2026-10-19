@@ -1,0 +1,767 @@
+<script>
+// Scribble: draw and guess with friends, like skribbl.io, played through
+// DEBROD over the same Supabase Realtime broadcast and presence as watch
+// together. Nothing is stored: a room lives as long as someone is in it.
+//
+// Who does what:
+// - The host (the room's creator, then the longest-present player) runs
+//   the game: turns, the clock and the scores. It broadcasts the whole
+//   state on every change and every couple of seconds.
+// - The drawer picks the word and keeps it. Only a salted hash and the
+//   word's shape go out until the turn ends, and guesses are checked
+//   against the hash. That stops peeking, not a determined cheat, which
+//   is fine among friends.
+//
+// Loaded before Games.html (which lists it) and after App.html, whose el(),
+// S, randomId(), storedName(), storeName() and copyText() it uses.
+
+const SCRIBBLE_WORDS = (
+  'apple,banana,cherry,grapes,lemon,pineapple,watermelon,carrot,potato,mushroom,pizza,burger,hot dog,taco,sandwich,' +
+  'popcorn,cookie,cake,donut,ice cream,cheese,egg,bread,pancake,spaghetti,sushi,coffee,teapot,milkshake,lollipop,' +
+  'cat,dog,fish,bird,horse,cow,pig,sheep,chicken,duck,rabbit,mouse,snake,frog,turtle,lion,tiger,elephant,giraffe,' +
+  'monkey,zebra,bear,panda,penguin,owl,shark,whale,dolphin,octopus,crab,snail,spider,bee,butterfly,ladybug,bat,' +
+  'kangaroo,camel,dinosaur,dragon,unicorn,mermaid,ghost,robot,alien,vampire,zombie,wizard,pirate,ninja,knight,' +
+  'king,queen,princess,clown,astronaut,firefighter,doctor,chef,cowboy,superhero,snowman,scarecrow,skeleton,' +
+  'house,castle,tent,igloo,lighthouse,bridge,tower,pyramid,church,school,hospital,barn,windmill,fountain,' +
+  'car,bus,train,airplane,helicopter,rocket,boat,submarine,bicycle,skateboard,motorcycle,tractor,ambulance,' +
+  'sun,moon,star,cloud,rainbow,lightning,tornado,volcano,mountain,island,beach,river,waterfall,desert,forest,' +
+  'tree,flower,rose,cactus,leaf,mushroom,palm tree,pumpkin,snowflake,fire,tooth,eye,nose,ear,hand,foot,brain,' +
+  'heart,skull,mustache,beard,hat,crown,glasses,shoe,sock,shirt,dress,scarf,glove,umbrella,backpack,wallet,' +
+  'key,lock,door,window,ladder,chair,table,bed,lamp,clock,mirror,toilet,bathtub,sofa,fridge,oven,toaster,' +
+  'television,computer,phone,camera,headphones,microphone,guitar,piano,drum,trumpet,violin,radio,battery,' +
+  'light bulb,candle,scissors,hammer,saw,shovel,broom,bucket,paintbrush,pencil,book,newspaper,envelope,' +
+  'gift,balloon,kite,ball,basketball,football,trophy,medal,dice,chess,puzzle,yo-yo,teddy bear,doll,' +
+  'sword,shield,bow,arrow,cannon,bomb,treasure,map,compass,anchor,flag,tent,campfire,fishing rod,' +
+  'swing,slide,seesaw,roller coaster,ferris wheel,circus,magnet,telescope,microscope,globe,satellite,' +
+  'spaceship,planet,comet,black hole,earth,eclipse,tornado,iceberg,cave,quicksand,traffic light,stop sign'
+).split(',').filter((w, i, all) => all.indexOf(w) === i)
+
+function scribble(host, ctx, opts) {
+  const W = 800, H = 600
+  const COLORS = ['#000000', '#ffffff', '#7f7f7f', '#c1c1c1', '#ef130b', '#ff7100', '#ffe400', '#00cc00',
+    '#00b2ff', '#231fd3', '#a300ba', '#d37caa', '#a0522d', '#592f2a']
+  const SIZES = [4, 10, 20, 38]
+  const CHOOSE_MS = 15000      // to pick a word
+  const GRACE_MS = 3000        // before the host gives up on a silent drawer
+  const REVEAL_MS = 6000       // showing the word between turns
+  const ALONE_MS = 2500        // nobody sent a state: the room is new, we host
+  const BEAT_MS = 2000         // the host's state heartbeat
+  const FLUSH_MS = 60          // how often the drawer sends strokes
+  const MAX_PLAYERS = 12
+
+  const cfg = (typeof S !== 'undefined' && S.cfg) || {}
+  const wrap = el('div', { class: 'scribble' })
+  host.append(wrap)
+
+  if (!cfg.supabaseUrl || !cfg.supabaseKey || !window.supabase) {
+    wrap.append(el('div', { class: 'card stack sc-join' },
+      el('p', { class: 'name' }, 'Scribble needs Supabase'),
+      el('p', { class: 'muted small' },
+        'It plays over Supabase Realtime, like watch together. Add SUPABASE_URL and SUPABASE_ANON_KEY in DEBROD → Settings.')))
+    return { stop() {} }
+  }
+
+  const me = randomId()
+  let name = storedName() || ''
+  let sb = null, channel = null, code = ''
+  let joinedAt = 0
+  let players = []          // present, in join order: { id, name, joinedAt }
+  let G = null              // the game, as the host last sent it (or as we run it)
+  let seen = null           // the last state shown, to tell what changed (the host edits G in place)
+  let endsAt = 0            // local time the current phase ends
+  let myWord = null         // { turnId, word } while we draw, or once we've guessed it
+  let choices = null        // { turnId, words } while we choose
+  let hintsSent = 0
+  let history = [], pending = [], stroke = 0, pen = null
+  let tool = 'pen', color = '#000000', size = SIZES[1]
+  let timers = []
+  let left = false
+
+  // ── Words and hashes ──
+  const norm = w => w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+
+  async function hashWord(turnId, word) {
+    const bytes = new TextEncoder().encode(`${code}|${turnId}|${norm(word)}`)
+    const digest = await crypto.subtle.digest('SHA-256', bytes)
+    return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('')
+  }
+
+  function pickWords(n) {
+    const out = []
+    while (out.length < n) {
+      const w = SCRIBBLE_WORDS[Math.floor(Math.random() * SCRIBBLE_WORDS.length)]
+      if (!out.includes(w)) out.push(w)
+    }
+    return out
+  }
+
+  const nameOf = id => (players.find(p => p.id === id) || {}).name || (G && G.names && G.names[id]) || 'Someone'
+  const remaining = () => Math.max(0, endsAt - Date.now())
+
+  // ── The page ──
+  const top = el('div', { class: 'sc-top' })
+  const playersEl = el('div', { class: 'sc-players' })
+  const canvas = el('canvas', { class: 'sc-canvas', width: W, height: H })
+  const g = canvas.getContext('2d')
+  const overlay = el('div', { class: 'sc-overlay', hidden: true })
+  const tools = el('div', { class: 'sc-tools' })
+  const log = el('div', { class: 'sc-log', 'aria-live': 'polite' })
+  const chatInput = el('input', { placeholder: 'Type your guess here…', maxlength: 100 })
+  const chatForm = el('form', { class: 'row', onSubmit: e => { e.preventDefault(); submitChat() } },
+    chatInput, el('button', { type: 'submit', class: 'primary' }, 'Send'))
+
+  function blank() {
+    g.fillStyle = '#ffffff'
+    g.fillRect(0, 0, W, H)
+  }
+
+  function joinScreen(err) {
+    let draftName = name
+    let draftCode = (opts && opts.code) || ''
+    const nameInput = el('input', { value: draftName, maxlength: 24, placeholder: 'Your name', autofocus: true, onInput: e => { draftName = e.target.value } })
+    const codeInput = el('input', { value: draftCode, maxlength: 8, placeholder: 'Room code', onInput: e => { draftCode = e.target.value } })
+    const ok = () => {
+      const n = draftName.trim().slice(0, 24)
+      if (!n) { nameInput.focus(); return null }
+      name = n
+      storeName(n)
+      return n
+    }
+    wrap.replaceChildren(el('div', { class: 'card stack sc-join' },
+      el('div', null,
+        el('p', { class: 'wordmark' }, 'Scribble'),
+        el('p', { class: 'tagline' }, 'Draw · guess · repeat')),
+      el('p', { class: 'muted small' }, 'Take turns drawing a word while everyone else races to guess it. Two to twelve players.'),
+      err && el('p', { class: 'error' }, err),
+      el('label', { class: 'field' }, el('span', null, 'Your name'), nameInput),
+      el('button', { type: 'button', class: 'primary', onClick: () => { if (ok()) connect(newCode(), true) } }, 'Create a room'),
+      el('form', { class: 'row', onSubmit: e => {
+        e.preventDefault()
+        const c = draftCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+        if (!c) { codeInput.focus(); return }
+        if (ok()) connect(c, false)
+      } }, codeInput, el('button', { type: 'submit' }, 'Join'))))
+    const f = wrap.querySelector('[autofocus]')
+    if (f) f.focus()
+  }
+
+  function newCode() {
+    const abc = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+    return Array.from(crypto.getRandomValues(new Uint8Array(5)), b => abc[b % abc.length]).join('')
+  }
+
+  function gameScreen() {
+    wrap.replaceChildren(
+      top,
+      playersEl,
+      el('div', { class: 'sc-board' }, el('div', { class: 'sc-canvas-wrap' }, canvas, overlay), tools),
+      el('div', { class: 'sc-chat' }, log, chatForm))
+    blank()
+    renderTools()
+  }
+
+  // ── Chat log ──
+  function line(text, kind, who) {
+    const row = el('p', { class: kind || '' }, who && el('strong', null, `${who}: `), text)
+    log.append(row)
+    while (log.children.length > 150) log.firstChild.remove()
+    log.scrollTop = log.scrollHeight
+  }
+  const sys = (text, kind) => line(text, kind || 'sys')
+
+  // ── Network ──
+  function send(event, payload) {
+    if (channel) channel.send({ type: 'broadcast', event, payload })
+  }
+
+  // Broadcast doesn't echo to us, so run our own messages through the same
+  // handlers everyone else does.
+  function emit(event, payload) {
+    const p = Object.assign({ from: me }, payload)
+    send(event, p)
+    handle(event, p)
+  }
+
+  function connect(c, creating) {
+    code = c
+    left = false
+    gameScreen()
+    sys(creating ? `Room ${code} created. Invite your friends!` : `Joining room ${code}…`)
+    renderAll()
+    sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey)
+    channel = sb.channel(`ds-scribble:${code}`, {
+      config: { presence: { key: me }, broadcast: { self: false } },
+    })
+    const ch = channel
+    for (const ev of ['state', 'hello', 'picked', 'hint', 'reveal', 'correct', 'chat', 'draw', 'drawing']) {
+      ch.on('broadcast', { event: ev }, ({ payload }) => handle(ev, payload))
+    }
+    ch.on('presence', { event: 'sync' }, () => {
+      const list = Object.values(ch.presenceState()).map(metas => metas[metas.length - 1])
+      list.sort((a, b) => a.joinedAt - b.joinedAt || (a.id < b.id ? -1 : 1))
+      const before = new Set(players.map(p => p.id))
+      const now = new Set(list.map(p => p.id))
+      for (const p of list) if (!before.has(p.id) && p.id !== me && players.length) sys(`${p.name} joined.`)
+      for (const p of players) if (!now.has(p.id)) sys(`${p.name} left.`)
+      players = list
+      if (players.findIndex(p => p.id === me) >= MAX_PLAYERS) return leave('That room is full.')
+      takeOverIfNeeded()
+      renderAll()
+    })
+    ch.subscribe(async status => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        return sys(joinedAt
+          ? 'Connection trouble, retrying…'
+          : 'Can\'t reach Supabase. Check SUPABASE_URL and SUPABASE_ANON_KEY in DEBROD → Settings. Retrying…', 'bad')
+      }
+      if (status !== 'SUBSCRIBED') return
+      joinedAt = joinedAt || Date.now()
+      await ch.track({ id: me, name, joinedAt })
+      send('hello', { from: me })
+      timers.push(setTimeout(() => {
+        if (G || left) return
+        if (!creating) sys('Nobody else is here yet. You\'re hosting.')
+        G = newState()
+        hostPublish()
+      }, ALONE_MS))
+    })
+    timers.push(setInterval(hostTick, 250))
+    timers.push(setInterval(() => { if (isHost()) hostPublish() }, BEAT_MS))
+    timers.push(setInterval(flush, FLUSH_MS))
+    timers.push(setInterval(clientTick, 250))
+  }
+
+  function leave(why) {
+    left = true
+    for (const t of timers) { clearInterval(t); clearTimeout(t) }
+    timers = []
+    if (channel) { channel.untrack(); sb.removeChannel(channel) }
+    channel = null
+    sb = null
+    G = null
+    seen = null
+    players = []
+    myWord = null
+    choices = null
+    if (why !== undefined) joinScreen(why)
+  }
+
+  function handle(ev, p) {
+    if (left || !p) return
+    if (ev === 'state') return onState(p)
+    if (ev === 'hello') {
+      if (isHost()) hostPublish()
+      if (G && G.drawer === me && G.phase === 'drawing') {
+        flush()
+        send('drawing', { from: me, turnId: G.turnId, ops: history })
+      }
+      return
+    }
+    if (ev === 'chat') return onChat(p)
+    if (ev === 'draw' || ev === 'drawing') {
+      if (!G || p.turnId !== G.turnId || p.from !== G.drawer || p.from === me) return
+      if (ev === 'drawing') { history = []; blank() }
+      for (const op of p.ops || []) apply(op)
+      return
+    }
+    if (!isHost() || !G || p.turnId !== G.turnId) return
+    // Host side from here on.
+    if (ev === 'picked' && G.phase === 'choosing' && p.from === G.drawer) {
+      G.hash = String(p.hash || '')
+      G.shape = String(p.shape || '').slice(0, 40)
+      G.phase = 'drawing'
+      endsAt = Date.now() + G.drawTime * 1000
+      hostPublish()
+    } else if (ev === 'hint' && G.phase === 'drawing' && p.from === G.drawer) {
+      if (Number.isInteger(p.i) && typeof p.ch === 'string') G.hints[p.i] = p.ch.slice(0, 1)
+      hostPublish()
+    } else if (ev === 'reveal' && p.from === G.drawer) {
+      G.word = String(p.word || '').slice(0, 40)
+      hostPublish()
+    } else if (ev === 'correct' && G.phase === 'drawing' && p.from !== G.drawer && !G.guessed[p.from]) {
+      // Earlier guesses score more; the drawer earns a bit for each one.
+      const frac = remaining() / (G.drawTime * 1000)
+      const pts = 100 + Math.round((frac * 400) / 5) * 5
+      G.guessed[p.from] = pts
+      G.gains[p.from] = pts
+      G.scores[p.from] = (G.scores[p.from] || 0) + pts
+      G.gains[G.drawer] = (G.gains[G.drawer] || 0) + 50
+      G.scores[G.drawer] = (G.scores[G.drawer] || 0) + 50
+      hostPublish()
+    }
+  }
+
+  // ── Host ──
+  const isHost = () => !!G && G.hostId === me
+
+  function newState(prev) {
+    return {
+      seq: prev ? prev.seq : 0,
+      hostId: me,
+      phase: 'lobby',
+      rounds: prev ? prev.rounds : 3,
+      drawTime: prev ? prev.drawTime : 80,
+      round: 0, turn: -1, turnId: '', order: [], drawer: null,
+      hash: '', shape: '', hints: {}, guessed: {}, gains: {}, scores: {}, word: '', names: {},
+      remaining: 0,
+    }
+  }
+
+  // The host left: the longest-present player carries on with the last state.
+  function takeOverIfNeeded() {
+    if (!G || players.some(p => p.id === G.hostId)) return
+    const next = players[0]
+    if (!next || next.id !== me) return
+    G.hostId = me
+    sys('You\'re the host now.')
+    hostPublish()
+  }
+
+  function hostPublish() {
+    if (!isHost()) return
+    for (const p of players) G.names[p.id] = p.name
+    G.seq++
+    G.remaining = remaining()
+    const copy = JSON.parse(JSON.stringify(G))
+    send('state', Object.assign({ from: me }, copy))
+    onState(Object.assign({ from: me }, copy))
+  }
+
+  function hostStart() {
+    if (!isHost() || players.length < 2) return
+    const next = newState(G)
+    next.order = players.map(p => p.id)
+    next.scores = Object.fromEntries(next.order.map(id => [id, 0]))
+    next.round = 1
+    G = next
+    hostNextTurn()
+  }
+
+  function hostNextTurn() {
+    const present = new Set(players.map(p => p.id))
+    for (const p of players) if (!G.order.includes(p.id)) G.order.push(p.id) // late joiners draw later
+    let turn = G.turn + 1
+    let round = G.round
+    for (;;) {
+      if (turn >= G.order.length) { round++; turn = 0 }
+      if (round > G.rounds) {
+        G.phase = 'over'
+        endsAt = 0
+        return hostPublish()
+      }
+      if (present.has(G.order[turn])) break
+      turn++
+    }
+    Object.assign(G, {
+      round, turn, drawer: G.order[turn], turnId: randomId(), phase: 'choosing',
+      hash: '', shape: '', hints: {}, guessed: {}, gains: {}, word: '',
+    })
+    endsAt = Date.now() + CHOOSE_MS + GRACE_MS
+    hostPublish()
+  }
+
+  function hostEndTurn() {
+    G.phase = 'reveal'
+    endsAt = Date.now() + REVEAL_MS
+    hostPublish()
+  }
+
+  function hostTick() {
+    if (!isHost()) return
+    const present = new Set(players.map(p => p.id))
+    if (G.phase !== 'lobby' && G.phase !== 'over' && players.length < 2) {
+      sys('Everyone else left, so the game stopped.')
+      G = newState(G)
+      return hostPublish()
+    }
+    const now = Date.now()
+    if (G.phase === 'choosing') {
+      if (!present.has(G.drawer) || now >= endsAt) hostEndTurn()
+    } else if (G.phase === 'drawing') {
+      const guessers = players.filter(p => p.id !== G.drawer)
+      const everyone = guessers.length > 0 && guessers.every(p => G.guessed[p.id])
+      if (now >= endsAt || everyone || !present.has(G.drawer)) hostEndTurn()
+    } else if (G.phase === 'reveal') {
+      if (now >= endsAt) hostNextTurn()
+    }
+  }
+
+  // ── Everyone ──
+  function onState(next) {
+    if (seen && next.seq < seen.seq && next.hostId === seen.hostId) return
+    const prev = seen
+    seen = next
+    G = JSON.parse(JSON.stringify(next))
+    endsAt = Date.now() + (next.remaining || 0)
+    const sameTurn = prev && prev.turnId === next.turnId
+
+    if (!sameTurn) {
+      history = []
+      pending = []
+      pen = null
+      hintsSent = 0
+      choices = null
+      blank()
+      if (next.phase === 'choosing') sys(`${nameOf(next.drawer)} is choosing a word.`)
+    }
+    if (next.phase === 'drawing' && !(sameTurn && prev.phase === 'drawing')) {
+      sys(next.drawer === me ? 'Your turn to draw!' : `${nameOf(next.drawer)} is drawing.`)
+      // Joined mid-turn: ask the drawer for what's on the board so far.
+      if (!sameTurn && next.drawer !== me) send('hello', { from: me })
+    }
+    for (const id of Object.keys(next.guessed || {})) {
+      if (!sameTurn || !prev.guessed[id]) sys(id === me ? 'You guessed the word!' : `${nameOf(id)} guessed the word!`, 'good')
+    }
+    if (next.phase === 'reveal' && next.word && !(sameTurn && prev.word)) sys(`The word was “${next.word}”.`)
+    if (next.phase === 'over' && !(prev && prev.phase === 'over')) sys('Game over!')
+    if (next.phase === 'lobby' && prev && prev.phase !== 'lobby') sys('Back in the lobby.')
+
+    if (next.phase === 'choosing' && next.drawer === me && (!choices || choices.turnId !== next.turnId)) {
+      choices = { turnId: next.turnId, words: pickWords(3) }
+    }
+    if (next.phase === 'reveal' && next.drawer === me && !next.word && myWord && myWord.turnId === next.turnId) {
+      emit('reveal', { turnId: next.turnId, word: myWord.word })
+    }
+    renderAll()
+  }
+
+  async function choose(word) {
+    if (!choices || !G || G.phase !== 'choosing' || G.drawer !== me) return
+    const turnId = choices.turnId
+    choices = null
+    myWord = { turnId, word }
+    const hash = await hashWord(turnId, word)
+    emit('picked', { turnId, hash, shape: word.replace(/[^\s-]/g, '_') })
+    renderAll()
+  }
+
+  function clientTick() {
+    if (!G) return
+    renderTop()
+    if (G.phase === 'choosing' && G.drawer === me && choices && remaining() <= GRACE_MS) {
+      choose(choices.words[Math.floor(Math.random() * choices.words.length)])
+    }
+    // Give a letter away at half time and another at a quarter.
+    if (G.phase === 'drawing' && G.drawer === me && myWord && myWord.turnId === G.turnId) {
+      const frac = remaining() / (G.drawTime * 1000)
+      const letters = [...myWord.word].map((ch, i) => (/[\s-]/.test(ch) ? -1 : i)).filter(i => i >= 0)
+      const want = (frac <= 0.5 && letters.length >= 3 ? 1 : 0) + (frac <= 0.25 && letters.length >= 5 ? 1 : 0)
+      if (hintsSent < want) {
+        const open = letters.filter(i => !(i in G.hints))
+        if (open.length > 1) {
+          const i = open[Math.floor(Math.random() * open.length)]
+          emit('hint', { turnId: G.turnId, i, ch: myWord.word[i] })
+        }
+        hintsSent++
+      }
+    }
+  }
+
+  async function submitChat() {
+    const text = chatInput.value.trim().slice(0, 100)
+    if (!text || !G) return
+    chatInput.value = ''
+    const drawingNow = G.phase === 'drawing'
+    if (drawingNow && G.hash && (await hashWord(G.turnId, text)) === G.hash) {
+      if (G.drawer === me || G.guessed[me]) return sys('No giving the word away!', 'bad')
+      myWord = { turnId: G.turnId, word: text }
+      return emit('correct', { turnId: G.turnId })
+    }
+    // Once you know the word, only others who know it see your messages.
+    const secret = drawingNow && (G.drawer === me || !!G.guessed[me])
+    emit('chat', { text, secret, turnId: G.turnId })
+  }
+
+  function onChat(p) {
+    const text = String(p.text || '').slice(0, 100)
+    if (!text) return
+    if (p.secret) {
+      const inTheKnow = G && p.turnId === G.turnId && (G.drawer === me || G.guessed[me])
+      if (!inTheKnow && p.from !== me) return
+      return line(text, 'secret', nameOf(p.from))
+    }
+    line(text, '', p.from === me ? 'You' : nameOf(p.from))
+  }
+
+  // ── Drawing ──
+  function canDraw() {
+    return !!G && G.phase === 'drawing' && G.drawer === me && !!myWord && myWord.turnId === G.turnId
+  }
+
+  function paint(op) {
+    if (op.k === 'l') {
+      const p = op.p
+      g.strokeStyle = op.c
+      g.lineWidth = op.w
+      g.lineCap = 'round'
+      g.lineJoin = 'round'
+      g.beginPath()
+      g.moveTo(p[0], p[1])
+      for (let i = 2; i < p.length; i += 2) g.lineTo(p[i], p[i + 1])
+      if (p.length === 2) g.lineTo(p[0] + 0.01, p[1])
+      g.stroke()
+    } else if (op.k === 'f') {
+      fill(op.x, op.y, op.c)
+    }
+  }
+
+  // Consecutive pieces of one stroke join into a single line.
+  function record(list, op) {
+    const last = list[list.length - 1]
+    if (op.k === 'l' && last && last.k === 'l' && last.s === op.s &&
+        last.p[last.p.length - 2] === op.p[0] && last.p[last.p.length - 1] === op.p[1]) {
+      last.p.push(...op.p.slice(2))
+      return
+    }
+    list.push(op.k === 'l' ? Object.assign({}, op, { p: op.p.slice() }) : Object.assign({}, op))
+  }
+
+  function apply(op) {
+    if (!op || typeof op.k !== 'string') return
+    if (op.k === 'c') {
+      history = []
+      blank()
+    } else if (op.k === 'u') {
+      const last = history.reduce((m, o) => Math.max(m, o.s || 0), 0)
+      history = history.filter(o => o.s !== last)
+      redraw()
+    } else if (op.k === 'l' || op.k === 'f') {
+      record(history, op)
+      paint(op)
+    }
+  }
+
+  function redraw() {
+    blank()
+    for (const op of history) paint(op)
+  }
+
+  function local(op) {
+    apply(op)
+    record(pending, op)
+  }
+
+  function flush() {
+    if (!pending.length || !G) return
+    send('draw', { from: me, turnId: G.turnId, ops: pending })
+    pending = []
+  }
+
+  function hex(c) {
+    const n = parseInt(c.slice(1), 16)
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+  }
+
+  // Scanline flood fill, with a little tolerance for antialiased edges.
+  function fill(x, y, c) {
+    x = Math.floor(x)
+    y = Math.floor(y)
+    if (x < 0 || y < 0 || x >= W || y >= H) return
+    const img = g.getImageData(0, 0, W, H)
+    const d = img.data
+    const at = (x + y * W) * 4
+    const [tr, tg, tb] = [d[at], d[at + 1], d[at + 2]]
+    const [fr, fg, fb] = hex(c)
+    if (Math.abs(tr - fr) + Math.abs(tg - fg) + Math.abs(tb - fb) < 8) return
+    const near = i => Math.abs(d[i] - tr) + Math.abs(d[i + 1] - tg) + Math.abs(d[i + 2] - tb) <= 90
+    const done = new Uint8Array(W * H)
+    const stack = [x, y]
+    while (stack.length) {
+      const sy = stack.pop()
+      let sx = stack.pop()
+      while (sx > 0 && !done[sy * W + sx - 1] && near((sx - 1 + sy * W) * 4)) sx--
+      let up = false, down = false
+      for (; sx < W; sx++) {
+        const idx = sy * W + sx
+        if (done[idx] || !near(idx * 4)) break
+        done[idx] = 1
+        d[idx * 4] = fr; d[idx * 4 + 1] = fg; d[idx * 4 + 2] = fb; d[idx * 4 + 3] = 255
+        if (sy > 0) {
+          const u = idx - W
+          const ok = !done[u] && near(u * 4)
+          if (ok && !up) { stack.push(sx, sy - 1); up = true } else if (!ok) up = false
+        }
+        if (sy < H - 1) {
+          const dn = idx + W
+          const ok = !done[dn] && near(dn * 4)
+          if (ok && !down) { stack.push(sx, sy + 1); down = true } else if (!ok) down = false
+        }
+      }
+    }
+    g.putImageData(img, 0, 0)
+  }
+
+  function pos(e) {
+    const r = canvas.getBoundingClientRect()
+    return [
+      Math.max(0, Math.min(W, Math.round(((e.clientX - r.left) / r.width) * W))),
+      Math.max(0, Math.min(H, Math.round(((e.clientY - r.top) / r.height) * H))),
+    ]
+  }
+
+  canvas.addEventListener('pointerdown', e => {
+    if (!canDraw()) return
+    e.preventDefault()
+    const [x, y] = pos(e)
+    stroke++
+    if (tool === 'fill') return local({ k: 'f', s: stroke, x, y, c: color })
+    pen = { s: stroke, c: tool === 'eraser' ? '#ffffff' : color, w: size, x, y }
+    canvas.setPointerCapture(e.pointerId)
+    local({ k: 'l', s: pen.s, c: pen.c, w: pen.w, p: [x, y] })
+  })
+  canvas.addEventListener('pointermove', e => {
+    if (!pen || !canDraw()) return
+    const [x, y] = pos(e)
+    if (Math.abs(x - pen.x) + Math.abs(y - pen.y) < 2) return
+    local({ k: 'l', s: pen.s, c: pen.c, w: pen.w, p: [pen.x, pen.y, x, y] })
+    pen.x = x
+    pen.y = y
+  })
+  const lift = () => { pen = null }
+  canvas.addEventListener('pointerup', lift)
+  canvas.addEventListener('pointercancel', lift)
+
+  function renderTools() {
+    const show = canDraw()
+    tools.hidden = !show
+    if (!show) return
+    tools.replaceChildren(
+      el('div', { class: 'sc-swatches' }, COLORS.map(c => el('button', {
+        type: 'button', class: `sc-swatch ${c === color && tool !== 'eraser' ? 'on' : ''}`,
+        style: `background: ${c}`, 'aria-label': `Colour ${c}`,
+        onClick: () => { color = c; if (tool === 'eraser') tool = 'pen'; renderTools() },
+      }))),
+      el('div', { class: 'row sc-sizes' }, SIZES.map(s => el('button', {
+        type: 'button', class: `sc-tool ${s === size ? 'on' : ''}`, 'aria-label': `Brush size ${s}`,
+        onClick: () => { size = s; renderTools() },
+      }, el('span', { class: 'sc-dot', style: `width: ${Math.max(4, s / 2)}px; height: ${Math.max(4, s / 2)}px` })))),
+      el('div', { class: 'row' },
+        [['pen', '✏️ Pen'], ['eraser', '🧽 Eraser'], ['fill', '🪣 Fill']].map(([t, label]) => el('button', {
+          type: 'button', class: `sc-tool ${tool === t ? 'on' : ''}`, onClick: () => { tool = t; renderTools() },
+        }, label)),
+        el('button', { type: 'button', class: 'sc-tool', onClick: () => { flush(); local({ k: 'u' }); flush() } }, '↶ Undo'),
+        el('button', { type: 'button', class: 'sc-tool', onClick: () => { flush(); local({ k: 'c' }); flush() } }, '🗑 Clear')))
+  }
+
+  // ── Rendering ──
+  function wordView() {
+    if (!G || G.phase === 'lobby' || G.phase === 'over') return ''
+    if (G.phase === 'reveal' && G.word) return G.word
+    if (myWord && myWord.turnId === G.turnId && (G.drawer === me || G.guessed[me])) return myWord.word
+    if (!G.shape) return ''
+    return [...G.shape].map((ch, i) => (ch === '_' ? (G.hints[i] || '_') : ch)).join('')
+  }
+
+  function renderTop() {
+    if (!G) {
+      top.replaceChildren(el('span', { class: 'muted small' }, 'Connecting…'))
+      return
+    }
+    const timing = G.phase === 'drawing' || G.phase === 'choosing'
+    const word = wordView()
+    const letters = G.shape ? [...G.shape].filter(ch => ch === '_').length : 0
+    top.replaceChildren(
+      el('div', { class: 'row sc-meta' },
+        el('span', { class: 'pill' }, G.phase === 'lobby' ? 'Lobby' : G.phase === 'over' ? 'Game over' : `Round ${G.round}/${G.rounds}`),
+        timing && el('span', { class: 'sc-timer' }, `⏱ ${Math.max(0, Math.ceil((remaining() - (G.phase === 'choosing' ? GRACE_MS : 0)) / 1000))}`)),
+      el('div', { class: 'sc-word' },
+        word && el('span', null, word),
+        word && G.phase === 'drawing' && G.drawer !== me && !G.guessed[me] && el('sup', { class: 'muted small' }, ` ${letters}`)),
+      el('div', { class: 'row sc-meta' },
+        el('span', { class: 'pill' }, 'Room ', el('span', { class: 'mono' }, code)),
+        el('button', { type: 'button', class: 'chip', onClick: invite }, 'Invite')))
+  }
+
+  async function invite() {
+    const link = cfg.appUrl ? `${cfg.appUrl}?scribble=${code}` : code
+    const copied = await copyText(link)
+    sys(copied
+      ? (cfg.appUrl ? 'Invite link copied. Friends sign in and land right here.' : `Room code ${code} copied. Friends open Arcade → Scribble and enter it.`)
+      : `Send friends this: ${link}`)
+  }
+
+  function renderPlayers() {
+    if (!G) { playersEl.replaceChildren(); return }
+    const inGame = G.phase !== 'lobby'
+    const list = players.slice()
+    if (inGame) list.sort((a, b) => (G.scores[b.id] || 0) - (G.scores[a.id] || 0))
+    playersEl.replaceChildren(...list.map((p, i) => el('div', {
+      class: `sc-player ${p.id === me ? 'me' : ''} ${G.guessed && G.guessed[p.id] ? 'guessed' : ''}`,
+    },
+      el('span', { class: 'truncate' },
+        inGame && el('span', { class: 'muted' }, `#${i + 1} `),
+        p.name, p.id === me ? ' (you)' : '',
+        p.id === G.hostId ? ' 👑' : '',
+        inGame && p.id === G.drawer && G.phase !== 'over' ? ' ✏️' : ''),
+      inGame && el('span', { class: 'mono' }, String(G.scores[p.id] || 0)),
+      G.phase === 'reveal' && G.gains[p.id] && el('span', { class: 'sc-gain' }, `+${G.gains[p.id]}`))))
+  }
+
+  function renderOverlay() {
+    let content = null
+    if (!G) {
+      content = el('p', { class: 'muted' }, 'Connecting…')
+    } else if (G.phase === 'lobby') {
+      const canStart = players.length >= 2
+      content = el('div', { class: 'stack sc-lobby' },
+        el('p', { class: 'wordmark' }, 'Scribble'),
+        el('p', { class: 'muted small' }, `${players.length} player${players.length === 1 ? '' : 's'} here. ${canStart ? '' : 'You need at least two.'}`),
+        isHost()
+          ? [
+            el('div', { class: 'row sc-settings' },
+              el('label', { class: 'field' }, el('span', null, 'Rounds'),
+                el('select', { onChange: e => { G.rounds = Number(e.target.value); hostPublish() } },
+                  [2, 3, 4, 5, 6, 8].map(n => el('option', { value: n, selected: n === G.rounds }, String(n))))),
+              el('label', { class: 'field' }, el('span', null, 'Draw time'),
+                el('select', { onChange: e => { G.drawTime = Number(e.target.value); hostPublish() } },
+                  [40, 60, 80, 100, 120, 180].map(n => el('option', { value: n, selected: n === G.drawTime }, `${n}s`))))),
+            el('button', { type: 'button', class: 'primary', disabled: !canStart, onClick: hostStart }, 'Start game'),
+          ]
+          : el('p', null, `Waiting for ${nameOf(G.hostId)} to start…`),
+        el('button', { type: 'button', class: 'chip', onClick: invite }, 'Invite friends'))
+    } else if (G.phase === 'choosing') {
+      content = G.drawer === me && choices
+        ? el('div', { class: 'stack' },
+          el('p', { class: 'name' }, 'Choose a word'),
+          el('div', { class: 'row sc-choices' }, choices.words.map(w => el('button', { type: 'button', class: 'primary', onClick: () => choose(w) }, w))))
+        : el('p', { class: 'name' }, `${nameOf(G.drawer)} is choosing a word…`)
+    } else if (G.phase === 'reveal') {
+      const gains = players.filter(p => G.gains[p.id]).sort((a, b) => G.gains[b.id] - G.gains[a.id])
+      content = el('div', { class: 'stack' },
+        el('p', { class: 'muted' }, 'The word was'),
+        el('p', { class: 'wordmark' }, G.word || '…'),
+        gains.length
+          ? el('div', { class: 'stack tight' }, gains.map(p => el('p', null, `${p.name} `, el('span', { class: 'sc-gain' }, `+${G.gains[p.id]}`))))
+          : el('p', { class: 'muted small' }, 'Nobody got it.'))
+    } else if (G.phase === 'over') {
+      const ranked = Object.keys(G.scores).sort((a, b) => G.scores[b] - G.scores[a])
+      content = el('div', { class: 'stack' },
+        el('p', { class: 'wordmark' }, 'Game over'),
+        el('div', { class: 'stack tight sc-podium' }, ranked.slice(0, 8).map((id, i) => el('p', null,
+          `${['🥇', '🥈', '🥉'][i] || `#${i + 1}`} ${nameOf(id)} `, el('span', { class: 'mono' }, String(G.scores[id]))))),
+        isHost()
+          ? el('button', { type: 'button', class: 'primary', onClick: () => { G = newState(G); hostPublish() } }, 'Back to the lobby')
+          : el('p', { class: 'muted small' }, `${nameOf(G.hostId)} can start another game.`))
+    }
+    overlay.hidden = !content
+    overlay.replaceChildren(...(content ? [content] : []))
+  }
+
+  function renderAll() {
+    renderTop()
+    renderPlayers()
+    renderOverlay()
+    renderTools()
+    canvas.classList.toggle('can-draw', !!canDraw())
+    chatInput.placeholder = canDraw() ? 'Chat (no spoilers)…' : 'Type your guess here…'
+  }
+
+  // Opened from an invite link with a name we already know: straight in.
+  if (opts && opts.code && name) connect(String(opts.code).toUpperCase(), false)
+  else joinScreen()
+
+  return {
+    stop() { leave() },
+  }
+}
+</script>

@@ -1321,20 +1321,9 @@ const Arcade = (() => {
   }
 
   // ── Games on their own sites ──
-  // skribbl.io runs in a frame here. Pokémon Showdown breaks out of frames on
-  // purpose ("Please visit Showdown directly"), so its card opens a tab.
-  function framed(url, title) {
-    return host => {
-      const frame = el('iframe', { class: 'game-frame', src: url, title, allow: 'autoplay; fullscreen; clipboard-write' })
-      host.append(frame,
-        el('p', { class: 'muted small doom-status' },
-          el('a', { href: url, target: '_blank', rel: 'noreferrer' }, `Open ${title} in a new tab ↗`)))
-      return {
-        restart() { frame.src = url },
-        stop() { frame.src = 'about:blank' },
-      }
-    }
-  }
+  // Pokémon Showdown breaks out of frames on purpose ("Please visit
+  // Showdown directly"), so its card opens a tab. Scribble, the draw-and-
+  // guess game, is in Scribble.html.
 
   const GAMES = [
     { id: 'snake', name: 'Snake', icon: '🐍', blurb: 'Eat, grow, don\'t bite yourself.', hint: 'Arrow keys / WASD, or swipe.', start: snake },
@@ -1346,7 +1335,7 @@ const Arcade = (() => {
     { id: 'mines', name: 'Minesweeper', icon: '💣', blurb: 'Ten mines. Fastest clear wins.', hint: 'Click to dig, right-click or flag mode to flag.', start: mines, lowerIsBetter: true, unit: 's' },
     { id: 'memory', name: 'Memory', icon: '🃏', blurb: 'Find the eight pairs in as few moves as you can.', hint: 'Click or tap two cards.', start: memory, lowerIsBetter: true, unit: ' moves' },
     { id: 'doom', name: 'Doom', icon: '👹', blurb: 'The real thing: DoomPDF\'s engine, shareware episode one.', hint: 'Loads about 5 MB the first time. No sound.', start: doom, noScore: true },
-    { id: 'skribbl', name: 'skribbl.io', icon: '✏️', blurb: 'Draw and guess with friends, or with anyone.', hint: 'Runs from skribbl.io. Make a private room there and send your friends its invite link. Switching to Search keeps your room.', start: framed('https://skribbl.io/', 'skribbl.io'), noScore: true },
+    { id: 'scribble', name: 'Scribble', icon: '✏️', blurb: 'Draw and guess with friends, skribbl.io style, right here.', hint: 'Plays over your Supabase, like watch together. Make a room, then Invite. Switching to Search keeps you in the room.', start: scribble, noScore: true, noRestart: true },
     { id: 'showdown', name: 'Pokémon Showdown', icon: '⚔️', blurb: 'Build a team and battle people online.', href: 'https://play.pokemonshowdown.com/', noScore: true },
     { id: 'tictactoe', name: 'Tic-tac-toe', icon: '⭕', blurb: 'Beat the CPU as many rounds in a row as you can.', hint: 'You\'re ✕. Turns alternate who goes first.', start: tictactoe },
   ]
@@ -1388,7 +1377,7 @@ const Arcade = (() => {
     updateWasted()
   }
 
-  function play(game) {
+  function play(game, opts) {
     if (current) current.api.stop()
     const scoreEl = el('span', { class: 'mono' }, '0')
     const bestEl = el('span', { class: 'mono' }, fmtScore(game, bestOf(game)))
@@ -1447,10 +1436,10 @@ const Arcade = (() => {
         el('div', { class: 'row' },
           !game.noScore && el('span', { class: 'pill' }, 'Score ', scoreEl),
           !game.noScore && el('span', { class: 'pill' }, 'Best ', bestEl),
-          el('button', { type: 'button', class: 'chip', onClick: restart }, 'Restart'))),
+          !game.noRestart && el('button', { type: 'button', class: 'chip', onClick: restart }, 'Restart'))),
       el('div', { class: 'game-stage' }, host, toastEl, endEl),
       el('p', { class: 'muted small game-hint' }, game.hint))
-    current = { game, api: game.start(host, ctx) }
+    current = { game, api: game.start(host, ctx, opts) }
   }
 
   document.addEventListener('keydown', e => {
@@ -1484,6 +1473,11 @@ const Arcade = (() => {
   return {
     // The same element every time, so a game survives the page re-rendering.
     root,
+    // Straight into a game, e.g. from a Scribble invite link.
+    open(id, opts) {
+      const game = GAMES.find(x => x.id === id)
+      if (game) play(game, opts)
+    },
     show() {
       if (visibleSince) return
       visibleSince = Date.now()

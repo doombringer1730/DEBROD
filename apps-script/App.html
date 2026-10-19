@@ -309,8 +309,8 @@ function player(s) {
 }
 
 // The arcade page stays in the document while you're on Search, only
-// hidden, so a game in a frame (skribbl.io) doesn't reload when you come
-// back. Moving a frame in the page would reload it.
+// hidden, so a game carries on (Scribble keeps you in your room) and is
+// just as you left it when you come back.
 let arcadePage = null
 
 function render() {
@@ -869,6 +869,12 @@ call('getConfig')
     if (code) {
       S.roomCode = code
       joinRoom({ preventDefault() {} })
+    }
+    const scribbleCode = document.body.dataset.scribble
+    if (scribbleCode && !code) {
+      S.tab = 'arcade'
+      render()
+      Arcade.open('scribble', { code: scribbleCode })
     }
   })
   .catch(e => mount(el('main', { class: 'login' }, el('div', { class: 'card stack' }, el('p', { class: 'error' }, e.message)))))
