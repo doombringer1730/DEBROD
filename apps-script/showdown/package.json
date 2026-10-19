@@ -1,0 +1,19 @@
+{
+  "name": "debrod-showdown",
+  "private": true,
+  "description": "Pokémon Showdown's battle simulator bundled for DEBROD's arcade.",
+  "scripts": {
+    "build": "node build.mjs showdown.js"
+  },
+  "dependencies": {
+    "@pkmn/client": "0.7.3",
+    "@pkmn/data": "0.10.11",
+    "@pkmn/protocol": "0.7.3",
+    "@pkmn/randoms": "0.10.11",
+    "@pkmn/sim": "0.10.11",
+    "@pkmn/view": "0.7.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.2"
+  }
+}
