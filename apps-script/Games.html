@@ -1320,6 +1320,22 @@ const Arcade = (() => {
     }
   }
 
+  // ── Games on their own sites ──
+  // skribbl.io runs in a frame here. Pokémon Showdown breaks out of frames on
+  // purpose ("Please visit Showdown directly"), so its card opens a tab.
+  function framed(url, title) {
+    return host => {
+      const frame = el('iframe', { class: 'game-frame', src: url, title, allow: 'autoplay; fullscreen; clipboard-write' })
+      host.append(frame,
+        el('p', { class: 'muted small doom-status' },
+          el('a', { href: url, target: '_blank', rel: 'noreferrer' }, `Open ${title} in a new tab ↗`)))
+      return {
+        restart() { frame.src = url },
+        stop() { frame.src = 'about:blank' },
+      }
+    }
+  }
+
   const GAMES = [
     { id: 'snake', name: 'Snake', icon: '🐍', blurb: 'Eat, grow, don\'t bite yourself.', hint: 'Arrow keys / WASD, or swipe.', start: snake },
     { id: '2048', name: '2048', icon: '🔢', blurb: 'Slide and merge to 2048.', hint: 'Arrow keys / WASD, or swipe.', start: twenty48 },
@@ -1330,6 +1346,8 @@ const Arcade = (() => {
     { id: 'mines', name: 'Minesweeper', icon: '💣', blurb: 'Ten mines. Fastest clear wins.', hint: 'Click to dig, right-click or flag mode to flag.', start: mines, lowerIsBetter: true, unit: 's' },
     { id: 'memory', name: 'Memory', icon: '🃏', blurb: 'Find the eight pairs in as few moves as you can.', hint: 'Click or tap two cards.', start: memory, lowerIsBetter: true, unit: ' moves' },
     { id: 'doom', name: 'Doom', icon: '👹', blurb: 'The real thing: DoomPDF\'s engine, shareware episode one.', hint: 'Loads about 5 MB the first time. No sound.', start: doom, noScore: true },
+    { id: 'skribbl', name: 'skribbl.io', icon: '✏️', blurb: 'Draw and guess with friends, or with anyone.', hint: 'Runs from skribbl.io. Make a private room there and send your friends its invite link. Switching to Search keeps your room.', start: framed('https://skribbl.io/', 'skribbl.io'), noScore: true },
+    { id: 'showdown', name: 'Pokémon Showdown', icon: '⚔️', blurb: 'Build a team and battle people online.', href: 'https://play.pokemonshowdown.com/', noScore: true },
     { id: 'tictactoe', name: 'Tic-tac-toe', icon: '⭕', blurb: 'Beat the CPU as many rounds in a row as you can.', hint: 'You\'re ✕. Turns alternate who goes first.', start: tictactoe },
   ]
 
@@ -1358,9 +1376,13 @@ const Arcade = (() => {
           el('p', { class: 'muted small' }, 'Nothing good on? Waste a little time.')),
         wastedEl),
       el('div', { class: 'arcade-grid' },
-        GAMES.map(game => el('button', { type: 'button', class: 'game-card', onClick: () => play(game) },
+        GAMES.map(game => el('button', {
+          type: 'button',
+          class: 'game-card',
+          onClick: () => (game.href ? window.open(game.href, '_blank', 'noopener,noreferrer') : play(game)),
+        },
           el('span', { class: 'game-icon', 'aria-hidden': 'true' }, game.icon),
-          el('span', { class: 'name' }, game.name),
+          el('span', { class: 'name' }, game.name, game.href ? ' ↗' : ''),
           el('span', { class: 'muted small' }, game.blurb),
           !game.noScore && el('span', { class: 'mono small' }, `Best ${fmtScore(game, bestOf(game))}`)))))
     updateWasted()
@@ -1432,7 +1454,7 @@ const Arcade = (() => {
   }
 
   document.addEventListener('keydown', e => {
-    if (!current || !root.isConnected) return
+    if (!current || !visibleSince || !root.isConnected) return
     if (e.target.closest && e.target.closest('input, textarea')) return
     if (current.api.key) {
       if (current.api.key(e, true)) e.preventDefault()
@@ -1461,14 +1483,14 @@ const Arcade = (() => {
   hub()
   return {
     // The same element every time, so a game survives the page re-rendering.
-    view() {
-      if (!visibleSince) {
-        visibleSince = Date.now()
-        clearInterval(wastedTimer)
-        wastedTimer = setInterval(updateWasted, 1000)
-        if (current && current.api.resume) current.api.resume()
-      }
-      return root
+    root,
+    show() {
+      if (visibleSince) return
+      visibleSince = Date.now()
+      clearInterval(wastedTimer)
+      wastedTimer = setInterval(updateWasted, 1000)
+      updateWasted()
+      if (current && current.api.resume) current.api.resume()
     },
     // Leaving the tab pauses whatever's running.
     hide() {

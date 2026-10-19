@@ -308,13 +308,28 @@ function player(s) {
   return playerEl
 }
 
+// The arcade page stays in the document while you're on Search, only
+// hidden, so a game in a frame (skribbl.io) doesn't reload when you come
+// back. Moving a frame in the page would reload it.
+let arcadePage = null
+
 function render() {
   if (inRoom || !S.cfg) return
   if (!S.playing) playerEl = null
   const arcade = S.tab === 'arcade'
-  if (!arcade) Arcade.hide()
   backdrop.hidden = false
-  mount(el('main', { class: 'page' }, header(), arcade ? Arcade.view() : view()))
+  if (!arcadePage || !arcadePage.isConnected) arcadePage = el('main', { class: 'page' }, el('header'), Arcade.root)
+  arcadePage.firstElementChild.replaceWith(header())
+  arcadePage.hidden = !arcade
+  if (arcade) Arcade.show()
+  else Arcade.hide()
+
+  for (const n of [...app.children]) if (n !== arcadePage) n.remove()
+  const search = arcade ? null : el('main', { class: 'page' }, header(), view())
+  if (search) app.prepend(search)
+  if (!arcadePage.isConnected) app.append(arcadePage)
+  const f = (search || arcadePage).querySelector('[autofocus]')
+  if (f) f.focus()
 }
 
 function view() {

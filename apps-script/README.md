@@ -40,9 +40,9 @@ link.
 
 ## The arcade
 
-**Arcade** in the header, next to **Search**, opens ten games: Snake, 2048,
-Blocks, Breakout, Flap, Pong, Minesweeper, Memory, Doom and Tic-tac-toe.
-They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
+**Arcade** in the header, next to **Search**, opens Snake, 2048, Blocks,
+Breakout, Flap, Pong, Minesweeper, Memory, Doom, skribbl.io, Pokémon
+Showdown and Tic-tac-toe. They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
 timer shows how long you've been procrastinating. Switching back to
 **Search** pauses whatever's running.
 
@@ -53,6 +53,12 @@ live in [`doom/`](doom) and load from jsDelivr the first time you open it
 uses, Shift runs, M shows the map, and Esc or <kbd>`</kbd> opens the menu. In
 the doc dialog, Esc may close the dialog, so use <kbd>`</kbd>. Phones get
 on-screen buttons. Doom's code is GPL v2: see [`doom/README.md`](doom/README.md).
+
+**skribbl.io** runs inside the arcade straight from skribbl.io. Make a
+private room there and send friends its invite link. Your room survives a
+trip to **Search**; going back to the arcade's game list leaves it.
+**Pokémon Showdown** blocks being shown inside other pages, so its card
+opens it in a new tab.
 
 ## How it differs from the site
 
