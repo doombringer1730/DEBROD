@@ -896,6 +896,7 @@ function seaBattle(host, ctx, opts) {
     spec.fleets = {}
     spec.winner = null
     spec.begun = false
+    spec.ready = new Set()
   }
 
   function logShot(shooter, r) {
@@ -917,7 +918,12 @@ function seaBattle(host, ctx, opts) {
       return drawSpec()
     }
     if (!spec.gid || p.gid !== spec.gid) return
-    if (t === 'ready') return
+    if (t === 'ready') {
+      // Both fleets placed: the battle's on.
+      spec.ready.add(p.from)
+      if (spec.ready.has(spec.a) && spec.ready.has(spec.b)) spec.begun = true
+      return drawSpec()
+    }
     if (t === 'result') {
       const shooter = p.from === spec.a ? spec.b : spec.a
       logShot(shooter, p)
