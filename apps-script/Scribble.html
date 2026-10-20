@@ -63,8 +63,13 @@ function scribble(host, ctx, opts) {
   const GRACE_MS = 3000        // before the host gives up on a silent drawer
   const REVEAL_MS = 6000       // showing the word between turns
   const ALONE_MS = 2500        // nobody sent a state: the room is new, we host
-  const BEAT_MS = 2000         // the host's state heartbeat
-  const FLUSH_MS = 60          // how often the drawer sends strokes
+  // Every message counts toward Supabase's monthly allowance, once for each
+  // player who gets it, so these are as slow as still feels live. The host
+  // sends the state whenever it changes; the heartbeat only catches up
+  // anyone who missed one.
+  const BEAT_MS = 6000         // the host's state heartbeat during a game
+  const IDLE_BEAT_MS = 20000   // and in the lobby or after the game
+  const FLUSH_MS = 150         // how often the drawer sends strokes
   const MAX_PLAYERS = 12
 
   const cfg = (typeof S !== 'undefined' && S.cfg) || {}
@@ -94,6 +99,7 @@ function scribble(host, ctx, opts) {
   let choices = null        // { turnId, words } while we choose
   let hintsSent = 0
   let history = [], pending = [], stroke = 0, pen = null
+  let lastPublish = 0
   let tool = 'pen', color = '#000000', size = SIZES[1]
   let timers = []
   let left = false
@@ -277,7 +283,11 @@ function scribble(host, ctx, opts) {
       }, ALONE_MS))
     })
     timers.push(setInterval(hostTick, 250))
-    timers.push(setInterval(() => { if (isHost()) hostPublish() }, BEAT_MS))
+    timers.push(setInterval(() => {
+      if (!isHost() || !G) return
+      const idle = G.phase === 'lobby' || G.phase === 'over'
+      if (Date.now() - lastPublish >= (idle ? IDLE_BEAT_MS : BEAT_MS)) hostPublish()
+    }, 1000))
     timers.push(setInterval(flush, FLUSH_MS))
     timers.push(setInterval(clientTick, 250))
   }
@@ -376,6 +386,7 @@ function scribble(host, ctx, opts) {
     G.seq++
     G.remaining = remaining()
     const copy = JSON.parse(JSON.stringify(G))
+    lastPublish = Date.now()
     send('state', Object.assign({ from: me }, copy))
     onState(Object.assign({ from: me }, copy))
   }
@@ -670,7 +681,7 @@ function scribble(host, ctx, opts) {
     pen.x = x
     pen.y = y
   })
-  const lift = () => { pen = null }
+  const lift = () => { pen = null; flush() }
   canvas.addEventListener('pointerup', lift)
   canvas.addEventListener('pointercancel', lift)
 
