@@ -40,6 +40,7 @@ function partyRoom(game, code, me, info, on) {
   let closed = false
   let subscribed = false
   let players = []
+  let extraInfo = info
   channel.on('broadcast', { event: 'm' }, ({ payload }) => {
     if (!closed && payload && typeof payload.t === 'string') on.message(payload.t, payload)
   })
@@ -55,10 +56,13 @@ function partyRoom(game, code, me, info, on) {
       if (!subscribed && on.error) on.error('Can\'t reach Supabase. Check SUPABASE_URL and SUPABASE_ANON_KEY in DEBROD → Settings.')
       return
     }
-    if (status !== 'SUBSCRIBED' || subscribed) return
+    if (status !== 'SUBSCRIBED') return
+    // Re-announce on every (re)subscribe: after a reconnect presence starts
+    // empty, and without this we'd vanish from the room while still in it.
+    const first = !subscribed
     subscribed = true
-    await channel.track(Object.assign({ id: me, joinedAt }, info))
-    if (on.ready) on.ready()
+    await channel.track(Object.assign({ id: me, joinedAt }, extraInfo))
+    if (first && on.ready) on.ready()
   })
   return {
     code,
@@ -68,7 +72,10 @@ function partyRoom(game, code, me, info, on) {
     },
     players: () => players,
     // Updates what everyone sees about us in presence (an icon, a name).
-    track(extra) { if (!closed && subscribed) channel.track(Object.assign({ id: me, joinedAt }, info, extra)) },
+    track(extra) {
+      extraInfo = Object.assign({}, info, extra)
+      if (!closed && subscribed) channel.track(Object.assign({ id: me, joinedAt }, extraInfo))
+    },
     close() {
       closed = true
       try { channel.untrack(); sb.removeChannel(channel) } catch (e) { /* already gone */ }

@@ -77,6 +77,7 @@ function seaBattle(host, ctx, opts) {
   const RESEND_MS = 3000    // an unanswered shot goes again
   const READY_MS = 4000     // and so does 'ready', until the other side has it
   const CPU_MS = 750
+  const GONE_MS = 12000     // how long the other player can drop out before the game ends
   const REC_KEY = 'ds_sea_record'
   const LEVEL_KEY = 'ds_sea_level'
   const me = randomId()
@@ -430,7 +431,7 @@ function seaBattle(host, ctx, opts) {
     let text = ''
     let tone = ''
     if (g.over === 'won') { text = 'You won!'; tone = 'good' } else if (g.over === 'lost') { text = `${foeName()} won`; tone = 'bad' } else if (g.over === 'left') { text = `${foeName()} left`; tone = 'bad' } else if (!g.begun) text = g.ready ? `Waiting for ${foeName()} to place their fleet…` : 'Place your fleet'
-    else if (g.turn === 'me') { text = `Your turn: fire at their waters${g.deadline ? ` · ⏱ ${secsLeft(g.deadline)}s` : ''}`; tone = 'mine' } else if (g.turn === 'wait') text = 'Firing…'
+    else if (g.goneTimer) { text = `${foeName()} dropped out. Waiting for them…`; tone = 'bad' } else if (g.turn === 'me') { text = `Your turn: fire at their waters${g.deadline ? ` · ⏱ ${secsLeft(g.deadline)}s` : ''}`; tone = 'mine' } else if (g.turn === 'wait') text = 'Firing…'
     else text = `${foeName()} is aiming…${g.peerDeadline ? ` · ⏱ ${secsLeft(g.peerDeadline)}s` : ''}`
     v.status.textContent = text
     v.status.className = `sea-status grow ${tone}`
@@ -456,15 +457,17 @@ function seaBattle(host, ctx, opts) {
         ? el('p', { class: 'sea-fair bad' }, `⚠ ${foeName()}'s answers didn't match the fleet they revealed.`)
         : el('p', { class: 'sea-fair' }, `Checking ${foeName()}'s fleet…`))
     const againLabel = g.mode === 'online' && g.again ? `Waiting for ${foeName()}…` : 'Play again'
+    const peerHere = g.mode !== 'online' || (room && room.list.some(p => p.id === g.peer.id))
     return el('div', { class: 'sea-end' },
       el('p', { class: 'wordmark' }, won ? 'You won!' : g.over === 'left' ? `${foeName()} left` : `${foeName()} won`),
       g.over !== 'left' && el('p', { class: 'muted small' }, won
         ? `Sunk their whole fleet in ${g.fired} shots (${g.fired ? Math.round((g.hits / g.fired) * 100) : 0}% accuracy).`
         : `They needed ${g.theirFired} shots. Their ships are shown dashed.`),
-      g.over === 'left' && el('p', { class: 'muted small' }, 'So this game is over. Stay here and a new one starts when someone joins.'),
+      g.over === 'left' && el('p', { class: 'muted small' }, 'So this game is over. You can play whoever\'s next in the room, or wait for someone to join.'),
       fair,
       el('div', { class: 'row' },
-        g.over !== 'left' && el('button', { type: 'button', class: 'primary', disabled: g.mode === 'online' && g.again, onClick: playAgain }, againLabel),
+        g.over !== 'left' && peerHere && el('button', { type: 'button', class: 'primary', disabled: g.mode === 'online' && g.again, onClick: playAgain }, againLabel),
+        g.mode === 'online' && !peerHere && el('button', { type: 'button', class: 'primary', onClick: newOpponent }, 'New game'),
         el('button', { type: 'button', onClick: () => menu() }, 'Menu')))
   }
 
@@ -629,15 +632,26 @@ function seaBattle(host, ctx, opts) {
 
   function onPresence(list) {
     room.list = list
-    if (!list.some(p => p.id === me)) return
+    // Dropped from the room (a reconnect can do that): say we're here again.
+    if (!list.some(p => p.id === me)) { room.track({}); return }
     const pair = list.slice(0, 2)
     const first = pair[0] && pair[0].id === me
-    // Our opponent left: this game is over.
-    if (game && game.mode === 'online' && !game.over && game.peer && !list.some(p => p.id === game.peer.id)) {
-      cancel(game.readyTimer)
-      if (game.pending) cancel(game.pending.timer)
-      if (screen !== 'battle') battleScreen()
-      finish('left')
+    // Our opponent vanished: give them a moment (a blip in the connection
+    // looks the same), then call the game.
+    const g = game
+    if (g && g.mode === 'online' && !g.over && g.peer) {
+      const here = list.some(p => p.id === g.peer.id)
+      if (!here && !g.goneTimer) {
+        g.goneTimer = later(() => {
+          g.goneTimer = null
+          if (game !== g || g.over || (room && room.list.some(p => p.id === g.peer.id))) return
+          cancel(g.readyTimer)
+          if (g.pending) cancel(g.pending.timer)
+          if (screen !== 'battle') battleScreen()
+          finish('left')
+        }, GONE_MS)
+      } else if (here && g.goneTimer) { cancel(g.goneTimer); g.goneTimer = null }
+      if (screen === 'battle') drawBattle()
     }
     const playing = pair.some(p => p.id === me)
     if (!playing) {
@@ -645,16 +659,22 @@ function seaBattle(host, ctx, opts) {
       return
     }
     if (spec) { spec = null }
-    if (pair.length < 2) {
-      if (!game || game.over === 'left') {
-        if (screen !== 'battle' || !game) roomCard('Waiting for someone to join…')
-      }
-      return
-    }
+    if (game) return
+    if (pair.length < 2) return roomCard('Waiting for someone to join…')
     const other = pair[first ? 1 : 0]
-    // The dealer starts a game with whoever's here, unless one's going.
-    if (first && (!game || (game.over === 'left') || (game.peer && game.peer.id !== other.id && game.over))) deal(other)
-    else if (!first && !game && screen !== 'room-wait') { screen = 'room-wait'; roomCard(`Waiting for ${other.name} to start…`) }
+    // The dealer starts a game with whoever's here; after that, a new
+    // opponent waits for someone to press New game.
+    if (first) deal(other)
+    else if (screen !== 'room-wait') { screen = 'room-wait'; roomCard(`Waiting for ${other.name} to start…`) }
+  }
+
+  // After the other player's gone: a game with whoever's next in the room.
+  function newOpponent() {
+    if (!room) return menu()
+    if (game) { cancel(game.shotTimer); cancel(game.readyTimer); cancel(game.goneTimer) }
+    game = null
+    screen = 'room'
+    onPresence(room.list)
   }
 
   function deal(other) {

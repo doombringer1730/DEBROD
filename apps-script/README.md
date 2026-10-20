@@ -62,8 +62,8 @@ any key skips it, and it's off for anyone with reduced motion turned on.
 
 ## The arcade
 
-**Arcade** in the header, next to **Search**, opens Snake, 2048, Blocks,
-Breakout, Flap, Pong, Minesweeper, Memory, Star Sling, Doom, Scribble,
+**Arcade** in the header opens Snake, 2048, Blocks, Breakout, Flap, Pong,
+Minesweeper, Memory, Star Sling, Doom, Scribble, Color Clash, Sea Battle,
 Pokémon Showdown and Tic-tac-toe. They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
 timer shows how long you've been procrastinating. Switching back to
 **Search** pauses whatever's running.
@@ -90,6 +90,26 @@ the same layout. Run out of heroes and you can retry the level from the
 score you came in with, or ask for a new layout of it.
 It's a fan tribute with its own names and art, not the original game or
 its characters, and isn't made by or affiliated with Rovio or Lucasfilm.
+
+**Color Clash** is the colour-matching card game: 108 cards with Skips,
+Reverses, +2s, Wilds and Wild +4s (only when you hold none of the current
+colour), an optional "stack +2/+4" rule, and **Last card!**, which anyone
+can catch you forgetting for +2. Rounds score the cards left in everyone
+else's hand; first to 500 wins. Play up to five CPUs, or 2 to 6 people
+online (**Invite** gives a `?cards=CODE` link): the room's creator runs the
+game, the CPU takes empty seats and anyone who leaves (they get the seat
+back if they return), someone else takes over if the host leaves, and each
+turn has a 30-second clock. Like Showdown, it isn't cheat-proof.
+
+**Sea Battle** is the hide-your-fleet grid game: place five ships (R
+rotates, or Random), then take turns firing. Play the CPU on Easy, Normal
+(hunts, then finishes ships off) or Hard (works out where ships can still
+be), or a friend online with a `?sea=CODE` link, with anyone else
+watching. Online, each fleet stays on its owner's page: shots and answers
+go back and forth, and at the end both fleets are revealed and checked
+against a fingerprint sent at the start, so you'll see "✔ Fair game" or
+a warning. There's a 30-second shot clock, and rematches alternate who
+fires first.
 
 **Doom** is [DoomPDF](https://github.com/ading2210/doompdf)'s engine, taken
 out of the PDF and drawn on a canvas, with the shareware episode. Its files
@@ -171,6 +191,18 @@ Sprites and sound come from Showdown's own servers.
 can ship ready for watch together and Scribble. They're empty here because
 this repo is public. Everyone who opens your DEBROD uses your settings, so
 friends never need a key of their own.
+
+## Study
+
+**Study** is Hiranda's old Study section (as it was before it became
+Grow), for one person and saved in this browser: assignments with due
+dates ("2d overdue", "due today", "in 4 days"), turned in once for XP and
+coins, on a month calendar; flashcard sets you can paste in, studied with
+Learn, Write, Quiz, Match, Flashcards or spaced-repetition Review; and
+health, coins with a daily cap, a weekly XP goal, an activity log,
+personal bests and a reward shop to spend coins in. **Export** saves a
+backup file and **Import** loads one, so you can move it to another
+browser.
 
 ## How it differs from the site
 
