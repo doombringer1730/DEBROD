@@ -2115,7 +2115,8 @@ function showdown(host, ctx, opts) {
         `<script type="text/plain" class="battle-log-data">${data}</` + 'script>\n</div>\n' +
         `<script>let daily = Math.floor(Date.now()/1000/60/60/24);document.write('<script src="${SHOWDOWN_SITE}js/replay-embed.js?version'+daily+'"></'+'script>');</` + 'script>\n'
       const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
-      const a = el('a', { href: url, download: `${info.format}-${four ? SHOWDOWN_FOUR.map(s => PS.toID(nameOf(s))).join('-') : `${PS.toID(info.me)}-${PS.toID(info.foe)}`}.html` })
+      // _self: the page's <base target="_top"> would otherwise turn the download into a navigation.
+      const a = el('a', { href: url, target: '_self', download: `${info.format}-${four ? SHOWDOWN_FOUR.map(s => PS.toID(nameOf(s))).join('-') : `${PS.toID(info.me)}-${PS.toID(info.foe)}`}.html` })
       document.body.append(a)
       a.click()
       a.remove()
