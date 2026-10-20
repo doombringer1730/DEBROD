@@ -1,5 +1,7 @@
-// Bundles Showdown's simulator for the browser. Learnsets and legality only
-// matter for checking hand-built teams, so random battles don't need them.
+// Bundles Showdown's simulator for the browser. Gen 9's learnsets stay in
+// for the team validator; older generations' copies (and Pokémon GO data)
+// only matter for checking teams in those generations, which the arcade
+// doesn't offer.
 import * as esbuild from 'esbuild'
 
 const stubs = {
@@ -23,7 +25,7 @@ await esbuild.build({
   plugins: [{
     name: 'stub-unneeded-data',
     setup(build) {
-      build.onLoad({ filter: /@pkmn[\\/]sim[\\/].*[\\/](learnsets|legality|pokemongo)\.mjs$/ }, args => ({
+      build.onLoad({ filter: /@pkmn[\\/]sim[\\/].*([\\/]mods[\\/][^\\/]+[\\/](learnsets|legality)|[\\/]pokemongo)\.mjs$/ }, args => ({
         contents: stubs[args.path.split(/[\\/]/).pop()],
         loader: 'js',
       }))
