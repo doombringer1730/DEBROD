@@ -24,6 +24,7 @@ const SHOWDOWN_FORMATS = [
   ['DEBROD exclusives', [
     ['debrod-draft', 'Draft Battle (snake draft, then battle)'],
     ['debrod-draftdoubles', 'Draft Doubles'],
+    ['debrod-draftfreeforall', 'Draft Free-for-all (4 players)'],
     ['debrod-tower', 'Battle Tower (a streak against the CPU)'],
   ]],
   ['4 players', [
@@ -71,12 +72,15 @@ const SHOWDOWN_SIM_FORMATS = {
   'debrod-draft': `gen9customgame@@@${SHOWDOWN_CLAUSES}`,
   'debrod-draftdoubles': 'gen9doublescustomgame@@@Species Clause,OHKO Clause,Evasion Moves Clause',
   'debrod-tower': `gen9customgame@@@${SHOWDOWN_CLAUSES}`,
+  'debrod-draftfreeforall': 'gen9freeforallrandombattle',
 }
 const SHOWDOWN_TOWER_TRAINERS = ['Ace Trainer Nova', 'Rocker Vex', 'Psychic Luna', 'Black Belt Kenji', 'Ace Trainer Iris', 'Dragon Tamer Ryu', 'Tower Tycoon Orion']
 const SHOWDOWN_EMOTES = ['🔥', '😂', '😱', '👏', '💀', '🎉', '🤔', '😤']
 const SHOWDOWN_DRAFT_POOL = 16
 const SHOWDOWN_DRAFT_PICKS = 6
 const SHOWDOWN_DRAFT_MS = 45000
+// Four drafting take four each from a bigger pool.
+const SHOWDOWN_DRAFT_FOUR = { pool: 24, picks: 4 }
 const SHOWDOWN_MUSIC = ['bw-trainer', 'bw-rival', 'bw2-rival', 'dpp-trainer', 'hgss-johto-trainer', 'xy-trainer', 'xy-rival', 'oras-trainer', 'sm-trainer', 'sm-rival']
 const TYPE_COLORS = {
   Normal: '#a8a77a', Fire: '#ee8130', Water: '#6390f0', Electric: '#f7d02c', Grass: '#7ac74c', Ice: '#96d9d6',
@@ -239,10 +243,12 @@ function showdown(host, ctx, opts) {
         el('div', { class: 'row' }, teamSelect, el('button', { type: 'button', onClick: () => builder(teamSelect.value) }, 'Edit'))),
       record && el('p', { class: 'muted small' }, `Your record here: ${record.w} won · ${record.l} lost${record.t ? ` · ${record.t} tied` : ''}`),
       format === 'debrod-tower' && el('p', { class: 'muted small' }, `Climb floor by floor with a rental team; the CPU gets tougher, and after each win you can swap in one of theirs. Best: floor ${pkStore.get('tower', { best: 0 }).best || 0}.`),
-      isFour(format) && el('p', { class: 'muted small' }, isMulti(format)
+      isFour(format) && !isDraft(format) && el('p', { class: 'muted small' }, isMulti(format)
         ? 'You and a partner against two others, one Pokémon out each. Play with up to three friends; the CPU takes any empty seat.'
         : 'Four trainers, one Pokémon out each, everyone against everyone. Play with up to three friends; the CPU takes any empty seat.'),
-      isDraft(format) && el('p', { class: 'muted small' }, `Take turns picking from ${SHOWDOWN_DRAFT_POOL} random Pokémon (snake order) until you each have ${SHOWDOWN_DRAFT_PICKS}, then battle with what you drafted.`),
+      isDraft(format) && el('p', { class: 'muted small' }, isFour(format)
+        ? `Four trainers take turns picking from ${SHOWDOWN_DRAFT_FOUR.pool} random Pokémon (snake order) until each has ${SHOWDOWN_DRAFT_FOUR.picks}, then it's everyone against everyone. Draft with up to three friends; the CPU takes any empty seat.`
+        : `Take turns picking from ${SHOWDOWN_DRAFT_POOL} random Pokémon (snake order) until you each have ${SHOWDOWN_DRAFT_PICKS}, then battle with what you drafted.`),
       el('div', { class: 'row pk-menu-buttons' },
         el('button', { type: 'button', class: 'primary grow', onClick: () => { if (okName()) startCpu() } }, isFour(format) ? 'Play 3 CPUs' : 'Battle the CPU'),
         canOnline && format !== 'debrod-tower' && el('button', { type: 'button', class: 'grow', onClick: () => { if (okName()) online(newCode(), 'host') } }, isFour(format) ? 'Play with friends' : 'Battle a friend')),
@@ -568,24 +574,26 @@ function showdown(host, ctx, opts) {
     }
   }
 
-  // You and three CPUs.
-  function cpuFour() {
+  // You and three CPUs, with random teams or the ones drafted.
+  function cpuFour(teams, extra = {}) {
     endMatch()
     const names = Object.assign({ p1: name }, SHOWDOWN_CPU_NAMES, isMulti(format) ? { p3: 'Partner Mae' } : {})
     const fid = format
+    const T = teams || Object.fromEntries(SHOWDOWN_FOUR.map(x => [x, fourTeam(fid)]))
     const view = viewer('p1', { format: fid, me: name, foe: 'the CPUs', names, vsCpu: true }, {
       choose: choice => sim.choose('p1', choice),
       forfeit: () => sim.forfeit('p1'),
-      again: () => startCpu(),
+      again: extra.again || (() => startCpu()),
+      againLabel: extra.againLabel,
       back: () => { endMatch(); menu() },
     })
     const get = () => sim
-    const sim = runSim(fid, { name, team: fourTeam(fid) }, { name: names.p2, team: fourTeam(fid) }, {
+    const sim = runSim(simFormat(fid), { name, team: T.p1 }, { name: names.p2, team: T.p2 }, {
       p1: chunk => view.feed(chunk),
       p2: cpuSeat(get, 'p2'),
       p3: cpuSeat(get, 'p3'),
       p4: cpuSeat(get, 'p4'),
-    }, [{ name: names.p3, team: fourTeam(fid) }, { name: names.p4, team: fourTeam(fid) }])
+    }, [{ name: names.p3, team: T.p3 }, { name: names.p4, team: T.p4 }])
     match = { sim, view }
     music(true)
   }
@@ -593,27 +601,32 @@ function showdown(host, ctx, opts) {
   // ── Draft (a DEBROD extra) ──
   // A shared pool of random-battle sets, picked in snake order (A, B, B, A,
   // A, B…), then battled with as drafted.
-  function draftPool(doubles) {
+  function draftPool(doubles, size = SHOWDOWN_DRAFT_POOL) {
     const out = []
     const seen = new Set()
-    for (let tries = 0; out.length < SHOWDOWN_DRAFT_POOL && tries < 12; tries++) {
+    for (let tries = 0; out.length < size && tries < 16; tries++) {
       for (const set of PS.Teams.generate(doubles ? 'gen9randomdoublesbattle' : 'gen9randombattle')) {
         const base = PS.Dex.species.get(set.species).baseSpecies
         if (seen.has(base)) continue
         seen.add(base)
         out.push(set)
-        if (out.length >= SHOWDOWN_DRAFT_POOL) break
+        if (out.length >= size) break
       }
     }
     return out
   }
+  // Two drafting (p1, p2, p2, p1…) or four (p1–p4, then back).
   function newDraft(fid, names) {
+    const sides = isFour(fid) ? SHOWDOWN_FOUR : ['p1', 'p2']
+    const each = isFour(fid) ? SHOWDOWN_DRAFT_FOUR.picks : SHOWDOWN_DRAFT_PICKS
     const order = []
-    for (let r = 0; order.length < SHOWDOWN_DRAFT_PICKS * 2; r++) order.push(...(r % 2 ? ['p2', 'p1'] : ['p1', 'p2']))
-    return { id: randomId(), fid, pool: draftPool(isDoubles(fid)), picks: { p1: [], p2: [] }, order, at: 0, names }
+    for (let r = 0; order.length < each * sides.length; r++) order.push(...(r % 2 ? sides.slice().reverse() : sides))
+    const pool = draftPool(isDoubles(fid), isFour(fid) ? SHOWDOWN_DRAFT_FOUR.pool : SHOWDOWN_DRAFT_POOL)
+    return { id: randomId(), fid, pool, picks: Object.fromEntries(sides.map(x => [x, []])), order, at: 0, names, sides, each }
   }
+  const draftSides = D => D.sides || ['p1', 'p2']
   const draftDone = D => D.at >= D.order.length
-  const draftTaken = D => new Set([...D.picks.p1, ...D.picks.p2])
+  const draftTaken = D => new Set(draftSides(D).flatMap(x => D.picks[x] || []))
   function draftPick(D, side, idx) {
     if (draftDone(D) || D.order[D.at] !== side || !D.pool[idx] || draftTaken(D).has(idx)) return false
     D.picks[side].push(idx)
@@ -642,12 +655,15 @@ function showdown(host, ctx, opts) {
     const locked = opts.locked && opts.locked()
     const myTurn = !opts.spectator && turn === mySide && !locked
     const taken = draftTaken(D)
-    const foeSide = mySide === 'p1' ? 'p2' : 'p1'
+    const sides = draftSides(D)
+    const each = D.each || SHOWDOWN_DRAFT_PICKS
     const left = opts.deadline ? Math.max(0, opts.deadline - Date.now()) : null
-    const owner = i => (D.picks.p1.includes(i) ? 'p1' : D.picks.p2.includes(i) ? 'p2' : '')
+    const owner = i => sides.find(x => (D.picks[x] || []).includes(i)) || ''
+    // Ours first, then everyone else in seat order.
+    const shown = opts.spectator ? sides : [mySide, ...sides.filter(x => x !== mySide)]
     const column = side => el('div', { class: `pk-draft-col ${side === mySide ? 'mine' : ''} ${turn === side ? 'turn' : ''}` },
       el('p', { class: 'name' }, side === mySide && !opts.spectator ? `You (${D.names[side]})` : D.names[side]),
-      el('div', { class: 'pk-draft-picks' }, Array.from({ length: SHOWDOWN_DRAFT_PICKS }, (_, k) => {
+      el('div', { class: 'pk-draft-picks', style: `grid-template-columns: repeat(${each}, minmax(0, 1fr))` }, Array.from({ length: each }, (_, k) => {
         const i = D.picks[side][k]
         const set = D.pool[i]
         return set
@@ -662,7 +678,7 @@ function showdown(host, ctx, opts) {
         el('p', { class: 'pk-format grow' }, showdownFormatName(D.fid)),
         el('p', { class: `pk-draft-turn ${myTurn ? 'mine' : ''}` }, !turn ? 'Draft done. To battle!' : locked ? 'Picked!' : myTurn ? 'Your pick!' : `${D.names[turn]} is picking…`),
         left !== null && turn && el('span', { class: 'pill' }, `⏱ ${Math.ceil(left / 1000)}s`)),
-      el('div', { class: 'pk-draft-teams' }, column(opts.spectator ? 'p1' : mySide), column(opts.spectator ? 'p2' : foeSide)),
+      el('div', { class: `pk-draft-teams ${sides.length > 2 ? 'four' : ''}` }, shown.map(column)),
       el('div', { class: 'pk-draft-pool' }, D.pool.map((set, i) => {
         const sp = PS.Dex.species.get(set.species)
         const who = owner(i)
@@ -683,7 +699,7 @@ function showdown(host, ctx, opts) {
 
   function draftVsCpu() {
     const fid = format
-    const D = newDraft(fid, { p1: name, p2: 'CPU' })
+    const D = newDraft(fid, isFour(fid) ? Object.assign({ p1: name }, SHOWDOWN_CPU_NAMES) : { p1: name, p2: 'CPU' })
     D.live = true
     const render = () => draftScreen(D, 'p1', i => { if (draftPick(D, 'p1', i)) step() }, { back: () => { D.live = false; menu() } })
     const step = () => {
@@ -691,10 +707,13 @@ function showdown(host, ctx, opts) {
       if (draftDone(D)) {
         return setTimeout(() => {
           if (!D.live || dead) return
-          cpuBattle(fid, draftTeam(D, 'p1'), draftTeam(D, 'p2'), { again: () => draftVsCpu(), againLabel: () => 'Draft again' })
+          const again = { again: () => draftVsCpu(), againLabel: () => 'Draft again' }
+          if (isFour(fid)) cpuFour(Object.fromEntries(SHOWDOWN_FOUR.map(x => [x, draftTeam(D, x)])), again)
+          else cpuBattle(fid, draftTeam(D, 'p1'), draftTeam(D, 'p2'), again)
         }, 1000)
       }
-      if (D.order[D.at] === 'p2') setTimeout(() => { if (D.live && !dead && draftPick(D, 'p2', draftCpuPick(D, 'p2'))) step() }, 650)
+      const cpu = D.order[D.at]
+      if (cpu !== 'p1') setTimeout(() => { if (D.live && !dead && draftPick(D, cpu, draftCpuPick(D, cpu))) step() }, 650)
     }
     step()
   }
@@ -1000,7 +1019,7 @@ function showdown(host, ctx, opts) {
     const n = net
     const seats = {}
     for (const x of SEATS) seats[x] = n.seats[x] && { id: n.seats[x].id, name: n.seats[x].name, cpu: !!n.seats[x].cpu }
-    n.send('room', { four: true, format: n.format, hostName: name, seats, names: n.names, battle: n.battle, timer: n.timerOn })
+    n.send('room', { four: true, format: n.format, hostName: name, seats, names: n.names, battle: n.battle, timer: n.timerOn, draft: n.draft && !n.battle ? n.draft.id : null })
   }
 
   function fourName(n, wanted) {
@@ -1022,16 +1041,23 @@ function showdown(host, ctx, opts) {
         seat.id = null
         seat.goneAt = Date.now()
         if (match) match.view.notice(`${seat.name} left. If they're not back in ${SHOWDOWN_TAKEOVER_MS / 1000} seconds, the CPU plays for them.`)
+      } else if (n.draft) {
+        // Mid-draft the CPU picks for them straight away.
+        seat.id = null
+        seat.goneAt = Date.now()
+        seat.cpu = true
+        fourDraftNext(true)
       } else n.seats[x] = null
     }
     for (const p of others) {
       if (seatOf(n, p.id)) continue
-      if (n.battle) {
+      if (n.battle || n.draft) {
         const x = SEATS.find(k => n.seats[k] && !n.seats[k].id && !n.seats[k].bot && n.seats[k].name === p.name)
         if (!x) continue
         Object.assign(n.seats[x], { id: p.id, cpu: false, goneAt: null })
         if (match) match.view.notice(`${p.name} is back.`)
-        fourReplay(x)
+        if (n.battle) fourReplay(x)
+        else { fourRoom(); n.send('draft', draftPayload(n.draft)) }
       } else {
         const x = SEATS.find(k => !n.seats[k])
         if (x) n.seats[x] = { id: p.id, name: fourName(n, p.name) }
@@ -1052,7 +1078,7 @@ function showdown(host, ctx, opts) {
 
   function fourLobby() {
     const n = net
-    if (!n || match) return
+    if (!n || match || n.draft) return
     const link = inviteLink(n)
     const multi = isMulti(n.format)
     const who = x => (x === 'p1' ? `${name} (you)` : n.seats[x] ? n.seats[x].name : 'CPU')
@@ -1072,17 +1098,71 @@ function showdown(host, ctx, opts) {
         if (!ok) window.prompt('Send this:', link || n.code)
       } }, link ? 'Copy invite link' : 'Copy code'),
       multi && filled > 0 && el('button', { type: 'button', onClick: fourRotate }, 'Change partners'),
-      el('button', { type: 'button', class: 'primary', onClick: fourStart }, filled === 3 ? 'Start the battle' : `Start (${3 - filled} CPU${3 - filled === 1 ? '' : 's'})`),
+      el('button', { type: 'button', class: 'primary', onClick: () => (isDraft(n.format) ? fourDraft() : fourStart()) },
+        `${filled === 3 ? (isDraft(n.format) ? 'Start the draft' : 'Start the battle') : `Start (${3 - filled} CPU${3 - filled === 1 ? '' : 's'})`}`),
       el('button', { type: 'button', class: 'link', onClick: () => { leaveNet(); menu() } }, '‹ Cancel')))
   }
 
-  function fourStart() {
+  // Empty seats go to the CPU, and everyone's name is fixed for the battle.
+  function fourSeats() {
     const n = net
-    if (!n) return
-    if (match) endMatch()
     for (const x of SEATS) if (!n.seats[x]) n.seats[x] = { id: null, name: fourName(n, SHOWDOWN_CPU_NAMES[x]), cpu: true, bot: true }
     n.names = { p1: name }
     for (const x of SEATS) n.names[x] = n.seats[x].name
+  }
+
+  // A four-way draft: the host keeps the board and the clock, and picks for
+  // the CPU's seats.
+  function fourDraft() {
+    const n = net
+    if (!n) return
+    if (match) endMatch()
+    fourSeats()
+    n.battle = null
+    const D = n.draft = newDraft(n.format, n.names)
+    D.deadline = Date.now() + SHOWDOWN_DRAFT_MS
+    if (n.draftTick) clearInterval(n.draftTick)
+    n.draftTick = setInterval(() => {
+      if (net !== n || n.draft !== D || draftDone(D) || n.battle) return
+      if (Date.now() > D.deadline) {
+        const x = D.order[D.at]
+        if (draftPick(D, x, draftCpuPick(D, x))) fourDraftNext()
+      } else fourDraftShow()
+    }, 1000)
+    fourRoom()
+    fourDraftNext(true)
+  }
+  function fourDraftShow() {
+    const n = net
+    const D = n.draft
+    draftScreen(D, 'p1', i => { if (draftPick(D, 'p1', i)) fourDraftNext() }, { back: () => { endMatch(); leaveNet(); menu() }, deadline: D.deadline })
+  }
+  // After each pick (or a seat changing hands): tell everyone, and let the
+  // CPU pick if it's its turn.
+  function fourDraftNext(keepClock) {
+    const n = net
+    const D = n && n.draft
+    if (!D || n.battle) return
+    if (!keepClock) D.deadline = Date.now() + SHOWDOWN_DRAFT_MS
+    n.send('draft', draftPayload(D))
+    fourDraftShow()
+    if (draftDone(D)) {
+      clearInterval(n.draftTick)
+      const teams = Object.fromEntries(SHOWDOWN_FOUR.map(x => [x, draftTeam(D, x)]))
+      setTimeout(() => { if (net === n && n.draft === D && !n.battle) fourStart(teams) }, 1200)
+      return
+    }
+    const x = D.order[D.at]
+    if (x !== 'p1' && n.seats[x] && n.seats[x].cpu) {
+      setTimeout(() => { if (net === n && n.draft === D && D.order[D.at] === x && draftPick(D, x, draftCpuPick(D, x))) fourDraftNext() }, 650)
+    }
+  }
+
+  function fourStart(teams) {
+    const n = net
+    if (!n) return
+    if (match) endMatch()
+    fourSeats()
     n.chunks = { p2: [], p3: [], p4: [] }
     n.spec = []
     n.battle = randomId()
@@ -1098,9 +1178,11 @@ function showdown(host, ctx, opts) {
         // The CPU's seats open up again for anyone who's arrived since.
         endMatch()
         n.battle = null
+        n.draft = null
         for (const x of SEATS) if (n.seats[x] && (n.seats[x].bot || !n.seats[x].id)) n.seats[x] = null
         fourPresence()
-        fourStart()
+        if (isDraft(n.format)) fourDraft()
+        else fourStart()
       },
       emote: e => n.send('emote', { e }),
       back: () => { endMatch(); leaveNet(); menu() },
@@ -1129,7 +1211,8 @@ function showdown(host, ctx, opts) {
       hostArm(x)
       if (seat.cpu) fourCpu(x)
     }
-    const sim = runSim(simFormat(fid), { name, team: fourTeam(fid) }, { name: n.names.p2, team: fourTeam(fid) }, {
+    const T = teams || Object.fromEntries(SHOWDOWN_FOUR.map(x => [x, fourTeam(fid)]))
+    const sim = runSim(simFormat(fid), { name, team: T.p1 }, { name: n.names.p2, team: T.p2 }, {
       p1: chunk => { view.feed(chunk); if (requestsIn(chunk).some(r => !r.wait)) hostArm('p1') },
       p2: seatHandler('p2'),
       p3: seatHandler('p3'),
@@ -1138,7 +1221,7 @@ function showdown(host, ctx, opts) {
         const seq = n.spec.push(chunk) - 1
         n.send('schunk', { battle: n.battle, seq, data: chunk })
       },
-    }, [{ name: n.names.p3, team: fourTeam(fid) }, { name: n.names.p4, team: fourTeam(fid) }])
+    }, [{ name: n.names.p3, team: T.p3 }, { name: n.names.p4, team: T.p4 }])
     match = { sim, view }
     if (n.timerTick) clearInterval(n.timerTick)
     n.timerTick = setInterval(hostTimerCheck, 1000)
@@ -1166,6 +1249,8 @@ function showdown(host, ctx, opts) {
     n.chunks[x].forEach((data, seq) => n.send('chunk', { battle: n.battle, seq, data, side: x }))
     hostTimer()
   }
+
+  const draftPayload = D => ({ id: D.id, fid: D.fid, pool: PS.Teams.pack(D.pool), picks: D.picks, order: D.order, at: D.at, names: D.names, sides: D.sides, each: D.each, left: Math.max(0, D.deadline - Date.now()) })
 
   // An online draft: the host keeps the board and the pick clock.
   function hostDraft() {
@@ -1196,7 +1281,7 @@ function showdown(host, ctx, opts) {
     const n = net
     const D = n.draft
     if (!D) return
-    n.send('draft', { id: D.id, fid: D.fid, pool: PS.Teams.pack(D.pool), picks: D.picks, order: D.order, at: D.at, names: D.names, left: Math.max(0, D.deadline - Date.now()) })
+    n.send('draft', draftPayload(D))
     if (!n.battle) hostDraftShow()
   }
   function hostDraftNext() {
@@ -1321,7 +1406,12 @@ function showdown(host, ctx, opts) {
   function hostEvent(ev, p) {
     const n = net
     if (!n) return
-    if (ev === 'hello' && n.four) { const x = seatOf(n, p.from); if (n.battle && x) fourReplay(x); else fourRoom(); return }
+    if (ev === 'hello' && n.four) {
+      const x = seatOf(n, p.from)
+      if (n.battle && x) fourReplay(x)
+      else { fourRoom(); if (n.draft && !n.battle) n.send('draft', draftPayload(n.draft)) }
+      return
+    }
     if (ev === 'hello') { hostRoom(); if (n.battle && p.from === n.guestId) hostReplay(); else if (n.draft && !n.battle) hostDraftSync(); return }
     if (ev === 'emote') { if (match) match.view.emote(String(p.e || '').slice(0, 4)); return }
     if (ev === 'chat') { if (match) match.view.chat(String(p.name || '?').slice(0, 18), String(p.text || '').slice(0, 200)); return }
@@ -1335,7 +1425,12 @@ function showdown(host, ctx, opts) {
     }
     if (n.four) {
       const x = seatOf(n, p.from)
-      if (!x || !match || p.battle !== n.battle) return
+      if (!x) return
+      if (ev === 'draftpick' && n.draft && !n.battle && p.id === n.draft.id) {
+        if (draftPick(n.draft, x, p.idx | 0)) fourDraftNext()
+        return
+      }
+      if (!match || p.battle !== n.battle) return
       if (ev === 'choice') hostChoice(x, String(p.data || '').slice(0, 120))
       if (ev === 'forfeit') { match.view.notice(`${n.seats[x].name} forfeited.`); match.sim.forfeit(x) }
       return
@@ -1387,7 +1482,7 @@ function showdown(host, ctx, opts) {
       if (!p.battle) {
         n.battle = null
         n.seat = seat
-        if (match) return
+        if (match || p.draft) return
         const who = x => (x === 'p1' ? p.hostName : p.seats[x] ? `${p.seats[x].name}${x === seat ? ' (you)' : ''}` : 'CPU')
         pkFill(wrap, el('div', { class: 'card stack pk-menu' },
           el('p', { class: 'wordmark' }, 'Showdown'),
@@ -1454,15 +1549,16 @@ function showdown(host, ctx, opts) {
       if (net !== n) return
       if (match) endMatch()
       n.battle = null
-      const D = { id: p.id, fid: p.fid, pool: PS.Teams.unpack(p.pool) || [], picks: p.picks, order: p.order, at: p.at, names: p.names }
+      const D = { id: p.id, fid: p.fid, pool: PS.Teams.unpack(p.pool) || [], picks: p.picks, order: p.order, at: p.at, names: p.names, sides: p.sides, each: p.each }
       const deadline = Date.now() + (p.left || 0)
+      const mine = n.four ? n.seat : n.amGuest ? 'p2' : null
       // Once we've picked, the board stays locked until the host confirms.
-      n.draftRender = () => draftScreen(D, n.amGuest ? 'p2' : 'p1', i => {
-        if (D.order[D.at] !== 'p2' || D.sent) return
+      n.draftRender = () => draftScreen(D, mine || 'p1', i => {
+        if (!mine || D.order[D.at] !== mine || D.sent) return
         D.sent = true
         n.send('draftpick', { id: D.id, idx: i })
         n.draftRender()
-      }, { back: () => { leaveNet(); menu() }, spectator: !n.amGuest, deadline, locked: () => !!D.sent })
+      }, { back: () => { leaveNet(); menu() }, spectator: !mine, deadline, locked: () => !!D.sent })
       n.draftRender()
       if (!n.draftRefresh) {
         n.draftRefresh = setInterval(() => { if (net === n && !match && !n.battle && n.draftRender) n.draftRender() }, 1000)
