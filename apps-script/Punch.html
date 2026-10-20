@@ -1,3 +1,1594 @@
+<style>
+/* ── Punchline ── */
+.game-stage:has(.game-punch) { width: 100%; touch-action: auto; user-select: auto; -webkit-user-select: auto; }
+.page:has(.game-punch .pl-table) { max-width: 1100px; }
+.pl { display: flex; flex-direction: column; gap: 12px; }
+.pl-menu { max-width: 480px; margin: 0 auto; width: 100%; }
+.pl-menu .row { flex-wrap: wrap; align-items: center; }
+.pl-menu select { padding: 8px 10px; }
+.pl-menu textarea { width: 100%; min-height: 110px; resize: vertical; font: 13px/1.4 var(--mono-font); color: var(--text); background: rgba(13, 2, 33, 0.7); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.pl-menu textarea:focus { outline: none; border-color: var(--magenta); }
+.pl-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
+.pl-check input { width: auto; }
+.pl-code { font: 900 34px/1 var(--display); letter-spacing: 0.25em; text-align: center; color: var(--yellow); text-shadow: 0 0 14px rgba(255, 211, 25, 0.5); }
+.pl-seats { display: flex; flex-direction: column; gap: 6px; }
+.pl-seat { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: rgba(13, 2, 33, 0.5); font-size: 14px; }
+.pl-seat .grow { flex: 1; min-width: 0; }
+.pl-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pl-top .grow { flex: 1; }
+.pl-table { display: flex; flex-direction: column; gap: 14px; padding: 14px; border: 1px solid var(--magenta); border-radius: 10px; background: radial-gradient(ellipse at top, #2a0f47, #0d0221 70%); box-shadow: var(--glow-magenta, 0 0 18px rgba(255, 43, 214, 0.35)); }
+.pl-scores { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.pl-score { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: rgba(13, 2, 33, 0.6); font-size: 13px; }
+.pl-score b { font: 700 14px var(--mono-font); color: var(--yellow); }
+.pl-score.judge { border-color: var(--cyan); box-shadow: 0 0 10px rgba(0, 240, 255, 0.35); }
+.pl-score.me { border-color: var(--magenta); }
+.pl-score.gone { opacity: 0.55; }
+.pl-score .tick { color: var(--good); }
+.pl-status { text-align: center; font: 700 14px var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.pl-status.mine { color: var(--yellow); text-shadow: 0 0 10px rgba(255, 211, 25, 0.5); }
+.pl-timer { margin-left: 8px; color: var(--cyan); font-family: var(--mono-font); }
+.pl-timer.hurry { color: var(--bad); }
+/* Prompt cards are black, answers white */
+.pl-black, .pl-white { border-radius: 12px; padding: 16px 16px 30px; position: relative; text-align: left; overflow-wrap: anywhere; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5); }
+.pl-black { background: #0b0b0e; color: #fff; border: 2px solid #fff; font: 700 20px/1.35 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.pl-black.big { max-width: 520px; width: 100%; margin: 0 auto; min-height: 150px; font-size: 22px; }
+.pl-black::after, .pl-white::after { content: 'Punchline'; position: absolute; left: 16px; bottom: 9px; font: 700 10px var(--mono-font); letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.55; }
+.pl-pick { position: absolute; right: 12px; bottom: 8px; font: 700 11px var(--mono-font); color: var(--yellow); letter-spacing: 0.08em; }
+.pl-white { background: #f6f2ff; color: #140726; border: 2px solid #d9d0ff; font: 700 15px/1.3 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.pl-fill { color: var(--yellow); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.pl-white .pl-fill { color: #8a1a9e; }
+.pl-blank { display: inline-block; min-width: 3.2em; border-bottom: 3px solid currentColor; transform: translateY(-3px); }
+/* Your hand */
+.pl-hand { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.pl .pl-hand button.pl-white { min-height: 112px; cursor: pointer; transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s; color: #140726; background: #f6f2ff; }
+.pl .pl-hand button.pl-white:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--magenta); box-shadow: 0 0 16px rgba(255, 43, 214, 0.5); color: #140726; }
+.pl .pl-hand button.pl-white:disabled { opacity: 1; cursor: default; }
+.pl .pl-hand button.pl-white.picked { border-color: var(--magenta); box-shadow: 0 0 0 3px var(--magenta), 0 0 18px rgba(255, 43, 214, 0.6); transform: translateY(-4px); }
+.pl-order { position: absolute; top: -10px; right: -8px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--magenta); color: #fff; font: 900 13px var(--display); box-shadow: 0 0 10px rgba(255, 43, 214, 0.7); }
+.pl-bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+/* Judging */
+.pl-subs { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.pl .pl-subs button.pl-black { cursor: pointer; font-size: 17px; text-transform: none; letter-spacing: normal; color: #fff; background: #0b0b0e; }
+.pl .pl-subs button.pl-black:hover:not(:disabled) { border-color: var(--yellow); box-shadow: 0 0 18px rgba(255, 211, 25, 0.55); color: #fff; }
+.pl .pl-subs button.pl-black:disabled { opacity: 1; cursor: default; }
+.pl-sub { font-size: 17px; }
+.pl-sub.win { border-color: var(--yellow); box-shadow: 0 0 0 3px var(--yellow), 0 0 22px rgba(255, 211, 25, 0.6); }
+.pl-who { position: absolute; right: 12px; bottom: 8px; font: 700 11px var(--mono-font); color: var(--cyan); }
+.pl-sub.win .pl-who { color: var(--yellow); }
+.pl-banner { text-align: center; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.pl-banner .wordmark { font-size: 30px; }
+.pl-log { font: 12px var(--mono-font); color: var(--muted); text-align: center; }
+/* Blurred swearing (Spicy pack) */
+.pl-blur { filter: blur(5px); transition: filter 0.15s; cursor: help; border-radius: 3px; }
+.pl-blur:hover, .pl-blur.show { filter: none; }
+@media (hover: none) { .pl-blur:hover { filter: blur(5px); } .pl-blur.show { filter: none; } }
+@media (max-width: 600px) {
+  .pl-hand { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pl-black.big { font-size: 19px; min-height: 120px; }
+  .pl-subs { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
 <script>
-// Placeholder: Punchline is being written.
+// Punchline: the fill-in-the-blank party game. Each round a rotating judge
+// reveals a prompt card; everyone else plays their funniest answer card (or
+// two) from a hand of ten; the answers are shown anonymously and the judge
+// picks a favourite, worth a point. First to the target wins. All the card
+// text is DEBROD's own; the optional Spicy pack is cruder, with its swear
+// words blurred until you hover or press them.
+//
+// Online only (it needs people to judge), over Supabase via Party.html. The
+// room's creator hosts: their page holds the whole game and broadcasts it as
+// one 'state' message after every change, and everyone else sends 'act'
+// messages. The state includes the decks and every hand, so whoever's been
+// there longest can take over if the host leaves; it isn't cheat-proof.
+//
+// Loaded after App.html (el, randomId, storedName, storeName) and Party.html.
+
+// ── The cards (all DEBROD's own) ──
+const PL_PROMPTS = [
+  "My secret to surviving Monday is ____.",
+  "What's the real reason the group project failed?",
+  "I didn't do my homework because of ____.",
+  "Breaking news: local teen replaces sleep with ____.",
+  "The group chat went silent after someone sent ____.",
+  "What's hiding in the back of the fridge?",
+  "Step one of my five-year plan: ____.",
+  "My browser history is 90% ____.",
+  "The new DLC adds ____ and absolutely nothing else.",
+  "What did I find in my pocket after laundry day?",
+  "Coming this summer: ____: The Musical.",
+  "My therapist says I need to stop thinking about ____.",
+  "The school cafeteria's new mystery meal: ____.",
+  "What's the worst thing to say at a job interview?",
+  "Life hack: replace your morning coffee with ____.",
+  "I'd quit my job tomorrow for ____.",
+  "The real final boss of adulthood is ____.",
+  "Tonight's movie night theme: ____.",
+  "Grandma's surprise birthday gift this year: ____.",
+  "What's my villain origin story?",
+  "Nobody warned me that being an adult means ____.",
+  "Ancient philosophers spent years debating ____.",
+  "I'm not crying, I'm just thinking about ____.",
+  "The tutorial forgot to mention ____.",
+  "The WiFi password is literally ____.",
+  "My love language is ____.",
+  "What will archaeologists find in my room in the year 3000?",
+  "The real reason I'm always late: ____.",
+  "Scientists have finally discovered a cure for ____.",
+  "My dentist asked me about ____ and I panicked.",
+  "What's the dog thinking about right now?",
+  "Rejected theme park ride: ____ Mountain.",
+  "You haven't lived until you've tried ____.",
+  "My parents still don't understand ____.",
+  "In my defense, ____ seemed like a good idea at 3 AM.",
+  "What's that smell?",
+  "The teacher confiscated ____ and has never been the same.",
+  "Day 47 of procrastinating: I have mastered ____.",
+  "This year's hottest holiday toy: ____.",
+  "I just need five more minutes of ____.",
+  "My autobiography will be called \"Me, Myself and ____.\"",
+  "What did the cat knock off the table this time?",
+  "Little-known fact: the pyramids were built using ____.",
+  "Plot twist: the chosen one is actually ____.",
+  "The only thing keeping this friendship together: ____.",
+  "What's in the mystery box?",
+  "Achievement unlocked: ____.",
+  "What's the next big trend on the internet?",
+  "The weather forecast calls for a 90% chance of ____.",
+  "My roommate's new hobby: ____.",
+  "What got me banned from the library?",
+  "Honestly? I'd fight ____ for a slice of pizza.",
+  "The best man's speech was just ten minutes about ____.",
+  "What's the secret ingredient in the school lasagna?",
+  "The robots took over because of ____.",
+  "Warning: this product may contain ____.",
+  "My spirit animal is ____.",
+  "Why did the substitute teacher cry?",
+  "____: it's what's for dinner.",
+  "What's the worst thing to hear from your pilot?",
+  "My dream job: professional ____.",
+  "Mom, can you pick me up? I just saw ____.",
+  "The yearbook voted me \"Most Likely to Be Replaced by ____.\"",
+  "What's keeping me up at night?",
+  "My WiFi went out and I was forced to confront ____.",
+  "Rule number one of the friend group: never mention ____.",
+  "New from the people who brought you disappointment: ____.",
+  "What's under the bed?",
+  "I spent my entire paycheck on ____.",
+  "____ is the main character. We're all just living in their world.",
+  "In the director's cut, the movie ends with ____.",
+  "Who's the real MVP?",
+  "Doctors hate this one weird trick: ____.",
+  "The group chat is now just called \"____.\"",
+  "I tried to cook dinner and accidentally made ____.",
+  "What's the worst thing to find in your burrito?",
+  "Step aside, Shakespeare. Here's my sonnet about ____.",
+  "Tonight on the nature channel: the majestic ____ in its natural habitat.",
+  "What finally broke the internet?",
+  "Every family reunion ends with ____.",
+  "I'm writing a strongly worded letter about ____.",
+  "My final words will be: \"Tell them about ____.\"",
+  "What's the best excuse for missing a deadline?",
+  "In the year 3000, people will worship ____.",
+  "The new school rule bans ____ forever.",
+  "My sleep paralysis demon just wants to talk about ____.",
+  "Coming soon to a phone near you: ____, the app.",
+  "What's my toxic trait?",
+  "I asked for a sign and the universe sent me ____.",
+  "The heist went wrong because of ____.",
+  "Instead of a gym membership, I invested in ____.",
+  "My horoscope says to avoid ____ today.",
+  "The museum's newest exhibit: ____ Through the Ages.",
+  "Unpopular opinion: ____ is underrated.",
+  "Never go camping without ____.",
+  "\"Are you still watching ____?\"",
+  "Teacher: \"What's so funny?\" Me: \"____.\"",
+  "I knew it was true love when they shared ____.",
+  "At the end of the rainbow, there's actually ____.",
+  "What's the real reason the dinosaurs went extinct?",
+  "I don't always need ____, but when I do, I also need ____.",
+  "If I had a dollar for every time I thought about ____, I'd buy ____.",
+  "____ walks into a bar and orders ____.",
+  "First ____, then ____. That's just science.",
+  "Brought to you by ____. ____: it's better than nothing.",
+  "____ + ____ = my entire personality.",
+  "My last two brain cells are fighting over ____ and ____.",
+  "The secret level is unlocked by ____ while holding ____.",
+  "Lost: ____. If found, please return to ____.",
+  "Our band is called ____ and our first album is ____.",
+  "I would trade ____ for ____ in a heartbeat.",
+  "The two things I'd bring to a desert island: ____ and ____.",
+  "____ is like ____: nobody asked for it.",
+  "Mixing ____ with ____ voided my warranty.",
+  "Coming this fall: ____ vs. ____: Dawn of Snacks.",
+]
+const PL_ANSWERS = [
+  "A suspiciously confident raccoon.",
+  "Three raccoons in a trench coat.",
+  "A group project where I did everything.",
+  "My browser's 47 open tabs.",
+  "The last slice of pizza.",
+  "Crying in the shower.",
+  "An emotional support burrito.",
+  "A strongly worded email.",
+  "Microwaving fish in the office.",
+  "Accidentally hitting reply-all.",
+  "A \"we need to talk\" text.",
+  "Grandma's Facebook comments.",
+  "A pigeon with ambition.",
+  "Accidentally liking a photo from 2014.",
+  "Pretending to type when the teacher walks by.",
+  "A spreadsheet of my enemies.",
+  "Aggressive finger guns.",
+  "The sheer audacity.",
+  "A haunted printer.",
+  "Forgetting the name of someone I've known for years.",
+  "The \"I'm five minutes away\" lie.",
+  "A goose that has seen things.",
+  "Speedrunning my responsibilities.",
+  "A frog wearing a tiny hat.",
+  "An unskippable 30-second ad.",
+  "Endless buffering.",
+  "Lag.",
+  "A loading screen tip that's actually a threat.",
+  "A side quest that took six hours.",
+  "Spending all my gold on hats.",
+  "The tutorial level.",
+  "An NPC with way too much dialogue.",
+  "Rage-quitting.",
+  "A controller with stick drift.",
+  "Cold leftover pizza at 2 AM.",
+  "Ketchup on everything.",
+  "Pineapple on pizza.",
+  "A sad desk salad.",
+  "The mystery casserole.",
+  "Hot sauce that's just pain.",
+  "A sandwich with no structural integrity.",
+  "A suspicious amount of glitter.",
+  "Tax season.",
+  "Paying rent.",
+  "A dentist who wants to chat.",
+  "An alarm clock with no snooze button.",
+  "A nap that went too far.",
+  "Waking up at 4 PM.",
+  "The Sunday scaries.",
+  "A motivational poster of a cat hanging from a branch.",
+  "Interpretive dance.",
+  "A kazoo solo.",
+  "Jazz hands.",
+  "The air guitar world championship.",
+  "A dramatic slow clap.",
+  "Unsolicited advice.",
+  "My uncle's conspiracy theories.",
+  "Getting lost in a furniture store for three days.",
+  "The one sock the dryer stole.",
+  "A drawer full of cables for devices I no longer own.",
+  "\"Password123.\"",
+  "Turning it off and on again.",
+  "An AI that only speaks in riddles.",
+  "A robot vacuum with a vendetta.",
+  "A smart fridge that judges me.",
+  "Hacking into the mainframe.",
+  "Wikipedia at 3 AM.",
+  "A 12-hour video essay.",
+  "The comment section.",
+  "The algorithm.",
+  "A viral dance nobody can actually do.",
+  "An influencer's apology video.",
+  "Going live by accident.",
+  "A typo in the group chat that changed everything.",
+  "Being left on read.",
+  "Someone typing for ten minutes and then just sending \"ok.\"",
+  "A four-minute voice message.",
+  "A meme my dad sent me.",
+  "A cursed image.",
+  "A duck with a plan.",
+  "An oddly specific fear of ladles.",
+  "My last brain cell.",
+  "Main character energy.",
+  "My villain era.",
+  "Big boss music.",
+  "A dramatic soundtrack that follows me everywhere.",
+  "A laugh track.",
+  "Plot armor.",
+  "A training montage.",
+  "Walking away from an explosion in slow motion.",
+  "The sequel nobody asked for.",
+  "A reboot of a reboot.",
+  "Spoilers.",
+  "Popcorn stuck in my teeth.",
+  "A mysterious stranger with a tragic backstory.",
+  "A hero who forgot why they're on the quest.",
+  "A dragon with anxiety.",
+  "A wizard who only knows one spell.",
+  "My evil twin.",
+  "Time travel.",
+  "A wormhole in the cafeteria.",
+  "Aliens who are deeply disappointed in us.",
+  "The moon.",
+  "A black hole that eats homework.",
+  "Gravity.",
+  "The quadratic formula.",
+  "Showing your work.",
+  "A pop quiz.",
+  "Detention.",
+  "A substitute teacher who has given up.",
+  "A field trip to the cheese factory.",
+  "A science fair volcano.",
+  "The kid who reminded the teacher about homework.",
+  "A book report on a book I didn't read.",
+  "Writing the essay at 11:59 PM.",
+  "A friendship bracelet.",
+  "The friend who's always \"on the way.\"",
+  "The friend who never brings their wallet.",
+  "Splitting the bill to the exact cent.",
+  "A surprise party that nobody kept secret.",
+  "Waiters singing happy birthday badly.",
+  "A participation trophy.",
+  "Losing to a seven-year-old at chess.",
+  "A board game that ended a friendship.",
+  "Flipping the table.",
+  "The rules lawyer.",
+  "A suspiciously cheap luxury watch.",
+  "A timeshare presentation.",
+  "Free samples.",
+  "A shopping cart with one bad wheel.",
+  "\"Unexpected item in the bagging area.\"",
+  "Elevator music.",
+  "Small talk.",
+  "Waving at someone who wasn't waving at me.",
+  "Saying \"you too\" when the waiter says \"enjoy your meal.\"",
+  "Holding the door for someone way too far away.",
+  "Walking into a glass door.",
+  "Tripping on absolutely nothing.",
+  "A sneeze that won't come out.",
+  "Brain freeze.",
+  "Stepping on a building brick.",
+  "A paper cut.",
+  "Sunburn in a weird shape.",
+  "A haircut I didn't ask for.",
+  "Gym clothes that have never seen a gym.",
+  "A treadmill used as a coat rack.",
+  "Leg day.",
+  "Yoga with goats.",
+  "Inner peace.",
+  "A candle called \"Ocean Breeze\" that smells like a Tuesday.",
+  "Every houseplant I've ever murdered.",
+  "A cactus I somehow overwatered.",
+  "A garden gnome army.",
+  "The neighbor's leaf blower at 7 AM.",
+  "A wind chime that never stops.",
+  "A seagull stealing fries.",
+  "Squirrels plotting something.",
+  "A cat that knocks things over for fun.",
+  "A dog who just learned about mirrors.",
+  "A goldfish with a three-second memory.",
+  "The neighborhood cat that has six different names.",
+  "The zoomies.",
+  "Opossums screaming at night.",
+  "A bear at the campsite.",
+  "Mosquitoes.",
+  "A tent that's impossible to fold back up.",
+  "A marshmallow on fire.",
+  "A haunted antique doll.",
+  "A ghost who's bad at haunting.",
+  "Zombies who just want brunch.",
+  "A vampire who loves garlic bread.",
+  "A werewolf with allergies.",
+  "Bigfoot's blurry selfie.",
+  "A sea monster's dating profile.",
+  "A conspiracy cork board with red string.",
+  "A UFO that's just a balloon.",
+  "A tinfoil hat.",
+  "Crop circles.",
+  "Spaghetti.",
+  "Tacos.",
+  "Cereal for dinner.",
+  "Mac and cheese from the box.",
+  "Instant ramen.",
+  "A gourmet microwave meal.",
+  "Burnt toast.",
+  "A smoothie that's mostly kale.",
+  "Avocado toast.",
+  "Brunch.",
+  "A single soggy fry.",
+  "Ranch dressing.",
+  "A cheese wheel rolling down a hill.",
+  "Gas station sushi.",
+  "The question of whether a hot dog is a sandwich.",
+  "Gummy worms.",
+  "An energy drink at midnight.",
+  "Decaf, the ultimate betrayal.",
+  "The coffee machine breaking.",
+  "Hot chocolate with too many marshmallows.",
+  "A birthday cake that says \"Happy Birthday Kevin,\" and I'm not Kevin.",
+  "A mime trapped in a real box.",
+  "A magician who can't find the rabbit.",
+  "Juggling chainsaws.",
+  "A unicycle.",
+  "A Segway tour.",
+  "An electric scooter at the bottom of a river.",
+  "Public transportation at rush hour.",
+  "The middle seat.",
+  "Turbulence.",
+  "Lost luggage.",
+  "Airport snack prices.",
+  "A road trip with no snacks.",
+  "\"Are we there yet?\"",
+  "The GPS saying \"recalculating.\"",
+  "A wrong turn into a cornfield.",
+  "A truck full of chickens.",
+  "Parallel parking.",
+  "A flock of geese blocking traffic.",
+  "A llama with attitude.",
+  "A capybara without a care in the world.",
+  "A sloth working at the DMV.",
+  "Waiting on hold.",
+  "\"Your call is important to us.\"",
+  "Speaking to the manager.",
+  "A meeting that could have been an email.",
+  "Synergy.",
+  "A team-building trust fall.",
+  "A pizza party instead of a raise.",
+  "A boss who says \"we're like a family.\"",
+  "A LinkedIn post about a breakfast that changed my life.",
+  "Hustle culture.",
+  "A side hustle.",
+  "A pet rock.",
+  "The world's tiniest violin.",
+  "The recorder in music class.",
+  "A one-man band.",
+  "A boy band reunion tour.",
+  "Karaoke night.",
+  "Singing loudly in the car.",
+  "A song stuck in my head for three days.",
+  "A conga line.",
+  "A wedding DJ who only plays line dances.",
+  "Fireworks.",
+  "A piñata that refuses to break.",
+  "A bouncy castle.",
+  "A ball pit.",
+  "Laser tag.",
+  "A mini golf rivalry.",
+  "Bowling with bumpers.",
+  "Arcade tickets worth one eraser.",
+  "A rigged claw machine.",
+  "Getting the high score.",
+  "Cheat codes.",
+  "Blowing on the cartridge.",
+  "A save file I lost in 2009.",
+  "Respawning.",
+  "A boss fight with three phases.",
+  "Getting carried by a twelve-year-old.",
+  "Camping in the corner.",
+  "A loot box.",
+  "A legendary drop.",
+  "A sword that's just a stick.",
+  "A horse that's terrible at stairs.",
+  "Fall damage.",
+  "An inventory full of spoons.",
+  "A house made entirely of dirt.",
+  "A side character who deserves better.",
+  "Fan fiction.",
+  "Cosplay.",
+  "A filler episode.",
+  "The power of friendship.",
+  "Screaming the name of my attack.",
+  "A dramatic transformation sequence.",
+  "A sports mascot losing its head.",
+  "A foam finger.",
+  "Losing a bet.",
+  "Trash talk.",
+  "A victory dance.",
+  "A failed backflip.",
+  "A trampoline.",
+  "A snow day.",
+  "A snowman with a suspicious smile.",
+  "Pumpkin spice everything.",
+  "A costume made of cardboard.",
+  "Trick-or-treating at age 25.",
+  "A haunted corn maze.",
+  "Ugly holiday sweaters.",
+  "Re-gifting.",
+  "A fruitcake.",
+  "Socks as a gift.",
+  "New Year's resolutions.",
+  "Giving up on day three.",
+  "Announcing a \"new me.\"",
+  "Manifesting.",
+  "A vision board.",
+  "Mercury in retrograde.",
+  "A crystal that fixes nothing.",
+  "A fortune cookie with bad news.",
+  "A magic 8-ball that says \"ask again later.\"",
+  "A genie with terms and conditions.",
+  "A cursed amulet from a garage sale.",
+  "A thrift store treasure.",
+  "Grandpa's story about walking uphill both ways.",
+  "Dad jokes.",
+  "Dad's lawn.",
+  "\"We have food at home.\"",
+  "The family group chat.",
+  "The cousin who's always \"between jobs.\"",
+  "An aunt who asks about my love life.",
+  "The kids' table.",
+  "Thanksgiving arguments.",
+  "Tupperware with no matching lids.",
+  "The junk drawer.",
+  "Batteries that might be dead.",
+  "Duct tape.",
+  "Flat-pack furniture instructions.",
+  "Leftover screws.",
+  "A wobbly table.",
+  "A pillow fort.",
+  "A weighted blanket.",
+  "A blanket burrito.",
+  "Sweatpants.",
+  "Socks with sandals.",
+  "A fanny pack.",
+  "Cargo shorts with 19 pockets.",
+  "Sunglasses indoors.",
+  "A monocle.",
+  "A top hat.",
+  "A disguise that's just a hat.",
+  "A secret agent who's bad at secrets.",
+  "A laser maze.",
+  "A heist crew of grandmas.",
+  "A getaway car that won't start.",
+  "The perfect alibi.",
+  "Fingerprints on the cookie jar.",
+  "A pirate who gets seasick.",
+  "A map with an X on it.",
+  "Walking the plank.",
+  "A mermaid with WiFi.",
+  "A shark who's a vegetarian.",
+  "A message in a bottle.",
+  "A deserted island.",
+  "A coconut with a face painted on it.",
+  "A beach umbrella flying away.",
+  "Sand in absolutely everything.",
+  "Sunscreen in my eyes.",
+  "A lifeguard who can't swim.",
+  "A pool noodle.",
+  "A water balloon fight.",
+  "An inflatable flamingo.",
+  "Summer homework.",
+  "The first day of school.",
+  "Sticky notes everywhere.",
+  "A planner I used for one week.",
+  "Productive procrastination.",
+  "Cleaning my room instead of studying.",
+  "Organizing my bookshelf by color.",
+  "Watching study videos instead of studying.",
+  "Lo-fi beats to panic to.",
+  "An all-nighter for a test I didn't study for.",
+  "A brain that only works after midnight.",
+  "Existential dread.",
+  "Staring into the void and the void waving back.",
+  "The meaning of life.",
+  "Overthinking.",
+  "Replaying a conversation from 2017.",
+  "Accidentally calling the teacher \"Mom.\"",
+  "Autocorrect.",
+  "An emoji I don't understand.",
+  "The skull emoji.",
+  "\"K.\"",
+  "\"We should hang out sometime.\"",
+  "Canceling plans and feeling relieved.",
+  "Only talking to the dog at a party.",
+  "A golden retriever with no thoughts.",
+  "A chihuahua full of rage.",
+  "A cat in a box.",
+  "Bubble wrap.",
+  "Clicking a pen during an exam.",
+  "A chocolate fountain.",
+  "Double-dipping.",
+  "Calling dibs.",
+  "Best two out of three.",
+  "A pinky promise.",
+  "Stealing someone's fries.",
+  "A shared streaming password.",
+  "A spoiler in the group chat.",
+  "A cliffhanger.",
+  "A plot hole.",
+  "An overly long end-credits scene.",
+  "A trailer that shows the whole movie.",
+  "3D glasses.",
+  "A loud chewer at the movies.",
+  "Dad commenting through the whole movie.",
+  "A makeover montage.",
+  "Running through the airport to confess my feelings.",
+  "A secret admirer.",
+  "A crush who doesn't know I exist.",
+  "Zero rizz.",
+  "A pickup line about potatoes.",
+  "Living rent-free in my head.",
+  "Touching grass.",
+  "A weekly screen time report.",
+  "My phone at 1%.",
+  "A charger that only works at a certain angle.",
+  "Dropping my phone on my face.",
+  "A cracked screen.",
+  "Bluetooth that won't connect.",
+  "Headphones tangled into a knot.",
+  "A librarian who has seen everything.",
+  "An overdue library book from 2008.",
+  "My bank account.",
+  "A wallet full of receipts.",
+  "A jar of pennies.",
+  "A lemonade stand.",
+  "A startup that delivers socks by drone.",
+  "An app that tells you it's raining.",
+  "Five-star reviews written by my mom.",
+  "A one-star review of the sun.",
+]
+// The Spicy pack, off unless the host turns it on. Swear words sit in [[ ]]
+// and show blurred.
+const PL_SPICY_PROMPTS = [
+  "My dating profile says I'm into ____.",
+  "The worst thing to say on a first date: ____.",
+  "What really happened at the bachelor party?",
+  "It's 2 AM and I'm texting my ex about ____.",
+  "My walk of shame soundtrack: ____.",
+  "Nothing kills the mood faster than ____.",
+  "What's in the drawer my roommate told me never to open?",
+  "Huge dating app red flag: ____.",
+  "I woke up in a stranger's bathtub next to ____.",
+  "Honestly, what the [[hell]] is ____?",
+  "My doctor called ____ \"medically concerning.\"",
+  "Last night's worst decision: ____.",
+  "What's that stain?",
+  "The real reason I got kicked out of the hot tub: ____.",
+  "My safe word is ____.",
+  "I'm not drunk, I'm just ____.",
+  "What did I google at 3 AM?",
+  "The wedding was going great until ____.",
+  "____: the reason I can never go back to that buffet.",
+  "Holy [[sh*t]], is that ____?",
+  "My body is a temple, but the temple is full of ____.",
+  "What's the most cursed thing in my search history?",
+  "My love life is basically ____.",
+  "Swipe left if you're into ____.",
+  "____ is my most toxic coping mechanism.",
+  "The hookup was going fine until they mentioned ____.",
+  "Who farted?",
+  "I'd let ____ ruin my life.",
+  "What's growing in the gym shower?",
+  "Mom found my ____.",
+  "What's my most unhinged 2 AM purchase?",
+  "Couples therapy, session one: \"____.\"",
+  "Dear diary, today I made out with ____.",
+  "I'm sorry for what I said when I was ____.",
+  "What's the real reason the neighbors called the cops?",
+  "What happens with ____ stays with ____.",
+  "Pro tip: never mix ____ with ____.",
+  "My hangover cure: ____ and ____.",
+  "____ and ____ walk into a cheap motel.",
+  "The only thing hotter than ____ is ____.",
+  "My [[damn]] ex still has ____ and ____.",
+]
+const PL_SPICY_ANSWERS = [
+  "My ex's [[damn]] playlist.",
+  "Accidentally sexting my mom.",
+  "A hickey shaped like Florida.",
+  "A thirst trap that backfired.",
+  "Rizzing up the bartender.",
+  "Moaning at the dentist.",
+  "A walk of shame in flip-flops.",
+  "Body glitter in places it shouldn't be.",
+  "A suspicious rash.",
+  "Explosive diarrhea.",
+  "A fart that echoed.",
+  "Silent but deadly.",
+  "Hangover sweats.",
+  "A tequila-fueled tattoo of a dolphin.",
+  "A lower-back tattoo of my ex's name.",
+  "Skinny dipping in a hotel fountain.",
+  "Getting caught in 4K.",
+  "A booty call that turned into couples therapy.",
+  "A sexy calendar of firefighters holding puppies.",
+  "Fuzzy handcuffs from a costume shop.",
+  "A drawer full of \"massage oils.\"",
+  "Edible underwear.",
+  "Underwear on the ceiling fan.",
+  "Free-balling.",
+  "Boob sweat.",
+  "Swamp [[ass]].",
+  "Pit stains the size of dinner plates.",
+  "Morning breath.",
+  "Thigh sweat on a leather seat.",
+  "Butt-dialing my boss.",
+  "Pooping at a house party.",
+  "Clogging the toilet at my crush's house.",
+  "The plunger of shame.",
+  "Peeing in the pool.",
+  "A shower beer.",
+  "Strip Monopoly.",
+  "A bachelorette party sash.",
+  "Drunk-dialing my ex.",
+  "\"U up?\"",
+  "Sliding into the DMs.",
+  "An unsolicited [[d*ck]] pic.",
+  "Fogging up the car windows.",
+  "Making out in a corn maze.",
+  "My stripper name, Cinnamon Thunder.",
+  "A lap dance that went horribly wrong.",
+  "A date who brought their mom.",
+  "Getting ghosted after the best date of my life.",
+  "A situationship.",
+  "Friends with benefits and no friendship.",
+  "A \"sex dungeon\" that's just a basement with a treadmill.",
+  "Morning wood.",
+  "Netflix and chill, but actually just Netflix.",
+  "Kinks I picked up from a cooking show.",
+  "Whipped cream for \"dessert.\"",
+  "Getting hot sauce on my private parts.",
+  "Getting [[sh*t]]-faced at a wine tasting.",
+  "A [[sh*t]]load of tequila.",
+  "Absolute [[bullsh*t]].",
+  "Some [[damn]] good tacos.",
+  "A [[f*cking]] goose.",
+  "Giving zero [[f*cks]].",
+  "My [[sh*tty]] landlord.",
+  "A [[b*tchin']] mullet.",
+  "The \"oh [[sh*t]]\" handle in the car.",
+  "Sweaty [[balls]] in July.",
+  "Nipple tassels.",
+  "A nip slip on live TV.",
+  "Mooning the bus.",
+  "Naked yoga.",
+  "A nude figure-drawing class where I'm the model.",
+  "Sexting entirely in emojis.",
+  "The eggplant emoji.",
+  "The peach emoji.",
+  "A body pillow named Steve.",
+  "Lying about my body count.",
+  "A pregnancy scare that was just gas.",
+  "Condoms from a gas station vending machine.",
+  "Expired condoms.",
+  "A condom balloon animal.",
+  "Strawberry-flavored lube.",
+  "Getting high and eating a whole cake.",
+  "Weed brownies at the family reunion.",
+  "Edibles that hit way too hard.",
+  "Hotboxing a minivan.",
+  "Puking in the back of a rideshare.",
+  "A five-star passenger rating destroyed in one night.",
+  "Throwing up glitter.",
+  "Beer farts.",
+  "Fast food regret at 3 AM.",
+  "Keg stands.",
+  "Jello shots.",
+  "The tequila worm.",
+  "Waking up with a stranger's name tattooed on me.",
+  "What happened in Vegas.",
+  "Hooking up with a mime.",
+  "A one-night stand with a magician who made himself disappear.",
+  "Seducing a mattress salesman.",
+  "Making out with my own reflection.",
+  "Practicing kissing on a pillow.",
+  "Moaning loudly to annoy the neighbors.",
+  "Thin walls in a cheap motel.",
+  "A heart-shaped hot tub.",
+  "A honeymoon at a truck stop.",
+  "Spray-on abs.",
+  "Roleplaying as tax auditors.",
+  "Dirty talk about spreadsheets.",
+  "Foreplay that's just a slideshow presentation.",
+  "A [[d*mn]] good cuddle.",
+  "Being horny on main.",
+  "Horny jail.",
+  "A bedroom with mirrors on the ceiling.",
+  "A waterbed that popped.",
+  "Sex on the beach (the drink, relax).",
+  "My sweaty gym crush.",
+  "A personal trainer named Chad.",
+  "My ex's new partner, who is objectively hotter.",
+  "A revenge body.",
+  "Stalking my ex's profile at 2 AM.",
+  "Liking a three-year-old photo while stalking.",
+  "A fart joke in the wedding toast.",
+  "A urinal cake.",
+  "Diarrhea on a first date.",
+  "Back hair.",
+  "A manscaping accident.",
+  "A bikini wax gone wrong.",
+  "A unibrow I'm weirdly proud of.",
+  "A [[hell]] of a hangover.",
+  "Taking my bra off at the end of the day.",
+  "A hot tub full of strangers.",
+  "Getting my tongue stuck to a frozen pole on a dare.",
+  "Calling my boss \"babe\" by accident.",
+  "Sleeping with my phone and calling it intimacy.",
+]
+
+function punchline(host, ctx, opts) {
+  const HAND = 10
+  const MAX_SEATS = 10
+  const MAX_BOTS = 3
+  const SUBMIT_MS = 60000
+  const JUDGE_MS = 60000
+  const REVEAL_MS = 9000
+  const BEAT_MS = 10000
+  const BOT_NAMES = ['House bot Ada', 'House bot Bix', 'House bot Cog']
+  const RECORD_KEY = 'ds_pl_record'
+
+  const me = randomId()
+  const wrap = el('div', { class: 'pl' })
+  host.append(wrap)
+
+  let name = storedName() || ''
+  let room = null
+  let G = null              // the game; the host's copy is the real one
+  let players = []          // presence, oldest first
+  let dead = false
+  let chosen = []           // indexes into my hand, in the order picked
+  let chosenKey = ''
+  let sentAt = 0
+  let sentV = -1
+  let deadline = 0          // host: when this phase times out
+  let phaseKey = ''
+  let shownDeadline = 0     // everyone: the same, as last heard
+  let lastPublish = 0
+  let botAt = {}            // host: when each bot plays this round
+  let waitTimer = null
+  let notice = ''
+  let customEl = null       // the lobby's custom-cards box, kept across redraws
+  let customRoom = ''
+  const tick = setInterval(onTick, 500)
+
+  function fill(node, ...kids) {
+    node.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false && k !== ''))
+    return node
+  }
+  const rand = n => Math.floor(Math.random() * n)
+  function shuffle(list) {
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = rand(i + 1)
+      ;[list[i], list[j]] = [list[j], list[i]]
+    }
+    return list
+  }
+  const activity = info => { if (typeof hubActivity === 'function') hubActivity(info) }
+  const isHost = () => !!G && G.hostId === me
+  const mySeat = () => (G ? G.seats.findIndex(x => x.id === me && !x.bot) : -1)
+  const seatName = (g, k) => (g.seats[k] ? g.seats[k].name : '?')
+
+  // ── Cards ──
+  // A card is a short reference: p/a are the built-in prompts and answers,
+  // x/y the Spicy pack's, q/c the room's custom ones.
+  function text(g, ref) {
+    const i = Number(ref.slice(1))
+    switch (ref[0]) {
+      case 'p': return PL_PROMPTS[i] || ''
+      case 'a': return PL_ANSWERS[i] || ''
+      case 'x': return PL_SPICY_PROMPTS[i] || ''
+      case 'y': return PL_SPICY_ANSWERS[i] || ''
+      case 'q': return (g.cp || [])[i] || ''
+      case 'c': return (g.ca || [])[i] || ''
+      default: return ''
+    }
+  }
+  const blanks = t => (t.match(/____/g) || []).length
+  const pickOf = (g, ref) => Math.max(1, Math.min(3, blanks(text(g, ref))))
+  const range = (n, letter) => Array.from({ length: n }, (_, i) => `${letter}${i}`)
+
+  function allPrompts(g) {
+    const custom = range((g.cp || []).length, 'q')
+    if (g.customOnly) return custom
+    return [...range(PL_PROMPTS.length, 'p'), ...(g.spicy ? range(PL_SPICY_PROMPTS.length, 'x') : []), ...custom]
+  }
+  function allAnswers(g) {
+    const custom = range((g.ca || []).length, 'c')
+    if (g.customOnly) return custom
+    return [...range(PL_ANSWERS.length, 'a'), ...(g.spicy ? range(PL_SPICY_ANSWERS.length, 'y') : []), ...custom]
+  }
+  // Cards in someone's hand or on the table right now.
+  function inPlay(g) {
+    const out = new Set()
+    for (const h of Object.values(g.hands || {})) for (const r of h) out.add(r)
+    for (const s of Object.values(g.subs || {})) for (const r of s) out.add(r)
+    return out
+  }
+  function drawAnswer(g) {
+    if (!g.adeck.length) {
+      const used = inPlay(g)
+      g.adeck = shuffle(allAnswers(g).filter(r => !used.has(r)))
+      if (!g.adeck.length) return null
+    }
+    return g.adeck.pop()
+  }
+  function drawPrompt(g) {
+    if (!g.pdeck.length) g.pdeck = shuffle(allPrompts(g).filter(r => r !== g.prompt))
+    return g.pdeck.pop() || g.prompt
+  }
+  function deal(g, k) {
+    const h = g.hands[k] || (g.hands[k] = [])
+    while (h.length < HAND) {
+      const r = drawAnswer(g)
+      if (!r) break
+      h.push(r)
+    }
+  }
+
+  // Custom cards: one per line. Lines with a blank (or a question mark at
+  // the end) are prompts; the rest are answers.
+  function parseCustom(raw) {
+    const cp = []
+    const ca = []
+    const seen = new Set()
+    for (let line of String(raw || '').split('\n')) {
+      line = line.trim().replace(/_{2,}/g, '____').slice(0, 140)
+      if (!line || seen.has(line.toLowerCase())) continue
+      seen.add(line.toLowerCase())
+      if (/____/.test(line) || /\?$/.test(line)) cp.push(line)
+      else ca.push(line)
+      if (cp.length + ca.length >= 400) break
+    }
+    return { cp, ca }
+  }
+
+  // An answer as it reads inside the prompt: no full stop mid-sentence, and
+  // a small first letter after words.
+  const PROPER = /^(I\b|Bigfoot|Thanksgiving|Wikipedia|Mercury|New Year|LinkedIn|Netflix|Strip Monopoly|Jello|Grandma|Grandpa|Dad\b|Dad's|Mom\b|Mom's|Florida|Vegas|Steve|Chad)/
+  function inline(answer, before, after) {
+    let t = answer.trim()
+    if (after) t = t.replace(/[.]$/, '')
+    if (before && !/[.!?:"“]\s*$/.test(before) && /^[A-Z][a-z]/.test(t) && !PROPER.test(t)) t = t[0].toLowerCase() + t.slice(1)
+    return t
+  }
+
+  // Card text with [[bleeped]] words blurred until hovered or pressed.
+  function rich(t) {
+    const parts = String(t).split(/\[\[(.+?)\]\]/)
+    return parts.map((p, i) => {
+      if (!(i % 2)) return p
+      const s = el('span', { class: 'pl-blur', 'aria-label': 'bleeped', title: 'Hover or press to peek' }, p)
+      const on = () => s.classList.add('show')
+      const off = () => s.classList.remove('show')
+      s.addEventListener('pointerdown', on)
+      s.addEventListener('pointerup', off)
+      s.addEventListener('pointerleave', off)
+      s.addEventListener('pointercancel', off)
+      return s
+    })
+  }
+
+  // The prompt with these answers filled in (or blank lines if none).
+  function sentence(g, promptRef, answers) {
+    const t = text(g, promptRef)
+    const parts = t.split('____')
+    if (parts.length === 1) {
+      return [rich(t), answers && answers.length ? [' ', answers.map((r, i) => [i ? ' / ' : '', el('span', { class: 'pl-fill' }, rich(text(g, r)))])] : null]
+    }
+    const out = []
+    parts.forEach((part, i) => {
+      out.push(rich(part))
+      if (i === parts.length - 1) return
+      const r = answers && answers[i]
+      out.push(r ? el('span', { class: 'pl-fill' }, rich(inline(text(g, r), part, parts[i + 1]))) : el('span', { class: 'pl-blank' }, ' '))
+    })
+    return out
+  }
+
+  // ── The game ──
+  function newGame(hostId, prev) {
+    return {
+      gid: randomId(), v: 0, hostId, phase: 'lobby',
+      target: prev ? prev.target : 7, bots: prev ? prev.bots : 0,
+      spicy: prev ? !!prev.spicy : false,
+      custom: prev ? prev.custom : '', customOnly: prev ? !!prev.customOnly : false, cp: [], ca: [],
+      seats: prev ? prev.seats.filter(x => !x.bot && !x.gone).map(x => ({ id: x.id, name: x.name })) : [],
+      round: 0, judge: -1, prompt: '', pdeck: [], adeck: [], hands: {}, subs: {}, need: [], order: [],
+      win: -1, winner: -1, log: [], remain: 0,
+    }
+  }
+  function say(g, line) {
+    g.log = (g.log || []).concat(line).slice(-4)
+  }
+  const humans = g => g.seats.filter(x => !x.bot && !x.gone)
+
+  // Who can start: three seats, at least two of them people.
+  function startProblem(g) {
+    if (g.seats.length < 3) return 'Punchline needs at least 3 seats (add a House bot if you\'re only two).'
+    if (humans(g).length < 2) return 'Punchline needs at least two people.'
+    if (g.customOnly) {
+      if (!g.cp.length) return 'Add at least one custom prompt (a line with ____ in it).'
+      if (g.ca.length < g.seats.length * HAND + 5) return `Custom-only needs at least ${g.seats.length * HAND + 5} custom answers for ${g.seats.length} players (you have ${g.ca.length}).`
+    }
+    return null
+  }
+
+  function startGame(g) {
+    const parsed = parseCustom(g.custom)
+    g.cp = parsed.cp
+    g.ca = parsed.ca
+    const err = startProblem(g)
+    if (err) return err
+    g.seats.forEach(x => { x.score = 0; x.swapped = false })
+    g.hands = {}
+    g.subs = {}
+    g.pdeck = shuffle(allPrompts(g))
+    g.adeck = shuffle(allAnswers(g))
+    g.prompt = ''
+    g.round = 0
+    g.winner = -1
+    g.judge = -1
+    g.log = []
+    g.seats.forEach((x, k) => deal(g, k))
+    nextJudge(g)
+    startRound(g)
+    return null
+  }
+
+  function nextJudge(g) {
+    const n = g.seats.length
+    for (let step = 1; step <= n; step++) {
+      const k = (g.judge + step + n) % n
+      if (!g.seats[k].bot && !g.seats[k].gone) { g.judge = k; return }
+    }
+  }
+
+  function startRound(g) {
+    g.round++
+    g.phase = 'submit'
+    g.prompt = drawPrompt(g)
+    g.subs = {}
+    g.order = []
+    g.win = -1
+    g.seats.forEach((x, k) => deal(g, k))
+    g.need = g.seats.map((x, k) => k).filter(k => k !== g.judge && !g.seats[k].gone)
+    say(g, `Round ${g.round}: ${seatName(g, g.judge)} is judging.`)
+  }
+
+  function allIn(g) {
+    return g.need.filter(k => !g.seats[k].gone).every(k => g.subs[k])
+  }
+
+  function toJudging(g) {
+    const ks = Object.keys(g.subs).map(Number)
+    if (!ks.length) {
+      say(g, 'Nobody played a card, so on to the next round.')
+      nextJudge(g)
+      startRound(g)
+      return
+    }
+    g.order = shuffle(ks)
+    g.phase = 'judge'
+  }
+
+  function award(g, k) {
+    g.win = k
+    g.seats[k].score = (g.seats[k].score || 0) + 1
+    say(g, `${seatName(g, k)} wins the round.`)
+    g.seats.forEach((x, j) => deal(g, j))
+    if (g.seats[k].score >= g.target) {
+      g.phase = 'over'
+      g.winner = k
+      say(g, `${seatName(g, k)} wins the game!`)
+    } else g.phase = 'reveal'
+  }
+
+  // The Spicy pack can be switched mid-game: hands keep what they have, and
+  // only new draws change.
+  function setSpicy(g, on) {
+    g.spicy = !!on
+    if (g.phase === 'lobby' || g.customOnly) return
+    const spicyRef = r => r[0] === 'x' || r[0] === 'y'
+    if (on) {
+      const used = inPlay(g)
+      g.adeck = shuffle(g.adeck.concat(range(PL_SPICY_ANSWERS.length, 'y').filter(r => !used.has(r) && !g.adeck.includes(r))))
+      g.pdeck = shuffle(g.pdeck.concat(range(PL_SPICY_PROMPTS.length, 'x').filter(r => r !== g.prompt && !g.pdeck.includes(r))))
+    } else {
+      g.adeck = g.adeck.filter(r => !spicyRef(r))
+      g.pdeck = g.pdeck.filter(r => !spicyRef(r))
+    }
+    say(g, `The Spicy pack is ${on ? 'in' : 'out'}.`)
+  }
+
+  // One move from seat k. Returns an error to show, or nothing.
+  function act(g, k, a) {
+    const seat = g.seats[k]
+    if (!seat || !a) return 'Not your seat.'
+    if (a.type === 'submit') {
+      if (g.phase !== 'submit') return 'Too late for this round.'
+      if (k === g.judge) return 'You\'re judging this round.'
+      if (!g.need.includes(k)) return 'You\'re in from the next round.'
+      if (g.subs[k]) return 'You\'ve already played.'
+      const pick = pickOf(g, g.prompt)
+      const idx = Array.isArray(a.cards) ? a.cards.map(Number) : []
+      const hand = g.hands[k] || []
+      if (idx.length !== pick || new Set(idx).size !== pick || idx.some(i => !(i >= 0 && i < hand.length))) return `Pick ${pick} card${pick > 1 ? 's' : ''}.`
+      g.subs[k] = idx.map(i => hand[i])
+      g.hands[k] = hand.filter((r, i) => !idx.includes(i))
+      if (allIn(g)) toJudging(g)
+      return null
+    }
+    if (a.type === 'pick') {
+      if (g.phase !== 'judge') return 'Not time to judge.'
+      if (k !== g.judge) return 'Only the judge picks.'
+      const w = g.order[Number(a.index)]
+      if (w === undefined) return 'Pick one of the answers.'
+      award(g, w)
+      return null
+    }
+    if (a.type === 'next') {
+      if (g.phase !== 'reveal') return null
+      if (k !== g.judge && seat.id !== g.hostId) return 'The judge moves on.'
+      nextJudge(g)
+      startRound(g)
+      return null
+    }
+    if (a.type === 'swap') {
+      if (seat.swapped) return 'You\'ve already swapped this game.'
+      if (g.phase === 'submit' && g.subs[k]) return 'You\'ve already played this round.'
+      if (g.phase === 'lobby' || g.phase === 'over') return null
+      const old = g.hands[k] || []
+      g.hands[k] = []
+      deal(g, k)
+      g.adeck = shuffle(g.adeck.concat(old))
+      seat.swapped = true
+      say(g, `${seat.name} swapped their whole hand.`)
+      return null
+    }
+    return 'Unknown move.'
+  }
+
+  // ── Host: seats, timers, bots ──
+  function hostSeats() {
+    if (!isHost()) return
+    let changed = false
+    if (G.phase === 'lobby') {
+      const seats = []
+      const used = new Set()
+      for (const p of players) {
+        if (seats.length >= MAX_SEATS - G.bots) break
+        let nm = String(p.name || 'Player').slice(0, 18)
+        for (let n = 2; used.has(nm); n++) nm = `${String(p.name || 'Player').slice(0, 15)} ${n}`
+        used.add(nm)
+        seats.push({ id: p.id, name: nm })
+      }
+      for (let b = 0; b < G.bots; b++) seats.push({ id: `bot-${b}`, name: BOT_NAMES[b], bot: true })
+      if (JSON.stringify(seats) !== JSON.stringify(G.seats)) { G.seats = seats; changed = true }
+    } else {
+      const here = new Set(players.map(p => p.id))
+      G.seats.forEach((seat, k) => {
+        if (seat.bot || seat.gone || here.has(seat.id)) return
+        seat.gone = true
+        say(G, `${seat.name} left. Their score is kept for when they're back.`)
+        if (G.phase === 'submit' && allIn(G)) toJudging(G)
+        changed = true
+      })
+      for (const p of players) {
+        if (G.seats.some(x => x.id === p.id)) continue
+        const back = G.seats.find(x => x.gone && !x.bot && x.name === p.name)
+        if (back) {
+          back.id = p.id
+          back.gone = false
+          say(G, `${back.name} is back.`)
+          changed = true
+          continue
+        }
+        if (G.seats.length >= MAX_SEATS || G.phase === 'over') continue
+        // Late arrivals get a hand and play from the next round.
+        const used = new Set(G.seats.map(x => x.name))
+        let nm = String(p.name || 'Player').slice(0, 18)
+        for (let n = 2; used.has(nm); n++) nm = `${String(p.name || 'Player').slice(0, 15)} ${n}`
+        G.seats.push({ id: p.id, name: nm, score: 0, swapped: false })
+        deal(G, G.seats.length - 1)
+        say(G, `${nm} joined and plays from the next round.`)
+        changed = true
+      }
+    }
+    if (changed) change()
+  }
+
+  function change() {
+    if (!G) return
+    G.v++
+    record(G)
+    schedule()
+    if (isHost()) publish()
+    render()
+  }
+
+  function publish() {
+    if (!room || !isHost()) return
+    G.remain = deadline ? Math.max(0, deadline - Date.now()) : 0
+    lastPublish = Date.now()
+    room.send('state', { g: G })
+  }
+
+  // New phase: start its clock, and line up the bots' plays.
+  function schedule() {
+    if (!isHost() || !G) { deadline = 0; return }
+    const key = `${G.gid}|${G.round}|${G.phase}`
+    if (key === phaseKey) return
+    phaseKey = key
+    botAt = {}
+    if (G.phase === 'submit') {
+      deadline = Date.now() + SUBMIT_MS
+      for (const k of G.need) if (G.seats[k].bot) botAt[k] = Date.now() + 1500 + Math.random() * 3500
+    } else if (G.phase === 'judge') deadline = Date.now() + JUDGE_MS
+    else if (G.phase === 'reveal') deadline = Date.now() + REVEAL_MS
+    else deadline = 0
+  }
+
+  function onTick() {
+    if (dead || !G) return
+    if (isHost() && G.phase !== 'lobby') {
+      let moved = false
+      if (G.phase === 'submit') {
+        for (const [k, at] of Object.entries(botAt)) {
+          if (Date.now() < at || G.subs[k]) continue
+          const pick = pickOf(G, G.prompt)
+          const hand = G.hands[k] || []
+          const idx = shuffle(hand.map((r, i) => i)).slice(0, pick)
+          delete botAt[k]
+          if (!act(G, Number(k), { type: 'submit', cards: idx })) moved = true
+        }
+        if (!moved && G.phase === 'submit' && deadline && Date.now() > deadline) {
+          const missing = G.need.filter(k => !G.subs[k] && !G.seats[k].gone)
+          if (missing.length) say(G, `Time's up: ${missing.map(k => seatName(G, k)).join(', ')} sat this one out.`)
+          toJudging(G)
+          moved = true
+        }
+      } else if (G.phase === 'judge') {
+        const judgeGone = !G.seats[G.judge] || G.seats[G.judge].gone
+        if ((deadline && Date.now() > deadline) || (judgeGone && deadline && Date.now() > deadline - JUDGE_MS + 3000)) {
+          say(G, judgeGone ? 'The judge left, so the winner is picked at random.' : 'The judge ran out of time: picked at random.')
+          award(G, G.order[rand(G.order.length)])
+          moved = true
+        }
+      } else if (G.phase === 'reveal' && deadline && Date.now() > deadline) {
+        nextJudge(G)
+        startRound(G)
+        moved = true
+      }
+      if (moved) { change(); return }
+      if (room && Date.now() - lastPublish > BEAT_MS) publish()
+    }
+    renderClock()
+  }
+
+  // ── Moves from this page ──
+  function move(a) {
+    if (!G) return
+    const k = mySeat()
+    if (k < 0) return
+    if (isHost()) {
+      const err = act(G, k, a)
+      notice = err || ''
+      if (err) { render(); return }
+      change()
+    } else {
+      sentAt = Date.now()
+      sentV = G.v
+      room.send('act', { a })
+      render()
+    }
+  }
+  const holding = () => !isHost() && G && sentV === G.v && Date.now() - sentAt < 3000
+
+  // ── Online ──
+  function connect(code, creating) {
+    leaveRoom()
+    G = null
+    players = []
+    notice = ''
+    loading(creating ? 'Making a room…' : `Joining room ${code}…`)
+    const r = partyRoom('punch', code, me, { name }, {
+      presence: list => { if (room === r) onPresence(list) },
+      message: (t, p) => { if (room === r) onMessage(t, p) },
+      ready: () => {
+        if (room !== r) return
+        activity({ game: 'punch', code, label: 'Punchline', joinable: true })
+        if (creating) {
+          G = newGame(me)
+          hostSeats()
+          change()
+          return
+        }
+        r.send('hello', {})
+        waitTimer = setTimeout(() => {
+          if (room !== r || G) return
+          if (!players.length || players[0].id === me) {
+            G = newGame(me)
+            hostSeats()
+            change()
+          } else menu(`Nobody is hosting room ${code} right now.`)
+        }, 4500)
+      },
+      error: text => { if (room === r) { leaveRoom(); menu(text) } },
+    })
+    room = r
+  }
+
+  function leaveRoom() {
+    clearTimeout(waitTimer)
+    if (room) { room.close(); room = null; activity(null) }
+  }
+
+  function onPresence(list) {
+    players = list
+    if (!G) return
+    const here = new Set(list.map(p => p.id))
+    if (!here.has(G.hostId) && list.length && list[0].id === me) {
+      // The host left: the longest-present player carries on.
+      G.hostId = me
+      phaseKey = ''
+      say(G, `${name} is hosting now.`)
+      hostSeats()
+      change()
+      return
+    }
+    if (isHost()) hostSeats()
+    render()
+  }
+
+  function onMessage(t, p) {
+    if (t === 'state') {
+      const g = p.g
+      if (!g || g.hostId !== p.from) return
+      if (G && G.gid === g.gid && g.v < G.v && G.hostId === g.hostId) return
+      if (isHost() && G && g.hostId !== me && g.v <= G.v) return
+      G = g
+      shownDeadline = g.remain ? Date.now() + g.remain : 0
+      record(G)
+      render()
+      return
+    }
+    if (!isHost()) return
+    if (t === 'hello') { publish(); return }
+    if (t === 'act') {
+      const k = G.seats.findIndex(x => x.id === p.from && !x.bot)
+      if (k < 0) return
+      const err = act(G, k, p.a)
+      if (!err) change()
+      else publish()
+    }
+  }
+
+  // ── Record ──
+  function record(g) {
+    if (!g || g.phase !== 'over') return
+    const k = mySeat()
+    if (k < 0) return
+    let rec = { games: 0, wins: 0, done: [] }
+    try { rec = Object.assign(rec, JSON.parse(localStorage.getItem(RECORD_KEY)) || {}) } catch (e) { /* private mode */ }
+    if (rec.done.includes(g.gid)) return
+    rec.done = rec.done.concat(g.gid).slice(-30)
+    rec.games++
+    if (g.winner === k) rec.wins++
+    try { localStorage.setItem(RECORD_KEY, JSON.stringify(rec)) } catch (e) { /* private mode */ }
+  }
+  function readRecord() {
+    try { return JSON.parse(localStorage.getItem(RECORD_KEY)) || null } catch (e) { return null }
+  }
+
+  // ── Screens ──
+  function loading(t) {
+    fill(wrap, el('div', { class: 'card stack pl-menu' }, el('p', { class: 'muted' }, t),
+      el('button', { type: 'button', class: 'link', onClick: () => menu() }, '‹ Cancel')))
+  }
+
+  function menu(err) {
+    leaveRoom()
+    G = null
+    customEl = null
+    let draftName = name
+    let draftCode = (opts && opts.code) || ''
+    const nameInput = el('input', { value: draftName, maxlength: 18, placeholder: 'Your name', onInput: e => { draftName = e.target.value } })
+    const okName = () => {
+      const n = draftName.trim().slice(0, 18)
+      if (!n) { nameInput.focus(); return false }
+      name = n
+      storeName(n)
+      return true
+    }
+    const rec = readRecord()
+    const online = partyCanOnline()
+    fill(wrap, el('div', { class: 'card stack pl-menu' },
+      el('div', null, el('p', { class: 'wordmark' }, 'Punchline'), el('p', { class: 'tagline' }, 'Fill in the blank, win the room')),
+      err && el('p', { class: 'error' }, err),
+      el('label', { class: 'field' }, el('span', null, 'Your name'), nameInput),
+      online
+        ? [
+          el('button', { type: 'button', class: 'primary', onClick: () => { if (okName()) connect(partyCode(), true) } }, 'Make a room'),
+          el('form', { class: 'row', onSubmit: e => {
+            e.preventDefault()
+            const c = partyCleanCode(draftCode)
+            if (c && okName()) connect(c, false)
+          } },
+            el('input', { class: 'grow', value: draftCode, maxlength: 8, placeholder: 'Room code', onInput: e => { draftCode = e.target.value } }),
+            el('button', { type: 'submit' }, 'Join')),
+        ]
+        : el('p', { class: 'muted small' }, 'Punchline plays over Supabase, like watch together (DEBROD → Settings).'),
+      rec && rec.games > 0 && el('p', { class: 'muted small' }, `Your record: ${rec.wins} won of ${rec.games} game${rec.games === 1 ? '' : 's'}.`),
+      el('p', { class: 'muted small' }, 'Each round one player judges. Everyone else plays the funniest answer from their hand for the prompt; the judge picks a favourite without knowing whose it is. 3 to 10 players, and House bots can fill in.')))
+    if (opts && opts.code && name && online && !err) {
+      const c = partyCleanCode(opts.code)
+      opts = Object.assign({}, opts, { code: '' })
+      if (c) return connect(c, false)
+    }
+    if (!draftName) nameInput.focus()
+  }
+
+  function lobby() {
+    const hostHere = isHost()
+    const k = mySeat()
+    const watchers = players.filter(p => !G.seats.some(x => x.id === p.id))
+    const hostName = (players.find(p => p.id === G.hostId) || {}).name || 'the host'
+    if (!customEl || customRoom !== G.gid) {
+      customRoom = G.gid
+      customEl = el('textarea', { placeholder: 'One card per line. Lines with ____ (or ending in ?) are prompts:\nThe thing I miss most about summer is ____.\nAn answer about your friend group\'s inside joke.', maxlength: 20000 })
+      customEl.value = G.custom || ''
+      customEl.addEventListener('change', () => { if (isHost()) { G.custom = customEl.value; change() } })
+    }
+    if (document.activeElement !== customEl) customEl.value = G.custom || ''
+    customEl.disabled = !hostHere
+    const parsed = parseCustom(G.custom)
+    const problem = (() => {
+      const g = Object.assign({}, G, parsed)
+      return startProblem(g)
+    })()
+    fill(wrap, el('div', { class: 'card stack pl-menu' },
+      el('div', null, el('p', { class: 'wordmark' }, 'Punchline'), el('p', { class: 'tagline' }, 'Room')),
+      el('p', { class: 'pl-code' }, room ? room.code : ''),
+      el('button', { type: 'button', onClick: async () => { ctx.toast(await partyInvite('punch', room.code, 'Punchline')) } }, 'Invite friends'),
+      el('div', { class: 'pl-seats' }, G.seats.map(seat => el('div', { class: 'pl-seat' },
+        el('span', { class: 'grow truncate' }, seat.bot ? '🤖 ' : '', seat.name, seat.id === me ? ' (you)' : '', seat.id === G.hostId ? ' 👑' : ''),
+        hostHere && seat.bot && el('button', { type: 'button', class: 'chip', title: 'Remove this bot', onClick: () => { G.bots = Math.max(0, G.bots - 1); hostSeats(); render() } }, '✕')))),
+      watchers.length > 0 && el('p', { class: 'muted small' }, `Watching: ${watchers.map(p => p.name).join(', ')}`),
+      k < 0 && el('p', { class: 'muted small' }, 'The table is full, so you\'re watching.'),
+      hostHere
+        ? [
+          el('div', { class: 'row' },
+            el('button', { type: 'button', disabled: G.bots >= MAX_BOTS || G.seats.length >= MAX_SEATS, onClick: () => { G.bots++; hostSeats(); render() } }, '+ Add a House bot'),
+            (() => {
+              const s = el('select', { 'aria-label': 'Points to win', onChange: e => { G.target = Number(e.target.value); change() } }, [5, 7, 10].map(n => el('option', { value: n }, `First to ${n}`)))
+              s.value = String(G.target)
+              return s
+            })()),
+          el('label', { class: 'pl-check' }, el('input', { type: 'checkbox', checked: G.spicy, onChange: e => { G.spicy = e.target.checked; change() } }), 'Spicy pack (crude humour, blurred swearing)'),
+          el('label', { class: 'field' }, el('span', null, 'Custom cards'), customEl),
+          el('div', { class: 'row' },
+            el('label', { class: 'pl-check' }, el('input', { type: 'checkbox', checked: G.customOnly, onChange: e => { G.custom = customEl.value; G.customOnly = e.target.checked; change() } }), 'Only custom cards'),
+            el('span', { class: 'muted small' }, `${parsed.cp.length} prompt${parsed.cp.length === 1 ? '' : 's'}, ${parsed.ca.length} answer${parsed.ca.length === 1 ? '' : 's'}`)),
+          problem && el('p', { class: 'muted small' }, problem),
+          notice && el('p', { class: 'error' }, notice),
+          el('button', { type: 'button', class: 'primary', disabled: !!problem, onClick: () => {
+            G.custom = customEl.value
+            const err = startGame(G)
+            notice = err || ''
+            if (err) render()
+            else change()
+          } }, problem ? 'Waiting for players…' : `Start with ${G.seats.length}`),
+        ]
+        : [
+          el('p', { class: 'muted small' }, `First to ${G.target}${G.spicy ? ' · Spicy pack on' : ''}${parsed.cp.length + parsed.ca.length ? ` · ${parsed.cp.length + parsed.ca.length} custom cards${G.customOnly ? ' only' : ''}` : ''}`),
+          el('p', { class: 'muted' }, `Waiting for ${hostName} to start…`),
+        ],
+      el('button', { type: 'button', class: 'link', onClick: () => menu() }, '‹ Leave')))
+  }
+
+  let clockEl = null
+  function renderClock() {
+    if (!clockEl || !G) return
+    const end = isHost() ? deadline : shownDeadline
+    if (!end || !['submit', 'judge'].includes(G.phase)) { clockEl.textContent = ''; return }
+    const left = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+    clockEl.textContent = `⏱ ${left}s`
+    clockEl.classList.toggle('hurry', left <= 10)
+  }
+
+  function scores() {
+    return el('div', { class: 'pl-scores' }, G.seats.map((x, k) => el('span', {
+      class: `pl-score ${k === G.judge && G.phase !== 'over' ? 'judge' : ''} ${x.id === me ? 'me' : ''} ${x.gone ? 'gone' : ''}`,
+    },
+      k === G.judge && G.phase !== 'over' ? '⚖️ ' : x.bot ? '🤖 ' : '',
+      el('span', { class: 'truncate' }, x.name),
+      el('b', null, String(x.score || 0)),
+      G.phase === 'submit' && G.subs[k] && el('span', { class: 'tick', title: 'Played' }, '✓'))))
+  }
+
+  function promptCard(answers) {
+    const pick = pickOf(G, G.prompt)
+    return el('div', { class: 'pl-black big' }, sentence(G, G.prompt, answers), pick > 1 && el('span', { class: 'pl-pick' }, `PICK ${pick}`))
+  }
+
+  function table() {
+    const k = mySeat()
+    const judging = k === G.judge
+    const hold = holding()
+    const pick = pickOf(G, G.prompt)
+    const hand = k >= 0 ? G.hands[k] || [] : []
+    const key = `${G.gid}|${G.round}|${G.phase}|${hand.join(',')}`
+    if (key !== chosenKey) { chosenKey = key; chosen = [] }
+    clockEl = el('span', { class: 'pl-timer' })
+    const judgeName = seatName(G, G.judge)
+    const parts = []
+    if (G.phase === 'submit') {
+      const played = G.need.filter(j => G.subs[j]).length
+      const total = G.need.filter(j => !G.seats[j].gone).length
+      const mine = k >= 0 && G.subs[k]
+      const canPlay = k >= 0 && !judging && G.need.includes(k) && !mine
+      parts.push(el('p', { class: `pl-status ${canPlay ? 'mine' : ''}` },
+        judging ? `You're judging · ${played}/${total} played` : mine ? `Played · waiting for the others (${played}/${total})` : canPlay ? `Pick ${pick} card${pick > 1 ? 's' : ''}${pick > 1 ? ', in order' : ''}` : k >= 0 && !G.need.includes(k) ? 'You\'re in from the next round' : `${played}/${total} played · ${judgeName} judges`,
+        clockEl))
+      parts.push(promptCard(mine ? G.subs[k] : canPlay ? chosen.map(i => hand[i]) : null))
+      if (k >= 0 && !judging) {
+        parts.push(el('div', { class: 'pl-hand' }, hand.map((r, i) => {
+          const at = chosen.indexOf(i)
+          return el('button', {
+            type: 'button', class: `pl-white ${at >= 0 ? 'picked' : ''}`, disabled: !canPlay || hold,
+            onClick: () => {
+              if (at >= 0) chosen.splice(at, 1)
+              else if (chosen.length < pick) chosen.push(i)
+              else if (pick === 1) chosen = [i]
+              render()
+            },
+          }, rich(text(G, r)), at >= 0 && pick > 1 && el('span', { class: 'pl-order' }, String(at + 1)))
+        })))
+        parts.push(el('div', { class: 'pl-bar' },
+          canPlay && el('button', { type: 'button', class: 'primary', disabled: chosen.length !== pick || hold, onClick: () => { move({ type: 'submit', cards: chosen.slice() }) } }, chosen.length === pick ? 'Play it' : `Pick ${pick - chosen.length} more`),
+          k >= 0 && !G.seats[k].swapped && !mine && el('button', { type: 'button', disabled: hold, title: 'Once per game: throw your whole hand back for ten new cards', onClick: () => { if (confirm('Swap your whole hand for ten new cards? You can do this once per game.')) move({ type: 'swap' }) } }, '↻ Swap hand (once)')))
+      } else if (judging) {
+        parts.push(el('p', { class: 'muted small', style: 'text-align:center' }, 'Sit back. The answers show up here once everyone has played.'))
+      }
+    } else if (G.phase === 'judge') {
+      parts.push(el('p', { class: `pl-status ${judging ? 'mine' : ''}` }, judging ? 'Pick the funniest' : `${judgeName} is picking a favourite`, clockEl))
+      parts.push(el('div', { class: 'pl-subs' }, G.order.map((j, i) => el('button', {
+        type: 'button', class: 'pl-black pl-sub', disabled: !judging || hold,
+        onClick: () => move({ type: 'pick', index: i }),
+      }, sentence(G, G.prompt, G.subs[j])))))
+    } else if (G.phase === 'reveal' || G.phase === 'over') {
+      const over = G.phase === 'over'
+      parts.push(el('div', { class: 'pl-banner' },
+        over ? el('p', { class: 'wordmark' }, `${seatName(G, G.winner)} wins!`) : el('p', { class: 'pl-status mine' }, `${seatName(G, G.win)} wins the round`),
+        over && el('p', { class: 'muted small' }, `First to ${G.target}. GG.`)))
+      const winning = G.subs[G.win]
+      if (winning) parts.push(el('div', { class: 'pl-black big pl-sub win' }, sentence(G, G.prompt, winning), el('span', { class: 'pl-who' }, seatName(G, G.win))))
+      parts.push(el('div', { class: 'pl-subs' }, G.order.filter(j => j !== G.win).map(j => el('div', { class: 'pl-black pl-sub' },
+        sentence(G, G.prompt, G.subs[j]), el('span', { class: 'pl-who' }, seatName(G, j))))))
+      parts.push(el('div', { class: 'pl-bar' },
+        !over && (judging || isHost()) && el('button', { type: 'button', class: 'primary', disabled: hold, onClick: () => move({ type: 'next' }) }, 'Next round'),
+        !over && !(judging || isHost()) && el('p', { class: 'muted small' }, 'Next round in a few seconds…'),
+        over && isHost() && el('button', { type: 'button', class: 'primary', onClick: () => { G = newGame(me, G); hostSeats(); change() } }, 'Play again'),
+        over && !isHost() && el('p', { class: 'muted small' }, 'The host can start another game.')))
+    }
+    fill(wrap,
+      el('div', { class: 'pl-top' },
+        el('span', { class: 'pill' }, `Round ${G.round}`),
+        el('span', { class: 'pill' }, `First to ${G.target}`),
+        isHost()
+          ? el('button', { type: 'button', class: `chip ${G.spicy ? 'on' : ''}`, title: 'Spicy pack (crude humour, blurred swearing): new draws only', onClick: () => { setSpicy(G, !G.spicy); change() } }, G.spicy ? '🌶️ Spicy on' : '🌶️ Spicy off')
+          : G.spicy && el('span', { class: 'pill' }, '🌶️ Spicy'),
+        el('span', { class: 'grow' }),
+        room && el('button', { type: 'button', class: 'chip', onClick: async () => { ctx.toast(await partyInvite('punch', room.code, 'Punchline')) } }, `Room ${room.code} · Invite`),
+        el('button', { type: 'button', class: 'link', onClick: () => menu() }, 'Leave')),
+      el('div', { class: 'pl-table' },
+        scores(),
+        parts,
+        notice && el('p', { class: 'error', style: 'text-align:center' }, notice),
+        el('p', { class: 'pl-log' }, (G.log || []).slice(-2).join('  ·  '))))
+    renderClock()
+  }
+
+  function render() {
+    if (dead) return
+    if (!G) return
+    if (G.phase === 'lobby') return lobby()
+    table()
+  }
+
+  menu()
+  return {
+    stop() {
+      dead = true
+      clearInterval(tick)
+      leaveRoom()
+    },
+  }
+}
 </script>
