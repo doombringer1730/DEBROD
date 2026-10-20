@@ -116,6 +116,10 @@ battle, the guest sends their moves, and anyone else in the room watches.
   - **Draft Battle / Draft Doubles:** both players snake-draft six from a
     pool of 16 random Pokémon, then battle with what they picked. Works
     against the CPU or a friend, with a 45-second pick clock online.
+  - **Draft Free-for-all:** four trainers snake-draft four each from a pool
+    of 24, then it's everyone against everyone. Draft against three CPUs or
+    with up to three friends; the CPU picks for any empty seat, and for
+    anyone who leaves mid-draft.
   - **4 players:** Free-for-all Random Battle (everyone against everyone,
     last one standing) and Multi Random Battle (2 vs 2, one Pokémon each).
     Play three CPUs, or open a room for up to three friends; the CPU takes
