@@ -1349,7 +1349,7 @@ const Arcade = (() => {
     { id: 'memory', name: 'Memory', icon: '🃏', blurb: 'Find the eight pairs in as few moves as you can.', hint: 'Click or tap two cards.', start: memory, lowerIsBetter: true, unit: ' moves' },
     { id: 'doom', name: 'Doom', icon: '👹', blurb: 'The real thing: DoomPDF\'s engine, shareware episode one.', hint: 'Loads about 5 MB the first time. No sound.', start: doom, noScore: true },
     { id: 'scribble', name: 'Scribble', icon: '✏️', blurb: 'Draw and guess with friends, skribbl.io style, right here.', hint: 'Plays over your Supabase, like watch together. Make a room, then Invite. Switching to Search keeps you in the room.', start: fromFile(typeof scribble === 'function' ? scribble : null, 'Scribble'), noScore: true, noRestart: true },
-    { id: 'showdown', name: 'Pokémon Showdown', icon: '⚔️', blurb: 'Random battles on Showdown\'s own engine, vs the CPU or a friend.', hint: 'Gen 9 Random Battles. Battling a friend runs over your Supabase, like Scribble. Hover a move for what it does.', start: fromFile(typeof showdown === 'function' ? showdown : null, 'Showdown'), noScore: true, noRestart: true },
+    { id: 'showdown', name: 'Pokémon Showdown', icon: '⚔️', blurb: 'Showdown\'s own engine: every Random Battle, OU to VGC, a team builder, plus drafts and a Battle Tower.', hint: 'Battling a friend runs over your Supabase, like Scribble. Hover anything for details; 💡 Coach shows how each move matches up.', start: fromFile(typeof showdown === 'function' ? showdown : null, 'Showdown'), noScore: true, noRestart: true },
     { id: 'tictactoe', name: 'Tic-tac-toe', icon: '⭕', blurb: 'Beat the CPU as many rounds in a row as you can.', hint: 'You\'re ✕. Turns alternate who goes first.', start: tictactoe },
   ]
 

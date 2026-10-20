@@ -8,9 +8,9 @@ Sprites come from Showdown's sprite server.
 
 | File | What it is |
 | --- | --- |
-| `showdown.js` | The bundle (global `PkmnShowdown`), about 800 KB compressed. |
-| `src/entry.js` | What goes into it: the simulator, random teams, and the client-side battle tracker and log formatter. |
-| `build.mjs` | The esbuild script. It leaves out learnsets and legality data, which only matter for checking hand-built teams. |
+| `showdown.js` | The bundle (global `PkmnShowdown`), about 1 MB compressed. |
+| `src/entry.js` | What goes into it: the simulator, random teams, the team validator, and the client-side battle tracker and log formatter. |
+| `build.mjs` | The esbuild script. It keeps Gen 9's learnsets for the validator and leaves out older generations' copies. |
 | `package.json` | The pinned versions. |
 | `LICENSE` | The bundled packages' licenses (all MIT). |
 

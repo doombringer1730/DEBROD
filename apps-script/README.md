@@ -70,13 +70,45 @@ off the network by accident, but it isn't cheat-proof. Your room survives a
 trip to **Search**; going back to the arcade's game list leaves it.
 
 **Pokémon Showdown** runs Showdown's own battle simulator right in the page
-(play.pokemonshowdown.com won't load inside other sites): Gen 9 Random
-Battles, six random Pokémon a side, with Terastallization. Battle the CPU,
-or **Battle a friend** over the same Supabase as Scribble: the host's page
-runs the battle and the guest sends their moves, and the host can start a
-rematch. **Invite** gives a `?showdown=CODE` link in the web app. The engine
-lives in [`showdown/`](showdown) and loads from jsDelivr the first time
-(about 640 KB). Sprites come from Showdown's sprite server.
+(play.pokemonshowdown.com won't load inside other sites), against the CPU or
+a friend over the same Supabase as Scribble. The host's page runs the
+battle, the guest sends their moves, and anyone else in the room watches.
+
+- **Formats:** Random Battles for Gens 1–9, Random Doubles, Baby Randoms,
+  Challenge Cup and Hackmons Cup; and bring-your-own-team OU, Ubers, UU,
+  RU, NU, LC, Monotype, National Dex, 1v1, Anything Goes, Doubles OU,
+  VGC 2025 Reg I, Battle Stadium Singles and Custom Games. Teams are checked
+  by Showdown's own validator.
+- **Team builder:** Showdown's import/export text, every field (item,
+  ability, Tera type, nature, EVs, IVs, level, shiny), move suggestions from
+  each Pokémon's learnset, random teams, and saved teams in your browser.
+- **Battles:** singles and doubles (with targeting), team preview,
+  Terastallization, Mega Evolution, Z-Moves and Dynamax, tooltips for every
+  Pokémon and move, weather, terrain and hazards on the field, cancel,
+  forfeit, a turn timer and chat for online battles, Showdown's music and
+  cries, adjustable speed, and **Replay ⤓**, which saves a file that plays
+  back in Showdown's replay viewer.
+- **DEBROD extras Showdown doesn't have:**
+  - **Draft Battle / Draft Doubles:** both players snake-draft six from a
+    pool of 16 random Pokémon, then battle with what they picked. Works
+    against the CPU or a friend, with a 45-second pick clock online.
+  - **Battle Tower:** a streak against the CPU with a rental team. Every
+    floor's trainer is stronger and smarter, a Tower Tycoon waits every 7th
+    floor, and after a win you can swap in one of the Pokémon you beat.
+    Your best floor is saved.
+  - **💡 Coach:** every move shows how it matches up against the Pokémon
+    across the field (×2, ×½, no effect), and the best pick is marked.
+  - **Effects:** type-coloured move beams and bursts, damage and healing
+    numbers, a screen shake for crits and super-effective hits, and rain,
+    sun, sand, snow and terrain on the field.
+  - **MVP:** the end screen shows who dealt the most damage and KOs.
+  - **Emotes** fly across the field, for both sides online; the CPU reacts
+    too.
+  - Your win/loss record per format.
+
+**Invite** gives a `?showdown=CODE` link in the web app. The engine lives in
+[`showdown/`](showdown) and loads from jsDelivr the first time (about 1 MB).
+Sprites and sound come from Showdown's own servers.
 
 ### Built-in Supabase
 
