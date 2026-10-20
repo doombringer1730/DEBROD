@@ -961,7 +961,7 @@ function boot() {
         S.roomCode = code
         joinRoom({ preventDefault() {} })
       }
-      for (const game of ['scribble', 'showdown', 'cards', 'sea']) {
+      for (const game of ['scribble', 'showdown', 'cards', 'sea', 'punch']) {
         const invite = document.body.dataset[game]
         if (invite && !code) {
           S.tab = 'arcade'

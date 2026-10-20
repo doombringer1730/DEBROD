@@ -326,7 +326,7 @@ const Hub = (() => {
 
   function crewPanel() {
     const list = typeof Arcade !== 'undefined' && Arcade.list ? Arcade.list() : []
-    const party = ['scribble', 'cards', 'sea', 'showdown'].map(id => list.find(g => g.id === id)).filter(Boolean)
+    const party = ['scribble', 'punch', 'cards', 'sea', 'showdown'].map(id => list.find(g => g.id === id)).filter(Boolean)
     const online = partyReady()
     return panel('hub-half', 'C2', 'Online now',
       online && el('label', { class: 'hub-switch' }, el('input', { type: 'checkbox', checked: shown, onChange: e => {
