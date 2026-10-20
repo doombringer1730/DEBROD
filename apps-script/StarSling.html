@@ -448,6 +448,233 @@ function starSling(host, ctx) {
     },
   ]
 
+  // ── Endless: levels built from a seed ──
+  // Each run has its own seed, and level n (and each "new layout" of it)
+  // gets its own stream of random numbers from it, so a saved run rebuilds
+  // the exact level you left. The episodes take turns, three levels each,
+  // and the forts get taller, harder and busier as you go.
+  const SAVE_KEY = 'ds_sling_endless'
+  const NAMES = {
+    desert: ['Dune fort', 'Scrap yard', 'Sun-baked keep', 'Canyon camp', 'Sand trap', 'Mesa post', 'Dust bowl', 'Wreck field', 'Twin-sun watch'],
+    station: ['Hangar', 'Reactor core', 'Cargo hold', 'Docking ring', 'Command deck', 'Trash chute', 'Detention block', 'Gun deck', 'Tractor beam'],
+    ice: ['Frost line', 'Glacier gate', 'Snow trench', 'Ice cave', 'Shield post', 'Cold front', 'Whiteout', 'Drift wall', 'Frozen relay'],
+  }
+
+  function rng(a) {
+    return () => {
+      a = (a + 0x6D2B79F5) | 0
+      let t = Math.imul(a ^ (a >>> 15), 1 | a)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  }
+  const mix = (seed, n, salt) => (seed ^ Math.imul(n + 1, 0x9E3779B1) ^ Math.imul(salt + 1, 0x85EBCA77)) | 0
+
+  function loadSave() {
+    try {
+      const s = JSON.parse(localStorage.getItem(SAVE_KEY))
+      if (s && Number.isInteger(s.level) && Number.isFinite(s.seed)) return s
+    } catch (e) { /* private mode */ }
+    return null
+  }
+  function writeSave(s) {
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)) } catch (e) { /* private mode */ }
+  }
+
+  // The forts, each a footprint width and a build at its centre x. They
+  // all stand on the ground or on what was built under them.
+  function forts(r, diff) {
+    const bigP = 0.08 + 0.25 * diff
+    const mat = () => {
+      const k = r()
+      return k < 0.5 - 0.3 * diff ? 'glass' : k < 0.88 - 0.2 * diff ? 'wood' : 'steel'
+    }
+    const size = () => (r() < bigP ? 'big' : null)
+    const tower = (maxW, base) => {
+      const w = Math.min(maxW, 1.8 + r() * 1.4)
+      if (w < 1.6) return null
+      const storeys = 1 + Math.floor(r() * (1.6 + diff * 2.6))
+      const plan = []
+      let ww = w, h0 = 0
+      for (let s = 0; s < storeys; s++) {
+        const h = 1.3 + r() * 0.8
+        if ((base || G) - h0 - h - 0.4 < 2.8) break
+        plan.push({ w: ww, h, mat: mat(), beam: r() < 0.3 ? mat() : null, foe: ww >= 1.8 && r() < 0.75, big: ww >= 2.3 && h >= 1.4 && r() < bigP })
+        h0 += h + 0.4
+        ww = Math.max(1.6, ww - r() * 0.5)
+      }
+      if (!plan.length) return null
+      const topper = r()
+      return {
+        w,
+        build(L, x, bottom) {
+          let y = bottom
+          for (const p of plan) {
+            const top = L.frame(x, y, p.w, p.h, p.mat, p.beam)
+            if (p.foe) L.foe(x, y, p.big ? 'big' : null)
+            y = top
+          }
+          if (topper < 0.55) L.foe(x, y)
+          else if (topper < 0.8) L.cube(x, y, 0.8, 'glass')
+        },
+      }
+    }
+    const kinds = {
+      tower: maxW => tower(maxW),
+      pyramid(maxW) {
+        const n = maxW >= 2.5 && r() < 0.6 ? 3 : 2, s = 0.8, w = n * s + (n - 1) * 0.04
+        if (w > maxW) return null
+        const mats = Array.from({ length: n }, mat), crown = size()
+        return {
+          w,
+          build(L, x, bottom) {
+            let y = bottom
+            for (let row = 0; row < n; row++) {
+              const count = n - row
+              for (let i = 0; i < count; i++) L.cube(x + (i - (count - 1) / 2) * (s + 0.04), y, s, mats[row])
+              y -= s
+            }
+            L.foe(x, y, crown)
+          },
+        }
+      },
+      bunker(maxW) {
+        const w = Math.min(maxW, 2.4 + r() * 0.8)
+        if (w < 2.4) return null
+        const h = 1.4 + r() * 0.4, m = r() < 0.5 + diff * 0.3 ? 'steel' : 'wood', roof = r()
+        return {
+          w,
+          build(L, x, bottom) {
+            const top = L.frame(x, bottom, w, h, m)
+            L.foe(x, bottom, 'big')
+            if (roof < 0.5) { L.cube(x - 0.5, top, 0.8, 'glass'); L.cube(x + 0.5, top, 0.8, 'glass') } else L.foe(x, L.frame(x, top, 1.8, 1.2, 'glass'))
+          },
+        }
+      },
+      lookout(maxW) {
+        if (maxW < 1) return null
+        const n = 1 + Math.floor(r() * 3), mats = Array.from({ length: n }, mat)
+        return {
+          w: 1,
+          build(L, x, bottom) {
+            let y = bottom
+            for (const m of mats) y = L.cube(x, y, 0.8, m)
+            L.foe(x, y)
+          },
+        }
+      },
+      // A rock shelf with a fort on top.
+      ledge(maxW) {
+        const lw = Math.min(maxW, 2.6 + r() * 2.4)
+        if (lw < 2.6) return null
+        const h = 1 + r() * 1.6, inner = tower(lw - 0.4, G - h), extra = r() < 0.5
+        if (!inner) return null
+        return {
+          w: lw,
+          build(L, x, bottom) {
+            const top = L.ledge(x - lw / 2, x + lw / 2, bottom - h)
+            if (extra && lw - inner.w > 1.4) {
+              inner.build(L, x - lw / 2 + inner.w / 2 + 0.1, top)
+              L.foe(x + lw / 2 - 0.6, top)
+            } else inner.build(L, x, top)
+          },
+        }
+      },
+      // Two frames with a deck across them.
+      bridge(maxW) {
+        const wf = 1.8 + r() * 0.4, d = 1.4 + r() * 1.2, w = 2 * d + wf
+        if (w > maxW || w > 8.6) return null
+        const h = 1.6 + r() * 0.6, m = mat(), deck = r()
+        return {
+          w,
+          build(L, x, bottom) {
+            L.frame(x - d, bottom, wf, h, m)
+            const top = L.frame(x + d, bottom, wf, h, m)
+            L.foe(x - d, bottom)
+            L.foe(x + d, bottom, size())
+            if (d * 2 - wf > 1) L.foe(x, bottom)
+            const y = L.beam(x, top, w, 'wood')
+            if (deck < 0.5) L.foe(x, L.frame(x, y, 2, 1.4, 'glass'))
+            else { L.foe(x - d / 2, y); L.foe(x + d / 2, y) }
+          },
+        }
+      },
+    }
+    return kinds
+  }
+
+  function generate(seed, n, salt) {
+    const r = rng(mix(seed, n, salt))
+    const episode = ['desert', 'station', 'ice'][Math.floor(n / 3) % 3]
+    const diff = Math.min(1, n / 24)
+    const station = episode === 'station'
+    const names = NAMES[episode]
+    const def = {
+      name: names[Math.floor(r() * names.length)],
+      episode,
+      gravity: station ? 4.5 : undefined,
+      well: station && n >= 3 && r() < 0.45
+        ? { x: 10.5 + r() * 2, y: 5 + r() * 2, r: 0.9 + r() * 0.4, reach: 4.2 + r() * 0.8, pull: 22 + r() * 8 }
+        : undefined,
+    }
+    const buildSeed = mix(seed, n, salt + 7919)
+    def.build = L => {
+      // A fresh stream every build, so the same level comes out each time.
+      const b = rng(buildSeed)
+      const kinds = forts(b, diff)
+      const weights = { tower: 4, pyramid: 1.5, bunker: 1.5, lookout: 1, ledge: 1.5 + diff, bridge: diff * 3 }
+      const total = Object.values(weights).reduce((a, v) => a + v, 0)
+      const pick = () => {
+        let k = b() * total
+        for (const [name, wgt] of Object.entries(weights)) if ((k -= wgt) < 0) return name
+        return 'tower'
+      }
+      const count = 1 + Math.floor(diff * 1.5) + Math.floor(b() * (1.6 + diff * 1.6))
+      const right = 25.9
+      let x = 14.6 + b() * 1.2
+      for (let i = 0; i < count; i++) {
+        let spec = null
+        for (let tries = 0; tries < 4 && !spec; tries++) spec = kinds[pick()](right - x)
+        if (!spec) break
+        spec.build(L, x + spec.w / 2, G)
+        x += spec.w + 0.5 + b() * 1.2
+        if (x > right - 1) break
+      }
+    }
+    return { def, r }
+  }
+
+  // Lets a generated level stand for a while with nothing breaking, and
+  // turns it down if anything falls over by itself.
+  function stands(def) {
+    const t = makeWorld(def)
+    if (t.foes.length < 2) return null
+    const start = t.world.bodies.map(b => ({ b, x: b.x, y: b.y, a: b.a }))
+    for (let i = 0; i < 300; i++) t.world.step(STEP)
+    for (const s of start) {
+      if (!s.b.invMass) continue
+      if (Math.hypot(s.b.x - s.x, s.b.y - s.y) > 0.25 || Math.abs(s.b.a - s.a) > 0.15) return null
+      if (Math.hypot(s.b.vx, s.b.vy) > 0.3) return null
+    }
+    return t
+  }
+
+  function endlessLevel(seed, n, salt) {
+    for (let tries = 0; tries < 16; tries++) {
+      const { def, r } = generate(seed, n, salt + tries * 101)
+      const t = stands(def)
+      if (!t) continue
+      const steel = t.world.bodies.filter(b => b.mat === 'steel').length
+      const heroes = Math.max(3, Math.min(5, Math.ceil(t.foes.length / 2) + 1))
+      const pool = ['rookie', 'gunner', 'sage', 'brute']
+      def.heroes = Array.from({ length: heroes }, () => pool[Math.floor(r() * pool.length)])
+      if (steel >= 3 && !def.heroes.includes('brute')) def.heroes[heroes - 1] = 'brute'
+      return def
+    }
+    // Nothing stood up: fall back to the first level's layout.
+    return Object.assign({}, LEVELS[0], { name: 'Breather', episode: ['desert', 'station', 'ice'][Math.floor(n / 3) % 3] })
+  }
+
   const dpr = window.devicePixelRatio || 1
   const c = el('canvas', { class: 'game-canvas', width: Math.round(W * dpr), height: Math.round(H * dpr), style: `aspect-ratio: ${W} / ${H}` })
   const g = c.getContext('2d')
@@ -462,15 +689,16 @@ function starSling(host, ctx) {
   let world, level, def, foes, queue, hero, phase, paused, score, raf, last, acc
   let pull, drag, kb, aimAngle, aimPower, grace, flyT, slowT, settleT, powerUsed, powerTarget
   let bladeT, bolts, shotsLeft, shotWait, effects, popups, trail, lastTrail, trailT, clearedT
+  // mode is 'campaign' (the original seven) or 'endless'; run is the
+  // endless run's seed, and salt picks a new layout of the same level.
+  let mode = 'campaign', run = null, levelScore = 0, menu = [], menuSel = 0
 
-  function buildLevel(n, quiet) {
-    level = n
-    def = LEVELS[n]
-    world = new P.World(def.gravity || 10)
-    world.onImpact = impact
+  // The world a level describes, with its foes.
+  function makeWorld(def) {
+    const world = new P.World(def.gravity || 10)
     world.add(P.box(VW / 2, GROUND + 5, VW + 20, 10, 0, 0.9)).kind = 'ground'
     if (def.well) world.add(P.circle(def.well.x, def.well.y, def.well.r, 0, 0.6)).kind = 'moon'
-    foes = []
+    const foes = []
     const L = {
       block(x, bottom, w, h, mat) {
         const m = MATS[mat]
@@ -507,6 +735,17 @@ function starSling(host, ctx) {
       },
     }
     def.build(L)
+    return { world, foes }
+  }
+
+  function buildLevel(n, quiet) {
+    level = n
+    def = mode === 'endless' ? endlessLevel(run.seed, n, run.salt) : LEVELS[n]
+    const made = makeWorld(def)
+    world = made.world
+    world.onImpact = impact
+    foes = made.foes
+    levelScore = score
     queue = def.heroes.slice()
     hero = null
     pull = null
@@ -530,8 +769,16 @@ function starSling(host, ctx) {
     score = 0
     paused = false
     ctx.score(0)
+    mode = 'campaign'
     buildLevel(0, true)
     phase = 'title'
+    const save = loadSave()
+    menu = [
+      save && { id: 'continue', label: `Continue endless · level ${save.level + 1} · ${save.score.toLocaleString()}` },
+      { id: 'new', label: save ? 'New endless run' : 'Endless: random levels, forever' },
+      { id: 'classic', label: 'The original seven levels' },
+    ].filter(Boolean)
+    menuSel = 0
     last = 0
     acc = 0
     raf = requestAnimationFrame(frame)
@@ -762,6 +1009,7 @@ function starSling(host, ctx) {
       if (!foes.length && quiet) cleared()
       else if (quiet && !bolts.length) {
         if (queue.length) phase = 'aim'
+        else if (mode === 'endless') phase = 'failed'
         else {
           phase = 'over'
           ctx.end('Out of heroes', score)
@@ -790,15 +1038,60 @@ function starSling(host, ctx) {
     clearedT = 0
     queue.forEach((kind, i) => gain(HERO_BONUS, SLING.x - 1 - i * 1.1, GROUND - 1.6, HEROES[kind].color))
     queue = []
+    if (mode === 'endless') {
+      run.salt = 0
+      save(level + 1)
+    }
+  }
+
+  // The run as it stands at the start of level n. The arcade's best is the
+  // run's score, kept as you go, since an endless run never ends.
+  function save(n) {
+    const old = loadSave()
+    writeSave({ seed: run.seed, level: n, salt: run.salt, score, best: Math.max(score, (old && old.best) || 0) })
+    if (ctx.best) ctx.best(score)
   }
 
   function next() {
-    if (phase !== 'cleared' || level === LEVELS.length - 1) return
+    if (phase !== 'cleared') return
+    if (mode === 'campaign' && level === LEVELS.length - 1) return
     buildLevel(level + 1)
   }
 
-  // Off the title card, into the first level as it was built.
-  function begin() {
+  // Out of heroes in endless: try the level again from the score you came
+  // in with, or ask for a new layout of it.
+  function retry(fresh) {
+    if (phase !== 'failed') return
+    score = levelScore
+    ctx.score(score)
+    if (fresh) {
+      run.salt++
+      save(level)
+    }
+    buildLevel(level)
+  }
+
+  // Off the title card: into the original first level, or an endless run.
+  function begin(choice) {
+    const id = choice || (menu[menuSel] && menu[menuSel].id) || 'classic'
+    score = 0
+    if (id === 'classic') {
+      mode = 'campaign'
+      run = null
+      ctx.score(0)
+      return buildLevel(0)
+    }
+    mode = 'endless'
+    const s = id === 'continue' && loadSave()
+    if (s) {
+      run = { seed: s.seed, salt: s.salt || 0 }
+      score = s.score || 0
+      ctx.score(score)
+      return buildLevel(s.level)
+    }
+    run = { seed: (Math.random() * 2 ** 31) | 0, salt: 0 }
+    ctx.score(0)
+    save(0)
     buildLevel(0)
   }
 
@@ -1078,6 +1371,24 @@ function starSling(host, ctx) {
     g.shadowBlur = 0
   }
 
+  const menuY = i => 262 + i * 38
+
+  // Two buttons on the out-of-heroes banner.
+  const FAIL_BUTTONS = [{ id: 'retry', label: 'Retry  (Space)', x: W / 2 - 170 }, { id: 'fresh', label: 'New layout  (↓)', x: W / 2 + 10 }]
+  function failCard() {
+    banner('Out of heroes', `Level ${level + 1} · your run is saved`)
+    g.font = '14px "Share Tech Mono", monospace'
+    for (const b of FAIL_BUTTONS) {
+      g.fillStyle = 'rgba(0, 240, 255, 0.12)'
+      g.fillRect(b.x, H / 2 + 44, 160, 34)
+      g.strokeStyle = C.cyan
+      g.lineWidth = 1.5
+      g.strokeRect(b.x, H / 2 + 44, 160, 34)
+      g.fillStyle = C.cyan
+      g.fillText(b.label, b.x + 80, H / 2 + 66)
+    }
+  }
+
   function titleCard() {
     g.fillStyle = 'rgba(13, 2, 33, 0.8)'
     g.fillRect(0, 0, W, H)
@@ -1094,10 +1405,21 @@ function starSling(host, ctx) {
     g.fillStyle = C.muted
     g.font = '14px "Share Tech Mono", monospace'
     g.fillText('Rovio · 2012–2019 · gone from the stores, never forgotten', W / 2, 224)
-    g.fillText('Three episodes: desert planet, battle station, ice planet', W / 2, 268)
-    g.fillStyle = C.cyan
-    g.font = '15px "Share Tech Mono", monospace'
-    g.fillText('Tap or Space to play', W / 2, 318)
+    menu.forEach((item, i) => {
+      const y = menuY(i), on = i === menuSel
+      g.fillStyle = on ? 'rgba(0, 240, 255, 0.14)' : 'rgba(246, 237, 255, 0.05)'
+      g.fillRect(W / 2 - 200, y - 17, 400, 30)
+      g.strokeStyle = on ? C.cyan : 'rgba(169, 155, 209, 0.35)'
+      g.lineWidth = on ? 2 : 1
+      g.strokeRect(W / 2 - 200, y - 17, 400, 30)
+      g.fillStyle = on ? C.cyan : C.text
+      g.font = '15px "Share Tech Mono", monospace'
+      g.fillText(item.label, W / 2, y + 3)
+    })
+    const save = menu[0] && menu[0].id === 'continue' && loadSave()
+    g.fillStyle = C.muted
+    g.font = '12px "Share Tech Mono", monospace'
+    g.fillText(save ? `Best run ${save.best.toLocaleString()} · ↑↓ and Space, or tap` : '↑↓ and Space, or tap', W / 2, menuY(menu.length) - 2)
     g.fillStyle = 'rgba(169, 155, 209, 0.7)'
     g.font = '11px "Share Tech Mono", monospace'
     g.fillText('A fan tribute. Not made by or affiliated with Rovio or Lucasfilm.', W / 2, 410)
@@ -1207,7 +1529,8 @@ function starSling(host, ctx) {
     g.textAlign = 'left'
     g.font = '13px "Share Tech Mono", monospace'
     g.fillStyle = C.muted
-    g.fillText(`${EPISODES[def.episode].name.toUpperCase()} · ${level + 1}/${LEVELS.length} ${def.name.toUpperCase()}${def.gravity ? ' · LOW GRAVITY' : ''}`, 12, 22)
+    const where = mode === 'endless' ? `ENDLESS ${level + 1}` : `${level + 1}/${LEVELS.length}`
+    g.fillText(`${EPISODES[def.episode].name.toUpperCase()} · ${where} ${def.name.toUpperCase()}${def.gravity ? ' · LOW GRAVITY' : ''}`, 12, 22)
     g.textAlign = 'right'
     g.fillText(`GOONS ${foes.length}   HEROES ${queue.length}`, W - 12, 22)
     if (phase === 'aim' && queue.length) {
@@ -1218,10 +1541,14 @@ function starSling(host, ctx) {
     }
 
     if (phase === 'title') titleCard()
-    if (phase === 'cleared' && level < LEVELS.length - 1) {
+    if (phase === 'cleared' && mode === 'endless') {
+      const nextEp = ['desert', 'station', 'ice'][Math.floor((level + 1) / 3) % 3]
+      banner('Level cleared · saved', nextEp !== def.episode ? `Tap or Space: on to the ${EPISODES[nextEp].name.toLowerCase()}` : 'Tap or Space for the next level')
+    } else if (phase === 'cleared' && level < LEVELS.length - 1) {
       const nextEp = LEVELS[level + 1].episode
       banner('Level cleared', nextEp !== def.episode ? `Tap or Space: on to the ${EPISODES[nextEp].name.toLowerCase()}` : 'Tap or Space for the next level')
     }
+    if (phase === 'failed') failCard()
     if (paused && phase !== 'over') banner('Paused', 'Back to the arcade to carry on')
   }
 
@@ -1234,7 +1561,16 @@ function starSling(host, ctx) {
   c.addEventListener('pointerdown', e => {
     e.preventDefault()
     const p = toWorld(e)
-    if (phase === 'title') return begin()
+    if (phase === 'title') {
+      const i = menu.findIndex((m, k) => Math.abs(p.y * S - (menuY(k) - 2)) < 17 && Math.abs(p.x * S - W / 2) < 200)
+      if (i >= 0) begin(menu[i].id)
+      return
+    }
+    if (phase === 'failed') {
+      const b = FAIL_BUTTONS.find(f => p.x * S >= f.x && p.x * S <= f.x + 160 && p.y * S >= H / 2 + 44 && p.y * S <= H / 2 + 78)
+      if (b) retry(b.id === 'fresh')
+      return
+    }
     if (phase === 'cleared') return next()
     if (phase === 'fly') return power(p)
     if (phase !== 'aim' || !queue.length) return
@@ -1263,7 +1599,16 @@ function starSling(host, ctx) {
   return {
     input(d) {
       if (paused || phase === 'over') return
-      if (phase === 'title') return begin()
+      if (phase === 'title') {
+        if (d === 'up' || d === 'down') menuSel = (menuSel + (d === 'up' ? menu.length - 1 : 1)) % menu.length
+        else if (d === 'action') begin()
+        return draw()
+      }
+      if (phase === 'failed') {
+        if (d === 'action') retry(false)
+        else if (d === 'down') retry(true)
+        return
+      }
       if (d === 'action') {
         if (phase === 'aim') { if (!drag) launch() } else if (phase === 'fly') power(null)
         else if (phase === 'cleared') next()
@@ -1286,8 +1631,16 @@ function starSling(host, ctx) {
       last = 0
       raf = requestAnimationFrame(frame)
     },
-    // Restarting skips the title card.
-    restart() { reset(); begin() },
+    // Restarting skips the title card. In endless it retries the level.
+    restart() {
+      if (mode === 'endless' && run && phase !== 'title') {
+        phase = 'failed'
+        retry(false)
+        return
+      }
+      reset()
+      begin('classic')
+    },
     stop() { cancelAnimationFrame(raf) },
   }
 }

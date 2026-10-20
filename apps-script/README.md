@@ -60,6 +60,15 @@ Gunner fires three blaster bolts wherever you tap, the Sage pushes
 everything away, and the Brute is just very heavy. Drag back from the sling
 and let go, or aim with the arrows and fire with Space. Tap or press Space
 mid-flight to use the hero's power. Heroes you don't need are worth a bonus.
+
+Besides the original seven levels there's **Endless**: random levels,
+forever. Each run has its own seed, the episodes take turns every three
+levels (with low gravity and sometimes a gravity well on the station), and
+the forts get bigger and tougher the further you go. Every layout is
+checked to stand up on its own before you see it. Your run saves after each
+level, so **Continue** on the title card picks up where you left off, on
+the same layout. Run out of heroes and you can retry the level from the
+score you came in with, or ask for a new layout of it.
 It's a fan tribute with its own names and art, not the original game or
 its characters, and isn't made by or affiliated with Rovio or Lucasfilm.
 
