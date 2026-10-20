@@ -14,6 +14,7 @@ keys live in the script's properties instead of environment variables.
 | `Games.html` | The arcade's games. |
 | `Scribble.html` | Scribble, the multiplayer draw-and-guess game. |
 | `Showdown.html` | Pokémon Showdown battles, on Showdown's own simulator. |
+| `StarSling.html` | Star Sling, a memorial to Angry Birds Star Wars. |
 | `Settings.html` | The keys form. |
 | `Styles.html` | `app/globals.css`, wrapped in `<style>`. |
 | `appsscript.json` | The project manifest. |
@@ -22,7 +23,7 @@ keys live in the script's properties instead of environment variables.
 
 1. Create a Google Doc, then open **Extensions → Apps Script**.
 2. Replace `Code.gs` with the one here. Add the HTML files with **+ → HTML**,
-   named `Index`, `App`, `Games`, `Scribble`, `Showdown`, `Settings` and `Styles` (no `.html`), and paste each
+   named `Index`, `App`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
    one in. To edit `appsscript.json`, turn on **Project Settings → Show
    "appsscript.json" manifest file in editor**.
 3. Save, reload the doc, and open **DEBROD → Settings**. Approve the
@@ -43,10 +44,24 @@ link.
 ## The arcade
 
 **Arcade** in the header, next to **Search**, opens Snake, 2048, Blocks,
-Breakout, Flap, Pong, Minesweeper, Memory, Doom, Scribble, Pokémon
-Showdown and Tic-tac-toe. They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
+Breakout, Flap, Pong, Minesweeper, Memory, Star Sling, Doom, Scribble,
+Pokémon Showdown and Tic-tac-toe. They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
 timer shows how long you've been procrastinating. Switching back to
 **Search** pauses whatever's running.
+
+**Star Sling** is a memorial to Angry Birds Star Wars (Rovio, 2012), which
+was pulled from the app stores in 2019 and can't be played anymore. It's
+recreated in the original's shape: seven levels across its three episodes
+(a desert planet, a battle station with low gravity and a gravity well
+that bends your shots, and an ice planet), towers of glass, wood and steel
+that really topple, helmeted troopers and a dark-helmeted commander, and
+heroes with the original's powers. The Rookie spins a beam blade, the
+Gunner fires three blaster bolts wherever you tap, the Sage pushes
+everything away, and the Brute is just very heavy. Drag back from the sling
+and let go, or aim with the arrows and fire with Space. Tap or press Space
+mid-flight to use the hero's power. Heroes you don't need are worth a bonus.
+It's a fan tribute with its own names and art, not the original game or
+its characters, and isn't made by or affiliated with Rovio or Lucasfilm.
 
 **Doom** is [DoomPDF](https://github.com/ading2210/doompdf)'s engine, taken
 out of the PDF and drawn on a canvas, with the shareware episode. Its files

@@ -1,0 +1,1294 @@
+<script>
+// Star Sling: a memorial to Angry Birds Star Wars (Rovio, 2012), which left
+// the app stores in 2019 and can't be bought or played anymore. It follows
+// the original's shape: three episodes (a desert planet, a battle station
+// with low gravity and a gravity well, an ice planet), heroes with the
+// original's powers for a tap mid-flight (a spinning blade, blaster bolts
+// where you tap, a push, and one who's just heavy), and helmeted troopers
+// with a dark-helmeted commander. The names, characters and art are its
+// own, since the originals belong to Rovio and Lucasfilm. The towers are
+// real rigid bodies (a small port of Erin Catto's Box2D Lite), so they
+// lean, topple and break.
+//
+// Loaded before Games.html (which lists it) and after App.html, whose el()
+// it uses.
+
+const SlingPhysics = (() => {
+  const ITERATIONS = 10
+  const SLOP = 0.01 // metres of overlap left alone, so resting contacts don't jitter
+  const BIAS = 0.2 // how much of the remaining overlap is pushed apart each step
+  let nextId = 1
+
+  function finish(b, mass, inertia, friction) {
+    return Object.assign(b, {
+      id: nextId++, vx: 0, vy: 0, w: 0, mass,
+      invMass: mass ? 1 / mass : 0, invI: mass ? 1 / inertia : 0,
+      friction, linDamp: 0, angDamp: 0,
+    })
+  }
+
+  // Density 0 makes a static body: the ground, a ledge.
+  function box(x, y, w, h, density, friction, angle) {
+    const m = density * w * h
+    return finish({ shape: 'box', x, y, a: angle || 0, hw: w / 2, hh: h / 2, bound: Math.hypot(w, h) / 2 }, m, m * (w * w + h * h) / 12, friction)
+  }
+
+  function circle(x, y, r, density, friction) {
+    const m = density * Math.PI * r * r
+    return finish({ shape: 'circle', x, y, a: 0, r, bound: r }, m, m * r * r / 2, friction)
+  }
+
+  // 2×2 rotations as { c1x, c1y, c2x, c2y }, columns first, like Box2D's Mat22.
+  const rot = a => { const c = Math.cos(a), s = Math.sin(a); return { c1x: c, c1y: s, c2x: -s, c2y: c } }
+  const mul = (M, x, y) => ({ x: M.c1x * x + M.c2x * y, y: M.c1y * x + M.c2y * y })
+  const tr = M => ({ c1x: M.c1x, c1y: M.c2x, c2x: M.c1y, c2y: M.c2y })
+  const mulM = (A, B) => {
+    const a = mul(A, B.c1x, B.c1y), b = mul(A, B.c2x, B.c2y)
+    return { c1x: a.x, c1y: a.y, c2x: b.x, c2y: b.y }
+  }
+  const absM = M => ({ c1x: Math.abs(M.c1x), c1y: Math.abs(M.c1y), c2x: Math.abs(M.c2x), c2y: Math.abs(M.c2y) })
+  const NONE = []
+
+  // Box against box: find the axis of least overlap, then clip the other
+  // box's nearest edge against the reference face. Each contact's key names
+  // the edges that made it, so the solver can carry its impulse over to the
+  // next step (warm starting), which is what keeps stacks standing.
+  function clip(vIn, nx, ny, offset, edge) {
+    const out = []
+    const d0 = nx * vIn[0].x + ny * vIn[0].y - offset
+    const d1 = nx * vIn[1].x + ny * vIn[1].y - offset
+    if (d0 <= 0) out.push(vIn[0])
+    if (d1 <= 0) out.push(vIn[1])
+    if (d0 * d1 < 0) {
+      const t = d0 / (d0 - d1)
+      const fp = Object.assign({}, (d0 > 0 ? vIn[0] : vIn[1]).fp)
+      if (d0 > 0) { fp.i1 = edge; fp.i2 = 0 } else { fp.o1 = edge; fp.o2 = 0 }
+      out.push({ x: vIn[0].x + t * (vIn[1].x - vIn[0].x), y: vIn[0].y + t * (vIn[1].y - vIn[0].y), fp })
+    }
+    return out
+  }
+
+  function incidentEdge(hx, hy, B, R, nx, ny) {
+    const local = mul(tr(R), nx, ny)
+    const n = { x: -local.x, y: -local.y }
+    let v
+    if (Math.abs(n.x) > Math.abs(n.y)) {
+      v = n.x > 0 ? [[hx, -hy, 3, 4], [hx, hy, 4, 1]] : [[-hx, hy, 1, 2], [-hx, -hy, 2, 3]]
+    } else {
+      v = n.y >= 0 ? [[hx, hy, 4, 1], [-hx, hy, 1, 2]] : [[-hx, -hy, 2, 3], [hx, -hy, 3, 4]]
+    }
+    return v.map(([x, y, i2, o2]) => {
+      const p = mul(R, x, y)
+      return { x: B.x + p.x, y: B.y + p.y, fp: { i1: 0, o1: 0, i2, o2 } }
+    })
+  }
+
+  function boxBox(A, B) {
+    const RA = rot(A.a), RB = rot(B.a), RAT = tr(RA), RBT = tr(RB)
+    const dpx = B.x - A.x, dpy = B.y - A.y
+    const dA = mul(RAT, dpx, dpy), dB = mul(RBT, dpx, dpy)
+    const absC = absM(mulM(RAT, RB)), absCT = tr(absC)
+    const ha = mul(absC, B.hw, B.hh)
+    const fAx = Math.abs(dA.x) - A.hw - ha.x, fAy = Math.abs(dA.y) - A.hh - ha.y
+    if (fAx > 0 || fAy > 0) return NONE
+    const hb = mul(absCT, A.hw, A.hh)
+    const fBx = Math.abs(dB.x) - hb.x - B.hw, fBy = Math.abs(dB.y) - hb.y - B.hh
+    if (fBx > 0 || fBy > 0) return NONE
+
+    // Prefer A's faces, then B's, unless another axis is clearly better.
+    const REL = 0.95, ABS = 0.01
+    let axis = 0, sep = fAx, s = dA.x > 0 ? 1 : -1
+    let nx = s * RA.c1x, ny = s * RA.c1y
+    if (fAy > REL * sep + ABS * A.hh) { axis = 1; sep = fAy; s = dA.y > 0 ? 1 : -1; nx = s * RA.c2x; ny = s * RA.c2y }
+    if (fBx > REL * sep + ABS * B.hw) { axis = 2; sep = fBx; s = dB.x > 0 ? 1 : -1; nx = s * RB.c1x; ny = s * RB.c1y }
+    if (fBy > REL * sep + ABS * B.hh) { axis = 3; sep = fBy; s = dB.y > 0 ? 1 : -1; nx = s * RB.c2x; ny = s * RB.c2y }
+
+    let fnx, fny, front, snx, sny, side, negSide, posSide, negEdge, posEdge, inc
+    if (axis === 0) {
+      fnx = nx; fny = ny; front = A.x * fnx + A.y * fny + A.hw
+      snx = RA.c2x; sny = RA.c2y; side = A.x * snx + A.y * sny
+      negSide = -side + A.hh; posSide = side + A.hh; negEdge = 3; posEdge = 1
+      inc = incidentEdge(B.hw, B.hh, B, RB, fnx, fny)
+    } else if (axis === 1) {
+      fnx = nx; fny = ny; front = A.x * fnx + A.y * fny + A.hh
+      snx = RA.c1x; sny = RA.c1y; side = A.x * snx + A.y * sny
+      negSide = -side + A.hw; posSide = side + A.hw; negEdge = 2; posEdge = 4
+      inc = incidentEdge(B.hw, B.hh, B, RB, fnx, fny)
+    } else if (axis === 2) {
+      fnx = -nx; fny = -ny; front = B.x * fnx + B.y * fny + B.hw
+      snx = RB.c2x; sny = RB.c2y; side = B.x * snx + B.y * sny
+      negSide = -side + B.hh; posSide = side + B.hh; negEdge = 3; posEdge = 1
+      inc = incidentEdge(A.hw, A.hh, A, RA, fnx, fny)
+    } else {
+      fnx = -nx; fny = -ny; front = B.x * fnx + B.y * fny + B.hh
+      snx = RB.c1x; sny = RB.c1y; side = B.x * snx + B.y * sny
+      negSide = -side + B.hw; posSide = side + B.hw; negEdge = 2; posEdge = 4
+      inc = incidentEdge(A.hw, A.hh, A, RA, fnx, fny)
+    }
+
+    let pts = clip(inc, -snx, -sny, negSide, negEdge)
+    if (pts.length < 2) return NONE
+    pts = clip(pts, snx, sny, posSide, posEdge)
+    if (pts.length < 2) return NONE
+
+    const out = []
+    for (const v of pts) {
+      const d = fnx * v.x + fny * v.y - front
+      if (d > 0) continue
+      let fp = v.fp
+      if (axis >= 2) fp = { i1: fp.i2, o1: fp.o2, i2: fp.i1, o2: fp.o1 }
+      out.push({ x: v.x - d * fnx, y: v.y - d * fny, nx, ny, sep: d, key: fp.i1 | fp.o1 << 3 | fp.i2 << 6 | fp.o2 << 9, pn: 0, pt: 0 })
+    }
+    return out
+  }
+
+  // The normal points from the box to the circle.
+  function boxCircle(A, B) {
+    const R = rot(A.a)
+    const l = mul(tr(R), B.x - A.x, B.y - A.y)
+    const cx = Math.max(-A.hw, Math.min(A.hw, l.x)), cy = Math.max(-A.hh, Math.min(A.hh, l.y))
+    let nlx, nly, sep, px = cx, py = cy
+    if (cx !== l.x || cy !== l.y) {
+      const dx = l.x - cx, dy = l.y - cy, d = Math.hypot(dx, dy)
+      if (d > B.r) return NONE
+      nlx = dx / d; nly = dy / d; sep = d - B.r
+    } else {
+      // The centre is inside the box: push out through the nearest face.
+      const ox = A.hw - Math.abs(l.x), oy = A.hh - Math.abs(l.y)
+      if (ox < oy) { nlx = l.x < 0 ? -1 : 1; nly = 0; px = nlx * A.hw; sep = -ox - B.r }
+      else { nlx = 0; nly = l.y < 0 ? -1 : 1; py = nly * A.hh; sep = -oy - B.r }
+    }
+    const n = mul(R, nlx, nly), p = mul(R, px, py)
+    return [{ x: A.x + p.x, y: A.y + p.y, nx: n.x, ny: n.y, sep, key: 1, pn: 0, pt: 0 }]
+  }
+
+  function circleCircle(A, B) {
+    const dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy)
+    if (d > A.r + B.r) return NONE
+    const nx = d > 1e-9 ? dx / d : 0, ny = d > 1e-9 ? dy / d : 1
+    const sep = d - A.r - B.r
+    return [{ x: A.x + nx * (A.r + sep / 2), y: A.y + ny * (A.r + sep / 2), nx, ny, sep, key: 1, pn: 0, pt: 0 }]
+  }
+
+  function collide(A, B) {
+    if (A.shape === 'box' && B.shape === 'box') return boxBox(A, B)
+    if (A.shape === 'circle' && B.shape === 'circle') return circleCircle(A, B)
+    if (A.shape === 'box') return boxCircle(A, B)
+    const cs = boxCircle(B, A)
+    for (const c of cs) { c.nx = -c.nx; c.ny = -c.ny }
+    return cs
+  }
+
+  function applyImpulse(b, px, py, ix, iy) {
+    b.vx += ix * b.invMass
+    b.vy += iy * b.invMass
+    b.w += b.invI * ((px - b.x) * iy - (py - b.y) * ix)
+  }
+
+  function contains(b, x, y) {
+    if (b.shape === 'circle') return (x - b.x) ** 2 + (y - b.y) ** 2 <= b.r * b.r
+    const l = mul(tr(rot(b.a)), x - b.x, y - b.y)
+    return Math.abs(l.x) <= b.hw && Math.abs(l.y) <= b.hh
+  }
+
+  // How far a point is from a body's surface (0 inside it).
+  function distance(b, x, y) {
+    if (b.shape === 'circle') return Math.max(0, Math.hypot(x - b.x, y - b.y) - b.r)
+    const l = mul(tr(rot(b.a)), x - b.x, y - b.y)
+    return Math.hypot(Math.max(0, Math.abs(l.x) - b.hw), Math.max(0, Math.abs(l.y) - b.hh))
+  }
+
+  class World {
+    // y points down, so gravity is positive.
+    constructor(gravity) {
+      this.gravity = gravity
+      this.bodies = []
+      this.arbiters = new Map()
+      this.onImpact = null
+    }
+
+    add(b) { this.bodies.push(b); return b }
+
+    remove(b) {
+      const i = this.bodies.indexOf(b)
+      if (i >= 0) this.bodies.splice(i, 1)
+    }
+
+    step(dt) {
+      const list = this.bodies, inv = 1 / dt, seen = new Set()
+
+      // Bodies stay in the order they were added, so a pair's key is stable.
+      for (let i = 0; i < list.length; i++) {
+        const A = list[i]
+        for (let j = i + 1; j < list.length; j++) {
+          const B = list[j]
+          if (!A.invMass && !B.invMass) continue
+          const dx = B.x - A.x, dy = B.y - A.y, reach = A.bound + B.bound
+          if (dx * dx + dy * dy > reach * reach) continue
+          const found = collide(A, B)
+          if (!found.length) continue
+          const key = A.id * 1e6 + B.id
+          seen.add(key)
+          const old = this.arbiters.get(key)
+          if (old) {
+            for (const c of found) {
+              const prev = old.contacts.find(o => o.key === c.key)
+              if (prev) { c.pn = prev.pn; c.pt = prev.pt }
+            }
+            old.contacts = found
+          } else {
+            this.arbiters.set(key, { a: A, b: B, contacts: found, friction: Math.sqrt(A.friction * B.friction) })
+          }
+        }
+      }
+      for (const key of [...this.arbiters.keys()]) if (!seen.has(key)) this.arbiters.delete(key)
+
+      for (const b of list) {
+        if (!b.invMass) continue
+        b.vy += this.gravity * dt
+        const ld = 1 / (1 + dt * b.linDamp), ad = 1 / (1 + dt * b.angDamp)
+        b.vx *= ld; b.vy *= ld; b.w *= ad
+      }
+
+      const arbs = [...this.arbiters.values()]
+      for (const arb of arbs) {
+        const A = arb.a, B = arb.b
+        let impact = 0
+        for (const c of arb.contacts) {
+          const r1x = c.x - A.x, r1y = c.y - A.y, r2x = c.x - B.x, r2y = c.y - B.y
+          const rn1 = r1x * c.nx + r1y * c.ny, rn2 = r2x * c.nx + r2y * c.ny
+          c.mn = 1 / (A.invMass + B.invMass + A.invI * (r1x * r1x + r1y * r1y - rn1 * rn1) + B.invI * (r2x * r2x + r2y * r2y - rn2 * rn2))
+          const tx = c.ny, ty = -c.nx
+          const rt1 = r1x * tx + r1y * ty, rt2 = r2x * tx + r2y * ty
+          c.mt = 1 / (A.invMass + B.invMass + A.invI * (r1x * r1x + r1y * r1y - rt1 * rt1) + B.invI * (r2x * r2x + r2y * r2y - rt2 * rt2))
+          c.bias = -BIAS * inv * Math.min(0, c.sep + SLOP)
+          c.r1x = r1x; c.r1y = r1y; c.r2x = r2x; c.r2y = r2y
+          // How hard they meet, before this step's impulses: what breaks things.
+          const dvx = B.vx - B.w * r2y - A.vx + A.w * r1y
+          const dvy = B.vy + B.w * r2x - A.vy - A.w * r1x
+          impact = Math.max(impact, -(dvx * c.nx + dvy * c.ny) * c.mn)
+        }
+        if (this.onImpact && impact > 0) this.onImpact(A, B, impact)
+      }
+
+      for (const arb of arbs) {
+        for (const c of arb.contacts) {
+          const px = c.pn * c.nx + c.pt * c.ny, py = c.pn * c.ny - c.pt * c.nx
+          push(arb.a, arb.b, c, px, py)
+        }
+      }
+
+      for (let it = 0; it < ITERATIONS; it++) {
+        for (const arb of arbs) {
+          const A = arb.a, B = arb.b
+          for (const c of arb.contacts) {
+            let dvx = B.vx - B.w * c.r2y - A.vx + A.w * c.r1y
+            let dvy = B.vy + B.w * c.r2x - A.vy - A.w * c.r1x
+            let dPn = c.mn * (-(dvx * c.nx + dvy * c.ny) + c.bias)
+            const pn0 = c.pn
+            c.pn = Math.max(pn0 + dPn, 0)
+            dPn = c.pn - pn0
+            push(A, B, c, dPn * c.nx, dPn * c.ny)
+
+            dvx = B.vx - B.w * c.r2y - A.vx + A.w * c.r1y
+            dvy = B.vy + B.w * c.r2x - A.vy - A.w * c.r1x
+            const tx = c.ny, ty = -c.nx
+            let dPt = -c.mt * (dvx * tx + dvy * ty)
+            const max = arb.friction * c.pn, pt0 = c.pt
+            c.pt = Math.max(-max, Math.min(max, pt0 + dPt))
+            dPt = c.pt - pt0
+            push(A, B, c, dPt * tx, dPt * ty)
+          }
+        }
+      }
+
+      for (const b of list) {
+        if (!b.invMass) continue
+        b.x += b.vx * dt
+        b.y += b.vy * dt
+        b.a += b.w * dt
+      }
+    }
+  }
+
+  function push(A, B, c, px, py) {
+    A.vx -= A.invMass * px; A.vy -= A.invMass * py; A.w -= A.invI * (c.r1x * py - c.r1y * px)
+    B.vx += B.invMass * px; B.vy += B.invMass * py; B.w += B.invI * (c.r2x * py - c.r2y * px)
+  }
+
+  return { World, box, circle, applyImpulse, contains, distance }
+})()
+
+function starSling(host, ctx) {
+  const P = SlingPhysics
+  const W = 800, H = 450, S = 30 // canvas pixels, and pixels per metre
+  const VW = W / S, VH = H / S
+  const GROUND = 13.6
+  const SLING = { x: 4.2, y: GROUND - 2.35 }
+  const MAX_PULL = 1.9, MAX_SPEED = 15, STEP = 1 / 120
+  const GRACE = 1.2 // seconds at the start of a level when nothing breaks, while it settles
+  const C = {
+    bg: '#0d0221', panel: '#160934', text: '#f6edff', muted: '#a99bd1',
+    cyan: '#00f0ff', magenta: '#ff2bd6', orange: '#ff7a1a', yellow: '#ffd319', good: '#3dffa8', bad: '#ff4d6d',
+  }
+
+  const HEROES = {
+    rookie: { name: 'Rookie', r: 0.45, density: 3, color: '#ff4d6d', power: 'blade', tip: 'Tap mid-flight to spin the beam blade.' },
+    gunner: { name: 'Gunner', r: 0.42, density: 3, color: '#ffd319', power: 'blaster', tip: 'Tap where to fire: three blaster bolts.' },
+    sage: { name: 'Sage', r: 0.45, density: 3, color: '#9b7bff', power: 'push', tip: 'Tap mid-flight to push everything nearby away.' },
+    brute: { name: 'Brute', r: 0.66, density: 4.5, color: '#c9833f', power: null, tip: 'No tricks. Just very, very heavy.' },
+  }
+  const MATS = {
+    glass: { density: 0.8, friction: 0.3, hp: 2.5, points: 250, fill: 'rgba(0, 240, 255, 0.16)', line: C.cyan },
+    wood: { density: 1.2, friction: 0.7, hp: 5, points: 500, fill: 'rgba(255, 122, 26, 0.3)', line: C.orange },
+    steel: { density: 3.2, friction: 0.5, hp: 20, points: 1000, fill: 'rgba(169, 155, 209, 0.3)', line: '#d9d0ff' },
+  }
+  const FOE_POINTS = 5000, HERO_BONUS = 10000
+
+  // The original's three episodes, in its order.
+  const EPISODES = {
+    desert: { name: 'Desert planet', sky: ['#2a0e4a', '#7a2e3a'], ground: '#2e1626', line: C.orange },
+    station: { name: 'Battle station', sky: ['#05010f', '#140830'], ground: '#1b1830', line: '#a99bd1' },
+    ice: { name: 'Ice planet', sky: ['#0f1a3d', '#2c4a7a'], ground: '#1a2848', line: '#cfe8ff' },
+  }
+
+  // Each level builds itself with the helpers in build(); y is the bottom
+  // of whatever goes down, so things stack on what each call returns.
+  const G = GROUND
+  const LEVELS = [
+    {
+      name: 'First flight', episode: 'desert', heroes: ['rookie', 'rookie', 'rookie'],
+      build(L) {
+        L.foe(17.5, G)
+        L.foe(17.5, L.frame(17.5, G, 2.8, 2, 'wood'))
+        L.foe(22, L.frame(22, G, 2.4, 1.6, 'glass'))
+      },
+    },
+    {
+      name: 'Glass house', episode: 'desert', heroes: ['gunner', 'rookie', 'gunner'],
+      build(L) {
+        const top1 = L.frame(19.5, G, 3.2, 2, 'glass')
+        L.foe(19.5, G)
+        const top2 = L.frame(19.5, top1, 3.2, 2, 'wood', 'glass')
+        L.foe(19.5, top1)
+        L.foe(19.5, top2)
+        L.cube(16.4, L.cube(16.4, G, 0.8, 'wood'), 0.8, 'glass')
+        L.cube(23.1, G, 0.8, 'glass')
+        L.foe(23.1, G - 0.8)
+      },
+    },
+    {
+      name: 'The outpost', episode: 'desert', heroes: ['sage', 'rookie', 'gunner'],
+      build(L) {
+        const p = L.ledge(18.2, 25.2, G - 2)
+        L.foe(19.8, p)
+        const t1 = L.frame(19.8, p, 2.6, 1.8, 'steel', 'wood')
+        L.cube(19.8, t1, 0.8, 'glass')
+        L.foe(23.3, p)
+        const t2 = L.frame(23.3, p, 2.6, 1.8, 'wood')
+        L.foe(23.3, t2)
+        L.post(15.4, G, 1.2, 'wood')
+        L.foe(16.3, G)
+      },
+    },
+    {
+      name: 'Docking bay', episode: 'station', heroes: ['gunner', 'sage', 'brute'], gravity: 4.5,
+      build(L) {
+        let y = L.frame(19.5, G, 3, 1.8, 'steel')
+        L.foe(19.5, G, 'big')
+        const y2 = L.frame(19.5, y, 3, 1.8, 'wood')
+        L.foe(19.5, y)
+        const y3 = L.frame(19.5, y2, 2.2, 1.4, 'glass')
+        L.foe(19.5, y2)
+        L.foe(19.5, y3)
+        y = L.frame(23.6, G, 2.4, 2.2, 'wood')
+        L.foe(23.6, G)
+        L.cube(23.6, L.cube(23.6, y, 0.8, 'glass'), 0.8, 'glass')
+      },
+    },
+    {
+      // A moonlet whose pull bends every shot that passes near it.
+      name: 'Gravity well', episode: 'station', heroes: ['rookie', 'gunner', 'sage'], gravity: 4.5,
+      well: { x: 12.5, y: 6.2, r: 1.1, reach: 4.6, pull: 26 },
+      build(L) {
+        L.foe(19.5, G)
+        const t = L.frame(19.5, G, 2.6, 2.2, 'steel', 'glass')
+        L.foe(19.5, L.cube(19.5, t, 0.8, 'wood'))
+        L.foe(23.5, G)
+        L.foe(23.5, L.frame(23.5, L.frame(23.5, G, 2.4, 1.8, 'wood'), 2.4, 1.4, 'glass'))
+      },
+    },
+    {
+      name: 'Frozen ridge', episode: 'ice', heroes: ['rookie', 'sage', 'gunner', 'brute'],
+      build(L) {
+        const p = L.ledge(20.4, 25.6, G - 1.4)
+        L.foe(16.8, G)
+        L.foe(16.8, L.frame(16.8, G, 2.4, 1.8, 'glass'))
+        L.foe(21.8, p)
+        const t = L.frame(21.8, p, 2.4, 1.8, 'glass', 'wood')
+        L.foe(21.8, L.frame(21.8, t, 2.4, 1.4, 'glass'))
+        L.foe(24.6, p, 'big')
+        L.post(23.4, p, 1.6, 'wood')
+      },
+    },
+    {
+      name: 'The last stand', episode: 'ice', heroes: ['brute', 'rookie', 'sage', 'gunner'],
+      build(L) {
+        let top = 0
+        for (const x of [17.5, 20.5, 23.5]) top = L.frame(x, G, 2.6, 2, 'steel', 'wood')
+        L.foe(17.5, G)
+        L.foe(20.5, G, 'big')
+        L.foe(23.5, G)
+        const deck = L.beam(20.5, top, 8.6, 'wood')
+        L.foe(19, deck)
+        L.foe(22, deck)
+        L.foe(19, L.frame(19, deck, 2.4, 1.6, 'glass'))
+        L.foe(22, L.frame(22, deck, 2.4, 1.6, 'glass', 'wood'))
+      },
+    },
+  ]
+
+  const dpr = window.devicePixelRatio || 1
+  const c = el('canvas', { class: 'game-canvas', width: Math.round(W * dpr), height: Math.round(H * dpr), style: `aspect-ratio: ${W} / ${H}` })
+  const g = c.getContext('2d')
+  g.scale(dpr, dpr)
+  host.append(c)
+
+  // The same sky every time.
+  let seed = 7
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+  const STARS = Array.from({ length: 90 }, () => ({ x: rnd() * W, y: rnd() * (GROUND * S - 20), r: rnd() * 1.3 + 0.3, a: rnd() * 0.6 + 0.3 }))
+
+  let world, level, def, foes, queue, hero, phase, paused, score, raf, last, acc
+  let pull, drag, kb, aimAngle, aimPower, grace, flyT, slowT, settleT, powerUsed, powerTarget
+  let bladeT, bolts, shotsLeft, shotWait, effects, popups, trail, lastTrail, trailT, clearedT
+
+  function buildLevel(n, quiet) {
+    level = n
+    def = LEVELS[n]
+    world = new P.World(def.gravity || 10)
+    world.onImpact = impact
+    world.add(P.box(VW / 2, GROUND + 5, VW + 20, 10, 0, 0.9)).kind = 'ground'
+    if (def.well) world.add(P.circle(def.well.x, def.well.y, def.well.r, 0, 0.6)).kind = 'moon'
+    foes = []
+    const L = {
+      block(x, bottom, w, h, mat) {
+        const m = MATS[mat]
+        const b = world.add(P.box(x, bottom - h / 2, w, h, m.density, m.friction))
+        b.kind = 'block'
+        b.mat = mat
+        b.hp = b.maxHp = m.hp * Math.max(0.6, Math.min(1.6, (w * h) / 0.8))
+        return bottom - h
+      },
+      post: (x, bottom, h, mat) => L.block(x, bottom, 0.4, h, mat),
+      beam: (x, bottom, w, mat) => L.block(x, bottom, w, 0.4, mat),
+      cube: (x, bottom, s, mat) => L.block(x, bottom, s, s, mat),
+      // Two posts and a beam across them; returns the top of the beam.
+      frame(x, bottom, w, h, mat, beamMat) {
+        L.post(x - w / 2 + 0.2, bottom, h, mat)
+        L.post(x + w / 2 - 0.2, bottom, h, mat)
+        return L.beam(x, bottom - h, w, beamMat || mat)
+      },
+      foe(x, bottom, size) {
+        const big = size === 'big', r = big ? 0.6 : 0.42
+        const b = world.add(P.circle(x, bottom - r, r, 1, 0.6))
+        b.kind = 'foe'
+        b.big = big
+        b.hp = b.maxHp = big ? 5 : 1.6
+        b.linDamp = 0.05
+        b.angDamp = 1.5
+        foes.push(b)
+        return bottom - 2 * r
+      },
+      // A rock shelf, which nothing can knock over.
+      ledge(x0, x1, top) {
+        world.add(P.box((x0 + x1) / 2, (top + GROUND + 1) / 2, x1 - x0, GROUND + 1 - top, 0, 0.9)).kind = 'rock'
+        return top
+      },
+    }
+    def.build(L)
+    queue = def.heroes.slice()
+    hero = null
+    pull = null
+    drag = null
+    kb = false
+    aimAngle = 0.62
+    aimPower = 0.85
+    grace = GRACE
+    bolts = []
+    effects = []
+    popups = []
+    trail = []
+    lastTrail = []
+    phase = 'aim'
+    if (!quiet) ctx.toast(`${EPISODES[def.episode].name} · Level ${n + 1}: ${def.name}`)
+  }
+
+  // The title card, with its dedication, comes first.
+  function reset() {
+    cancelAnimationFrame(raf)
+    score = 0
+    paused = false
+    ctx.score(0)
+    buildLevel(0, true)
+    phase = 'title'
+    last = 0
+    acc = 0
+    raf = requestAnimationFrame(frame)
+  }
+
+  // ── Damage ──
+  function impact(A, B, imp) {
+    if (grace > 0) return
+    const dmg = (imp - 0.4) * 1.6
+    if (dmg <= 0) return
+    hurt(A, dmg)
+    hurt(B, dmg)
+  }
+
+  function hurt(b, dmg) {
+    if (!b.maxHp || b.dead) return
+    b.hp -= dmg
+    if (b.hp <= 0) b.dead = true
+  }
+
+  function gain(points, x, y, color) {
+    score += points
+    ctx.score(score)
+    popups.push({ x, y, text: `+${points}`, color, t: 0 })
+  }
+
+  function shatter(b, color, n) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 5
+      effects.push({ type: 'bit', x: b.x, y: b.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, t: 0, life: 0.6 + Math.random() * 0.5, color, size: 2 + Math.random() * 3 })
+    }
+  }
+
+  function sweep() {
+    for (const b of world.bodies.slice()) {
+      if (!b.invMass) continue
+      const gone = b.x < -3 || b.x > VW + 3 || b.y > VH + 3
+      if (!b.dead && !gone) continue
+      if (b === hero) continue
+      world.remove(b)
+      if (b.kind === 'foe') {
+        foes = foes.filter(f => f !== b)
+        shatter(b, C.good, 14)
+        gain(FOE_POINTS, b.x, b.y, C.good)
+      } else if (b.kind === 'block' && b.dead) {
+        shatter(b, MATS[b.mat].line, 10)
+        gain(MATS[b.mat].points, b.x, b.y, MATS[b.mat].line)
+      }
+    }
+  }
+
+  // ── The sling ──
+  function launch() {
+    if (phase !== 'aim' || !queue.length) return
+    const p = pull || kbPull()
+    if (Math.hypot(p.x, p.y) < 0.25) { pull = null; return }
+    const kind = queue.shift()
+    const spec = HEROES[kind]
+    hero = world.add(P.circle(SLING.x + p.x, SLING.y + p.y, spec.r, spec.density, 0.5))
+    hero.kind = 'hero'
+    hero.hero = kind
+    hero.angDamp = 0.8
+    hero.vx = -p.x * speed()
+    hero.vy = -p.y * speed()
+    pull = null
+    drag = null
+    kb = false
+    flyT = 0
+    slowT = 0
+    trailT = 0
+    trail = []
+    powerUsed = !spec.power
+    bladeT = 0
+    shotsLeft = 0
+    phase = 'fly'
+  }
+
+  // Launch speed per metre of pull. Low gravity takes a little off, so
+  // shots still land on the screen, just slower and floatier.
+  function speed() {
+    return MAX_SPEED / MAX_PULL * Math.pow((def.gravity || 10) / 10, 0.35)
+  }
+
+  function kbPull() {
+    const d = aimPower * MAX_PULL
+    return { x: -Math.cos(aimAngle) * d, y: Math.sin(aimAngle) * d }
+  }
+
+  function clampPull(x, y) {
+    const d = Math.hypot(x, y)
+    // Not into the ground, and not past the sling's reach.
+    const k = d > MAX_PULL ? MAX_PULL / d : 1
+    return { x: x * k, y: Math.min(y * k, GROUND - 0.5 - SLING.y) }
+  }
+
+  function retire() {
+    if (!hero) return
+    effects.push({ type: 'poof', x: hero.x, y: hero.y, t: 0, life: 0.4, color: HEROES[hero.hero].color })
+    world.remove(hero)
+    hero = null
+    lastTrail = trail
+    trail = []
+    bolts = []
+    phase = 'settle'
+    settleT = 0
+  }
+
+  // ── Powers ──
+  function power(target) {
+    if (phase !== 'fly' || !hero || powerUsed) return
+    powerUsed = true
+    const kind = HEROES[hero.hero].power
+    if (kind === 'blade') bladeT = 0.45
+    if (kind === 'blaster') {
+      powerTarget = target
+      shotsLeft = 3
+      shotWait = 0
+    }
+    if (kind === 'push') {
+      const R = 6
+      for (const b of world.bodies) {
+        if (!b.invMass || b === hero) continue
+        const dx = b.x - hero.x, dy = b.y - hero.y, d = Math.hypot(dx, dy)
+        if (d > R || d < 1e-6) continue
+        const f = 1 - d / R
+        const dv = Math.min(12, 16 * f * b.invMass)
+        b.vx += dx / d * dv
+        b.vy += dy / d * dv - 1.5 * f
+        b.w += (Math.random() - 0.5) * 4 * f
+        hurt(b, 1.2 * f)
+      }
+      hero.vx *= 0.3
+      hero.vy *= 0.3
+      effects.push({ type: 'ring', x: hero.x, y: hero.y, t: 0, life: 0.4, r: R, color: HEROES.sage.color })
+    }
+  }
+
+  function fireBolt() {
+    let dx, dy
+    if (powerTarget) { dx = powerTarget.x - hero.x; dy = powerTarget.y - hero.y } else { dx = hero.vx; dy = hero.vy }
+    const d = Math.hypot(dx, dy) || 1
+    bolts.push({ x: hero.x, y: hero.y, dx: dx / d, dy: dy / d, t: 0 })
+  }
+
+  function moveBolts(dt) {
+    const SPEED = 45, STEPS = 4
+    bolts = bolts.filter(bolt => {
+      bolt.t += dt
+      if (bolt.t > 0.8) return false
+      for (let i = 0; i < STEPS; i++) {
+        bolt.x += bolt.dx * SPEED * dt / STEPS
+        bolt.y += bolt.dy * SPEED * dt / STEPS
+        const hit = world.bodies.find(b => b !== hero && P.contains(b, bolt.x, bolt.y))
+        if (!hit) continue
+        if (hit.invMass) {
+          P.applyImpulse(hit, bolt.x, bolt.y, bolt.dx * 3, bolt.dy * 3)
+          hurt(hit, 3.5)
+        }
+        for (let k = 0; k < 6; k++) {
+          const a = Math.random() * Math.PI * 2
+          effects.push({ type: 'bit', x: bolt.x, y: bolt.y, vx: Math.cos(a) * 3 - bolt.dx * 2, vy: Math.sin(a) * 3 - bolt.dy * 2, t: 0, life: 0.35, color: C.bad, size: 2 })
+        }
+        return false
+      }
+      return true
+    })
+  }
+
+  // A gravity well pulls only on heroes, harder the closer they pass.
+  function wellPull(x, y) {
+    const w = def.well
+    if (!w) return null
+    const dx = w.x - x, dy = w.y - y, d = Math.hypot(dx, dy)
+    if (d > w.reach || d < 1e-6) return null
+    const a = w.pull * (1 - d / w.reach)
+    return { x: dx / d * a, y: dy / d * a }
+  }
+
+  // ── The loop ──
+  function calm() {
+    return world.bodies.every(b => !b.invMass || (Math.hypot(b.vx, b.vy) < 0.25 && Math.abs(b.w) < 0.5))
+  }
+
+  function tick(dt) {
+    grace -= dt
+    if (phase === 'aim' && kb && !drag) {
+      if (ctx.held.has('up')) aimAngle = Math.min(1.45, aimAngle + 1.1 * dt)
+      if (ctx.held.has('down')) aimAngle = Math.max(-0.5, aimAngle - 1.1 * dt)
+      if (ctx.held.has('left')) aimPower = Math.min(1, aimPower + 0.7 * dt)
+      if (ctx.held.has('right')) aimPower = Math.max(0.2, aimPower - 0.7 * dt)
+      pull = clampPull(kbPull().x, kbPull().y)
+    }
+
+    if (hero) {
+      const a = wellPull(hero.x, hero.y)
+      if (a) { hero.vx += a.x * dt; hero.vy += a.y * dt }
+    }
+    world.step(dt)
+
+    if (hero) {
+      if (bladeT > 0) {
+        bladeT -= dt
+        for (const b of world.bodies) {
+          if (!b.invMass || b === hero || P.distance(b, hero.x, hero.y) > hero.r + 1.25) continue
+          hurt(b, 30 * dt)
+          const dx = b.x - hero.x, dy = b.y - hero.y, d = Math.hypot(dx, dy) || 1
+          b.vx += dx / d * 30 * dt
+          b.vy += dy / d * 30 * dt
+        }
+      }
+      if (shotsLeft > 0) {
+        shotWait -= dt
+        if (shotWait <= 0) { fireBolt(); shotsLeft--; shotWait = 0.09 }
+      }
+      flyT += dt
+      trailT -= dt
+      if (trailT <= 0) { trail.push({ x: hero.x, y: hero.y }); trailT = 0.04 }
+      slowT = Math.hypot(hero.vx, hero.vy) < 0.5 ? slowT + dt : 0
+      const out = hero.x < -2 || hero.x > VW + 2 || hero.y > VH + 2
+      if (out || slowT > 1 || flyT > 9 || (!foes.length && flyT > 0.6)) retire()
+    }
+    moveBolts(dt)
+    sweep()
+
+    if (phase === 'settle') {
+      settleT += dt
+      const quiet = settleT > 0.6 && (calm() || settleT > 5)
+      if (!foes.length && quiet) cleared()
+      else if (quiet && !bolts.length) {
+        if (queue.length) phase = 'aim'
+        else {
+          phase = 'over'
+          ctx.end('Out of heroes', score)
+        }
+      }
+    }
+    if (phase === 'cleared') {
+      clearedT += dt
+      if (level === LEVELS.length - 1 && clearedT > 1.4) {
+        phase = 'over'
+        ctx.end(`All ${LEVELS.length} levels cleared`, score)
+      }
+    }
+
+    for (const e of effects) {
+      e.t += dt
+      if (e.type === 'bit') { e.x += e.vx * dt; e.y += e.vy * dt; e.vy += 9 * dt }
+    }
+    effects = effects.filter(e => e.t < e.life)
+    for (const p of popups) { p.t += dt; p.y -= 0.8 * dt }
+    popups = popups.filter(p => p.t < 1)
+  }
+
+  function cleared() {
+    phase = 'cleared'
+    clearedT = 0
+    queue.forEach((kind, i) => gain(HERO_BONUS, SLING.x - 1 - i * 1.1, GROUND - 1.6, HEROES[kind].color))
+    queue = []
+  }
+
+  function next() {
+    if (phase !== 'cleared' || level === LEVELS.length - 1) return
+    buildLevel(level + 1)
+  }
+
+  // Off the title card, into the first level as it was built.
+  function begin() {
+    buildLevel(0)
+  }
+
+  function frame(t) {
+    const dt = last ? Math.min(0.05, (t - last) / 1000) : 0
+    last = t
+    acc += dt
+    while (acc >= STEP) {
+      tick(STEP)
+      acc -= STEP
+      if (phase === 'over') break
+    }
+    draw()
+    if (phase !== 'over' && !paused) raf = requestAnimationFrame(frame)
+  }
+
+  // ── Drawing ──
+  // The sling is a Y: the trunk and back arm go behind the hero, the front
+  // arm in front of it.
+  const FORK = GROUND - 1.3
+  function prong(dx, trunk) {
+    g.strokeStyle = C.magenta
+    g.shadowColor = C.magenta
+    g.shadowBlur = 10
+    g.lineWidth = 7
+    g.lineCap = 'round'
+    g.beginPath()
+    if (trunk) {
+      g.moveTo(SLING.x * S, GROUND * S)
+      g.lineTo(SLING.x * S, FORK * S)
+    }
+    g.moveTo(SLING.x * S, FORK * S)
+    g.quadraticCurveTo((SLING.x + dx * 0.9) * S, (FORK - 0.15) * S, (SLING.x + dx) * S, (SLING.y - 0.35) * S)
+    g.stroke()
+    g.shadowBlur = 0
+  }
+
+  function band(dx, px, py) {
+    g.strokeStyle = C.cyan
+    g.lineWidth = 4
+    g.beginPath()
+    g.moveTo((SLING.x + dx) * S, (SLING.y - 0.3) * S)
+    g.lineTo(px * S, py * S)
+    g.stroke()
+  }
+
+  function drawHero(kind, x, y, a, alpha) {
+    const spec = HEROES[kind], R = spec.r * S
+    g.save()
+    g.globalAlpha = alpha == null ? 1 : alpha
+    g.translate(x * S, y * S)
+    g.rotate(a)
+    g.shadowBlur = 14
+    g.shadowColor = spec.color
+    g.fillStyle = spec.color
+    g.beginPath(); g.arc(0, 0, R, 0, Math.PI * 2); g.fill()
+    g.shadowBlur = 0
+    g.fillStyle = 'rgba(255, 255, 255, 0.22)'
+    g.beginPath(); g.ellipse(0, R * 0.45, R * 0.6, R * 0.38, 0, 0, Math.PI * 2); g.fill()
+    if (kind === 'rookie') {
+      g.fillStyle = C.text
+      g.fillRect(-R * 0.95, -R * 0.62, R * 1.9, R * 0.22)
+    } else if (kind === 'gunner') {
+      g.strokeStyle = '#3a2a10'
+      g.lineWidth = R * 0.16
+      g.beginPath(); g.moveTo(-R * 0.75, -R * 0.55); g.lineTo(R * 0.55, R * 0.8); g.stroke()
+    } else if (kind === 'sage') {
+      g.fillStyle = '#4a2f8f'
+      g.beginPath(); g.arc(0, 0, R * 1.05, Math.PI * 1.08, Math.PI * 1.92); g.lineTo(0, -R * 0.35); g.closePath(); g.fill()
+    } else if (kind === 'brute') {
+      g.strokeStyle = '#7a4a1f'
+      g.lineWidth = 2
+      for (let i = 0; i < 9; i++) {
+        const t = Math.PI * (1.1 + i * 0.1)
+        g.beginPath(); g.moveTo(Math.cos(t) * R * 0.8, Math.sin(t) * R * 0.8); g.lineTo(Math.cos(t) * R * 1.08, Math.sin(t) * R * 1.08); g.stroke()
+      }
+      g.strokeStyle = '#3a2a10'
+      g.lineWidth = R * 0.14
+      g.beginPath(); g.moveTo(-R * 0.8, -R * 0.2); g.lineTo(R * 0.7, R * 0.75); g.stroke()
+    }
+    for (const s of [-1, 1]) {
+      g.fillStyle = '#fff'
+      g.beginPath(); g.arc(s * R * 0.32, -R * 0.08, R * 0.22, 0, Math.PI * 2); g.fill()
+      g.fillStyle = C.bg
+      g.beginPath(); g.arc(s * R * 0.32 + R * 0.07, -R * 0.06, R * 0.1, 0, Math.PI * 2); g.fill()
+      // Angry brows, sloping down to the middle.
+      g.strokeStyle = C.bg
+      g.lineWidth = R * 0.14
+      g.beginPath(); g.moveTo(s * R * 0.62, -R * 0.42); g.lineTo(s * R * 0.08, -R * 0.24); g.stroke()
+    }
+    g.restore()
+  }
+
+  function drawFoe(b) {
+    const R = b.r * S, hurtBy = 1 - b.hp / b.maxHp
+    g.save()
+    g.translate(b.x * S, b.y * S)
+    g.rotate(b.a)
+    g.shadowBlur = 12
+    g.shadowColor = C.good
+    g.fillStyle = C.good
+    g.beginPath(); g.arc(0, 0, R, 0, Math.PI * 2); g.fill()
+    g.shadowBlur = 0
+    // Helmet, visor, and two red eyes behind it.
+    g.fillStyle = b.big ? '#1c1430' : '#f2ecff'
+    g.beginPath(); g.arc(0, -R * 0.05, R * 1.06, Math.PI * 1.02, Math.PI * 1.98); g.closePath(); g.fill()
+    if (b.big) {
+      g.strokeStyle = C.bad
+      g.lineWidth = 2
+      g.beginPath(); g.arc(0, -R * 0.05, R * 1.06, Math.PI * 1.02, Math.PI * 1.98); g.stroke()
+    }
+    g.fillStyle = C.bg
+    g.fillRect(-R * 0.72, -R * 0.42, R * 1.44, R * 0.34)
+    g.fillStyle = C.bad
+    g.shadowColor = C.bad
+    g.shadowBlur = 6
+    for (const s of [-1, 1]) { g.beginPath(); g.arc(s * R * 0.3, -R * 0.25, R * 0.1, 0, Math.PI * 2); g.fill() }
+    g.shadowBlur = 0
+    g.fillStyle = 'rgba(13, 2, 33, 0.35)'
+    g.beginPath(); g.ellipse(0, R * 0.42, R * 0.3, R * 0.18, 0, 0, Math.PI * 2); g.fill()
+    if (hurtBy > 0.3) {
+      g.strokeStyle = C.bg
+      g.lineWidth = 1.5
+      g.beginPath(); g.moveTo(-R * 0.2, -R); g.lineTo(-R * 0.05, -R * 0.7); g.lineTo(-R * 0.25, -R * 0.5); g.stroke()
+    }
+    g.restore()
+  }
+
+  function drawBlock(b) {
+    const m = MATS[b.mat], w = b.hw * 2 * S, h = b.hh * 2 * S, hurtBy = 1 - b.hp / b.maxHp
+    g.save()
+    g.translate(b.x * S, b.y * S)
+    g.rotate(b.a)
+    g.fillStyle = m.fill
+    g.fillRect(-w / 2, -h / 2, w, h)
+    g.strokeStyle = m.line
+    g.shadowColor = m.line
+    g.shadowBlur = 8
+    g.lineWidth = 2
+    g.strokeRect(-w / 2 + 1, -h / 2 + 1, w - 2, h - 2)
+    g.shadowBlur = 0
+    if (b.mat === 'wood') {
+      g.globalAlpha = 0.35
+      g.lineWidth = 1
+      const long = w > h
+      for (const f of [-0.2, 0.2]) {
+        g.beginPath()
+        if (long) { g.moveTo(-w / 2 + 4, f * h); g.lineTo(w / 2 - 4, f * h) } else { g.moveTo(f * w, -h / 2 + 4); g.lineTo(f * w, h / 2 - 4) }
+        g.stroke()
+      }
+      g.globalAlpha = 1
+    } else if (b.mat === 'steel') {
+      g.fillStyle = m.line
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        g.beginPath(); g.arc(sx * (w / 2 - 5), sy * (h / 2 - 5), 1.5, 0, Math.PI * 2); g.fill()
+      }
+    } else {
+      g.strokeStyle = 'rgba(255, 255, 255, 0.35)'
+      g.lineWidth = 1.5
+      g.beginPath(); g.moveTo(-w / 2 + 4, h / 2 - 6); g.lineTo(-w / 2 + 10, -h / 2 + 4); g.stroke()
+    }
+    if (hurtBy > 0.25) {
+      g.strokeStyle = C.bg
+      g.lineWidth = 1.5
+      g.beginPath()
+      g.moveTo(-w * 0.3, -h / 2)
+      g.lineTo(-w * 0.1, -h * 0.1)
+      g.lineTo(-w * 0.22, h * 0.15)
+      if (hurtBy > 0.55) { g.moveTo(w * 0.25, h / 2); g.lineTo(w * 0.08, h * 0.05); g.lineTo(w * 0.2, -h * 0.2) }
+      g.stroke()
+    }
+    g.restore()
+  }
+
+  function dots(points, color, size) {
+    g.fillStyle = color
+    for (const p of points) { g.beginPath(); g.arc(p.x * S, p.y * S, size, 0, Math.PI * 2); g.fill() }
+  }
+
+  function preview() {
+    if (!pull || Math.hypot(pull.x, pull.y) < 0.25) return []
+    let x = SLING.x + pull.x, y = SLING.y + pull.y
+    let vx = -pull.x * speed(), vy = -pull.y * speed()
+    const gr = def.gravity || 10, dt = 0.02, out = []
+    for (let i = 1; i <= 45; i++) {
+      const a = wellPull(x, y)
+      vx += (a ? a.x : 0) * dt
+      vy += ((a ? a.y : 0) + gr) * dt
+      x += vx * dt
+      y += vy * dt
+      if (def.well && Math.hypot(x - def.well.x, y - def.well.y) < def.well.r) break
+      if (i % 3 === 0) out.push({ x, y })
+    }
+    return out
+  }
+
+  function banner(title, sub) {
+    g.fillStyle = 'rgba(13, 2, 33, 0.72)'
+    g.fillRect(0, 0, W, H)
+    g.textAlign = 'center'
+    g.fillStyle = C.yellow
+    g.font = '700 26px Orbitron, sans-serif'
+    g.fillText(title, W / 2, H / 2 - 8)
+    if (sub) {
+      g.fillStyle = C.cyan
+      g.font = '15px "Share Tech Mono", monospace'
+      g.fillText(sub, W / 2, H / 2 + 20)
+    }
+  }
+
+  function scenery(ep) {
+    const sky = g.createLinearGradient(0, 0, 0, GROUND * S)
+    sky.addColorStop(0, ep.sky[0])
+    sky.addColorStop(1, ep.sky[1])
+    g.fillStyle = sky
+    g.fillRect(0, 0, W, H)
+    for (const s of STARS) {
+      g.globalAlpha = s.a * (def.episode === 'station' ? 1 : 0.45)
+      g.fillStyle = C.text
+      g.fillRect(s.x, s.y, s.r, s.r)
+    }
+    g.globalAlpha = 1
+    if (def.episode === 'desert') {
+      // Two suns over the dunes.
+      for (const [x, y, r, col] of [[470, 110, 34, C.yellow], [545, 150, 22, C.orange]]) {
+        g.shadowBlur = 40
+        g.shadowColor = col
+        g.fillStyle = col
+        g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill()
+      }
+      g.shadowBlur = 0
+      g.fillStyle = 'rgba(255, 122, 26, 0.16)'
+      g.beginPath()
+      g.moveTo(0, GROUND * S)
+      for (let x = 0; x <= W; x += 20) g.lineTo(x, GROUND * S - 34 - Math.sin(x / 90) * 18 - Math.sin(x / 37) * 6)
+      g.lineTo(W, GROUND * S)
+      g.fill()
+    } else if (def.episode === 'station') {
+      // The station itself hangs in the sky, a moon-sized sphere.
+      const x = 560, y = 120, r = 82
+      g.fillStyle = 'rgba(169, 155, 209, 0.22)'
+      g.shadowBlur = 30
+      g.shadowColor = '#a99bd1'
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill()
+      g.shadowBlur = 0
+      g.strokeStyle = 'rgba(217, 208, 255, 0.4)'
+      g.lineWidth = 2
+      g.beginPath(); g.moveTo(x - r, y); g.lineTo(x + r, y); g.stroke()
+      g.lineWidth = 1
+      for (const k of [-0.5, 0.5]) { g.beginPath(); g.ellipse(x, y + k * r, Math.sqrt(1 - k * k) * r, 4, 0, 0, Math.PI * 2); g.stroke() }
+    } else {
+      g.fillStyle = 'rgba(207, 232, 255, 0.14)'
+      g.beginPath()
+      g.moveTo(0, GROUND * S)
+      for (const [x, y] of [[60, 280], [150, 200], [230, 260], [340, 150], [450, 250], [560, 180], [680, 270], [800, 210]]) g.lineTo(x, y)
+      g.lineTo(W, GROUND * S)
+      g.fill()
+      // Snow, drifting with the clock.
+      const t = performance.now() / 1000
+      g.fillStyle = 'rgba(246, 237, 255, 0.7)'
+      for (const s of STARS) g.fillRect((s.x + t * 12) % W, (s.y + t * (20 + s.r * 14)) % (GROUND * S), s.r + 0.6, s.r + 0.6)
+    }
+
+    g.fillStyle = ep.ground
+    g.fillRect(0, GROUND * S, W, H - GROUND * S)
+    g.strokeStyle = ep.line
+    g.globalAlpha = 0.18
+    g.lineWidth = 1
+    for (let x = -W; x < W * 2; x += 40) {
+      g.beginPath(); g.moveTo(W / 2 + (x - W / 2) * 0.35, GROUND * S); g.lineTo(x, H); g.stroke()
+    }
+    g.globalAlpha = 1
+    g.shadowBlur = 10
+    g.shadowColor = ep.line
+    g.fillStyle = ep.line
+    g.fillRect(0, GROUND * S - 1, W, 2)
+    g.shadowBlur = 0
+  }
+
+  function titleCard() {
+    g.fillStyle = 'rgba(13, 2, 33, 0.8)'
+    g.fillRect(0, 0, W, H)
+    g.textAlign = 'center'
+    g.shadowBlur = 18
+    g.shadowColor = C.yellow
+    g.fillStyle = C.yellow
+    g.font = '900 44px Orbitron, sans-serif'
+    g.fillText('STAR SLING', W / 2, 150)
+    g.shadowBlur = 0
+    g.fillStyle = C.text
+    g.font = '600 17px "Chakra Petch", sans-serif'
+    g.fillText('In memory of Angry Birds Star Wars', W / 2, 200)
+    g.fillStyle = C.muted
+    g.font = '14px "Share Tech Mono", monospace'
+    g.fillText('Rovio · 2012–2019 · gone from the stores, never forgotten', W / 2, 224)
+    g.fillText('Three episodes: desert planet, battle station, ice planet', W / 2, 268)
+    g.fillStyle = C.cyan
+    g.font = '15px "Share Tech Mono", monospace'
+    g.fillText('Tap or Space to play', W / 2, 318)
+    g.fillStyle = 'rgba(169, 155, 209, 0.7)'
+    g.font = '11px "Share Tech Mono", monospace'
+    g.fillText('A fan tribute. Not made by or affiliated with Rovio or Lucasfilm.', W / 2, 410)
+  }
+
+  function draw() {
+    const ep = EPISODES[def.episode]
+    scenery(ep)
+
+    for (const b of world.bodies) {
+      if (b.kind === 'rock') {
+        g.fillStyle = ep.ground
+        g.fillRect((b.x - b.hw) * S, (b.y - b.hh) * S, b.hw * 2 * S, b.hh * 2 * S)
+        g.strokeStyle = ep.line
+        g.lineWidth = 2
+        g.strokeRect((b.x - b.hw) * S + 1, (b.y - b.hh) * S + 1, b.hw * 2 * S - 2, b.hh * 2 * S)
+      } else if (b.kind === 'moon') {
+        g.save()
+        g.setLineDash([4, 8])
+        g.strokeStyle = 'rgba(155, 123, 255, 0.45)'
+        g.lineWidth = 1.5
+        g.beginPath(); g.arc(b.x * S, b.y * S, def.well.reach * S, 0, Math.PI * 2); g.stroke()
+        g.restore()
+        g.fillStyle = '#3a2f5c'
+        g.shadowBlur = 16
+        g.shadowColor = '#9b7bff'
+        g.beginPath(); g.arc(b.x * S, b.y * S, b.r * S, 0, Math.PI * 2); g.fill()
+        g.shadowBlur = 0
+        g.fillStyle = 'rgba(13, 2, 33, 0.4)'
+        g.beginPath(); g.arc((b.x - 0.3) * S, (b.y - 0.25) * S, 0.28 * S, 0, Math.PI * 2); g.fill()
+        g.beginPath(); g.arc((b.x + 0.4) * S, (b.y + 0.3) * S, 0.18 * S, 0, Math.PI * 2); g.fill()
+      }
+    }
+
+    dots(lastTrail, 'rgba(246, 237, 255, 0.35)', 2)
+    dots(trail, 'rgba(246, 237, 255, 0.6)', 2)
+    if (phase === 'aim') dots(preview(), 'rgba(255, 211, 25, 0.75)', 2.5)
+
+    // Heroes still to go wait by the sling.
+    const waiting = phase === 'aim' ? queue.slice(1) : queue
+    waiting.forEach((kind, i) => drawHero(kind, SLING.x - 1 - i * 1.1, GROUND - HEROES[kind].r, 0, 0.9))
+
+    const px = SLING.x + (pull ? pull.x : 0), py = SLING.y + (pull ? pull.y : 0)
+    prong(0.55, true)
+    if (phase === 'aim') band(0.55, px, py)
+
+    for (const b of world.bodies) if (b.kind === 'block') drawBlock(b)
+    for (const b of foes) drawFoe(b)
+    if (hero) {
+      if (bladeT > 0) {
+        const a = (1 - bladeT / 0.45) * Math.PI * 4
+        g.save()
+        g.strokeStyle = '#7fd4ff'
+        g.shadowColor = '#3da9ff'
+        g.shadowBlur = 18
+        g.lineWidth = 5
+        g.lineCap = 'round'
+        g.beginPath()
+        g.moveTo(hero.x * S, hero.y * S)
+        g.lineTo((hero.x + Math.cos(a) * (hero.r + 1.25)) * S, (hero.y + Math.sin(a) * (hero.r + 1.25)) * S)
+        g.stroke()
+        g.restore()
+      }
+      drawHero(hero.hero, hero.x, hero.y, hero.a)
+    }
+    if (phase === 'aim' && queue.length) drawHero(queue[0], px, py, 0)
+
+    if (phase === 'aim') band(-0.55, px, py)
+    prong(-0.55)
+
+    g.save()
+    g.strokeStyle = C.bad
+    g.shadowColor = C.bad
+    g.shadowBlur = 10
+    g.lineWidth = 3
+    g.lineCap = 'round'
+    for (const b of bolts) {
+      g.beginPath(); g.moveTo(b.x * S, b.y * S); g.lineTo((b.x - b.dx * 0.7) * S, (b.y - b.dy * 0.7) * S); g.stroke()
+    }
+    g.restore()
+
+    for (const e of effects) {
+      const k = e.t / e.life
+      g.globalAlpha = 1 - k
+      if (e.type === 'bit') {
+        g.fillStyle = e.color
+        g.fillRect(e.x * S - e.size / 2, e.y * S - e.size / 2, e.size, e.size)
+      } else {
+        g.strokeStyle = e.color
+        g.lineWidth = e.type === 'ring' ? 4 : 3
+        g.beginPath()
+        g.arc(e.x * S, e.y * S, (e.type === 'ring' ? e.r * k : 0.3 + k) * S, 0, Math.PI * 2)
+        g.stroke()
+      }
+    }
+    g.globalAlpha = 1
+
+    g.textAlign = 'center'
+    g.font = '700 15px Orbitron, sans-serif'
+    for (const p of popups) {
+      g.globalAlpha = 1 - p.t
+      g.fillStyle = p.color
+      g.fillText(p.text, p.x * S, p.y * S)
+    }
+    g.globalAlpha = 1
+
+    g.textAlign = 'left'
+    g.font = '13px "Share Tech Mono", monospace'
+    g.fillStyle = C.muted
+    g.fillText(`${EPISODES[def.episode].name.toUpperCase()} · ${level + 1}/${LEVELS.length} ${def.name.toUpperCase()}${def.gravity ? ' · LOW GRAVITY' : ''}`, 12, 22)
+    g.textAlign = 'right'
+    g.fillText(`GOONS ${foes.length}   HEROES ${queue.length}`, W - 12, 22)
+    if (phase === 'aim' && queue.length) {
+      const spec = HEROES[queue[0]]
+      g.textAlign = 'center'
+      g.fillStyle = spec.color
+      g.fillText(`${spec.name.toUpperCase()}: ${spec.tip}`, W / 2, H - 14)
+    }
+
+    if (phase === 'title') titleCard()
+    if (phase === 'cleared' && level < LEVELS.length - 1) {
+      const nextEp = LEVELS[level + 1].episode
+      banner('Level cleared', nextEp !== def.episode ? `Tap or Space: on to the ${EPISODES[nextEp].name.toLowerCase()}` : 'Tap or Space for the next level')
+    }
+    if (paused && phase !== 'over') banner('Paused', 'Back to the arcade to carry on')
+  }
+
+  // ── Input ──
+  function toWorld(e) {
+    const rect = c.getBoundingClientRect()
+    return { x: (e.clientX - rect.left) / rect.width * VW, y: (e.clientY - rect.top) / rect.height * VH }
+  }
+
+  c.addEventListener('pointerdown', e => {
+    e.preventDefault()
+    const p = toWorld(e)
+    if (phase === 'title') return begin()
+    if (phase === 'cleared') return next()
+    if (phase === 'fly') return power(p)
+    if (phase !== 'aim' || !queue.length) return
+    // Grab the hero itself, or drag from anywhere on the left of the screen.
+    const near = Math.hypot(p.x - SLING.x, p.y - SLING.y) < 2.2
+    if (!near && p.x > VW * 0.45) return
+    drag = { id: e.pointerId, grab: near, x: p.x, y: p.y }
+    kb = false
+    try { c.setPointerCapture(e.pointerId) } catch (err) { /* already released */ }
+    pull = near ? clampPull(p.x - SLING.x, p.y - SLING.y) : { x: 0, y: 0 }
+  })
+  c.addEventListener('pointermove', e => {
+    if (!drag || drag.id !== e.pointerId || phase !== 'aim') return
+    const p = toWorld(e)
+    pull = drag.grab ? clampPull(p.x - SLING.x, p.y - SLING.y) : clampPull(p.x - drag.x, p.y - drag.y)
+  })
+  const release = e => {
+    if (!drag || drag.id !== e.pointerId) return
+    drag = null
+    launch()
+  }
+  c.addEventListener('pointerup', release)
+  c.addEventListener('pointercancel', e => { if (drag && drag.id === e.pointerId) { drag = null; pull = null } })
+
+  reset()
+  return {
+    input(d) {
+      if (paused || phase === 'over') return
+      if (phase === 'title') return begin()
+      if (d === 'action') {
+        if (phase === 'aim') { if (!drag) launch() } else if (phase === 'fly') power(null)
+        else if (phase === 'cleared') next()
+        return
+      }
+      if (phase === 'aim' && !drag) kb = true
+    },
+    // Dragging the sling isn't a swipe.
+    swipe() {},
+    pause() {
+      if (phase === 'over') return
+      paused = true
+      cancelAnimationFrame(raf)
+      drag = null
+      draw()
+    },
+    resume() {
+      if (phase === 'over' || !paused) return
+      paused = false
+      last = 0
+      raf = requestAnimationFrame(frame)
+    },
+    // Restarting skips the title card.
+    restart() { reset(); begin() },
+    stop() { cancelAnimationFrame(raf) },
+  }
+}
+</script>
