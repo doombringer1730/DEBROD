@@ -1,80 +1,141 @@
 <style>
-/* ── Punchline ── */
+@import url('https://fonts.googleapis.com/css2?family=Gochi+Hand&family=Patrick+Hand&display=swap');
+/* ── Punchline, in the school lunchroom ──
+   Punchline's own look (everything under .pl-): a checker-tile floor with a
+   speckled cafeteria tabletop, the prompt chalked on the "Today's special"
+   menu board, answers on paper lunch slips sitting on an orange plastic
+   tray, milk-carton scores, a hairnet for the judge and a Student of the
+   Week ribbon for the winner. */
 .game-stage:has(.game-punch) { width: 100%; touch-action: auto; user-select: auto; -webkit-user-select: auto; }
 .page:has(.game-punch .pl-table) { max-width: 1100px; }
-.pl { display: flex; flex-direction: column; gap: 12px; }
-.pl-menu { max-width: 480px; margin: 0 auto; width: 100%; }
+.pl { --pl-chalk: 'Gochi Hand', 'Comic Sans MS', cursive; --pl-hand: 'Patrick Hand', 'Comic Sans MS', system-ui, sans-serif;
+  --pl-board: #2f5141; --pl-wood: #8a5a2b; --pl-tray: #f2862a; --pl-slip: #fffaf0; --pl-ink: #1f2a44; --pl-milk: #1d4fa3;
+  display: flex; flex-direction: column; gap: 12px; }
+.pl-menu { max-width: 520px; margin: 0 auto; width: 100%; }
 .pl-menu .row { flex-wrap: wrap; align-items: center; }
 .pl-menu select { padding: 8px 10px; }
 .pl-menu textarea { width: 100%; min-height: 110px; resize: vertical; font: 13px/1.4 var(--mono-font); color: var(--text); background: rgba(13, 2, 33, 0.7); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
 .pl-menu textarea:focus { outline: none; border-color: var(--magenta); }
-.pl-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
-.pl-check input { width: auto; }
 .pl-code { font: 900 34px/1 var(--display); letter-spacing: 0.25em; text-align: center; color: var(--yellow); text-shadow: 0 0 14px rgba(255, 211, 25, 0.5); }
 .pl-seats { display: flex; flex-direction: column; gap: 6px; }
 .pl-seat { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: rgba(13, 2, 33, 0.5); font-size: 14px; }
 .pl-seat .grow { flex: 1; min-width: 0; }
+.pl-credit { font: 11px/1.4 var(--mono-font); color: var(--muted); text-align: center; }
+/* Pack picker */
+.pl-packs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.pl-packchip { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 9px 11px; text-align: left; border-radius: 10px; border: 2px dashed rgba(169, 155, 209, 0.45); background: rgba(13, 2, 33, 0.5); color: var(--muted); }
+.pl-packchip strong { font: 700 14px var(--pl-hand); color: var(--text); letter-spacing: 0.02em; }
+.pl-menu .pl-packchip .small, .pl-menu .pl-packchip strong { letter-spacing: normal; text-transform: none; }
+.pl-packchip .small { font: 11px/1.35 var(--mono-font); color: var(--muted); }
+.pl-packchip.on { border-style: solid; border-color: var(--yellow); background: rgba(255, 211, 25, 0.12); box-shadow: 0 0 12px rgba(255, 211, 25, 0.3); }
+.pl-packchip.on.spicy { border-color: #ff6a3d; background: rgba(255, 106, 61, 0.14); }
+.pl-packchip.on.cah { border-color: #fff; background: rgba(255, 255, 255, 0.1); }
+.pl .pl-packchip:hover:not(:disabled) { color: var(--muted); }
 .pl-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .pl-top .grow { flex: 1; }
-.pl-table { display: flex; flex-direction: column; gap: 14px; padding: 14px; border: 1px solid var(--magenta); border-radius: 10px; background: radial-gradient(ellipse at top, #2a0f47, #0d0221 70%); box-shadow: var(--glow-magenta, 0 0 18px rgba(255, 43, 214, 0.35)); }
-.pl-scores { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
-.pl-score { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: rgba(13, 2, 33, 0.6); font-size: 13px; }
-.pl-score b { font: 700 14px var(--mono-font); color: var(--yellow); }
-.pl-score.judge { border-color: var(--cyan); box-shadow: 0 0 10px rgba(0, 240, 255, 0.35); }
-.pl-score.me { border-color: var(--magenta); }
-.pl-score.gone { opacity: 0.55; }
-.pl-score .tick { color: var(--good); }
-.pl-status { text-align: center; font: 700 14px var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.pl-status.mine { color: var(--yellow); text-shadow: 0 0 10px rgba(255, 211, 25, 0.5); }
-.pl-timer { margin-left: 8px; color: var(--cyan); font-family: var(--mono-font); }
-.pl-timer.hurry { color: var(--bad); }
-/* Prompt cards are black, answers white */
-.pl-black, .pl-white { border-radius: 12px; padding: 16px 16px 30px; position: relative; text-align: left; overflow-wrap: anywhere; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5); }
-.pl-black { background: #0b0b0e; color: #fff; border: 2px solid #fff; font: 700 20px/1.35 system-ui, -apple-system, 'Segoe UI', sans-serif; }
-.pl-black.big { max-width: 520px; width: 100%; margin: 0 auto; min-height: 150px; font-size: 22px; }
-.pl-black::after, .pl-white::after { content: 'Punchline'; position: absolute; left: 16px; bottom: 9px; font: 700 10px var(--mono-font); letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.55; }
-.pl-pick { position: absolute; right: 12px; bottom: 8px; font: 700 11px var(--mono-font); color: var(--yellow); letter-spacing: 0.08em; }
-.pl-white { background: #f6f2ff; color: #140726; border: 2px solid #d9d0ff; font: 700 15px/1.3 system-ui, -apple-system, 'Segoe UI', sans-serif; }
-.pl-fill { color: var(--yellow); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
-.pl-white .pl-fill { color: #8a1a9e; }
-.pl-blank { display: inline-block; min-width: 3.2em; border-bottom: 3px solid currentColor; transform: translateY(-3px); }
-/* Your hand */
-.pl-hand { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-.pl .pl-hand button.pl-white { min-height: 112px; cursor: pointer; transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s; color: #140726; background: #f6f2ff; }
-.pl .pl-hand button.pl-white:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--magenta); box-shadow: 0 0 16px rgba(255, 43, 214, 0.5); color: #140726; }
+/* The room: checker-tile floor, speckled tabletop with a steel edge */
+.pl-table { padding: 14px; border-radius: 14px; background: repeating-conic-gradient(#efe9db 0 25%, #c9443a 0 50%) 0 0 / 44px 44px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+.pl-formica { display: flex; flex-direction: column; gap: 14px; padding: 16px; border-radius: 12px; color: var(--pl-ink);
+  background: radial-gradient(circle at 20% 30%, rgba(60, 50, 40, 0.13) 1px, transparent 1.6px) 0 0 / 9px 9px,
+    radial-gradient(circle at 70% 60%, rgba(120, 90, 60, 0.12) 1px, transparent 1.6px) 3px 5px / 13px 13px,
+    radial-gradient(circle at 40% 80%, rgba(0, 90, 140, 0.08) 1.2px, transparent 2px) 6px 2px / 17px 17px, #ece4cf;
+  border: 6px solid #b8bdc3; box-shadow: inset 0 0 0 2px #e4e7ea, inset 0 2px 8px rgba(0, 0, 0, 0.18), 0 4px 0 #8e949b; }
+/* Milk-carton scores */
+.pl-scores { display: flex; flex-wrap: wrap; gap: 26px 10px; justify-content: center; padding-top: 22px; }
+.pl-carton { position: relative; display: flex; flex-direction: column; align-items: center; gap: 1px; width: 82px; padding: 16px 4px 6px; text-align: center; color: var(--pl-milk);
+  background: linear-gradient(180deg, #fff 0 60%, #dfe9f8 60%); border: 2px solid var(--pl-milk); border-radius: 3px 3px 6px 6px; box-shadow: 0 3px 0 rgba(29, 79, 163, 0.35); }
+.pl-carton::before { content: ''; position: absolute; left: -2px; right: -2px; top: -12px; height: 12px; background: var(--pl-milk); clip-path: polygon(0 100%, 50% 0, 100% 100%); }
+.pl-carton-n { font: 700 24px/1 var(--pl-hand); }
+.pl-carton-name { max-width: 100%; font: 600 11px var(--pl-hand); color: #3a4a6a; }
+.pl-carton.me { border-color: #c9443a; } .pl-carton.me::before { background: #c9443a; } .pl-carton.me .pl-carton-n { color: #c9443a; }
+.pl-carton.gone { opacity: 0.5; }
+.pl-carton.judge { box-shadow: 0 0 0 3px #f6c544, 0 3px 0 rgba(29, 79, 163, 0.35); }
+.pl-hairnet { position: absolute; top: -24px; left: 50%; transform: translateX(-50%); white-space: nowrap; font: 700 10px var(--pl-hand); background: #fff7d6; color: #6b4a00; border: 1px solid #e5c76b; border-radius: 999px; padding: 0 6px; }
+.pl-tick { position: absolute; top: 2px; right: 4px; color: #2f8f4e; font-weight: 700; }
+.pl-status { text-align: center; font: 700 20px var(--pl-hand); color: #5a5040; }
+.pl-status.mine { color: #c9443a; }
+.pl-timer { margin-left: 8px; color: var(--pl-milk); font-family: var(--mono-font); font-size: 14px; }
+.pl-timer.hurry { color: #c9443a; }
+.pl-note { text-align: center; font: 16px var(--pl-hand); color: #5a5040; }
+/* The menu board: prompts are chalk on green */
+.pl-board { max-width: 560px; width: 100%; margin: 0 auto; padding: 12px 16px 10px; border-radius: 6px; background: radial-gradient(ellipse at 30% 20%, rgba(255, 255, 255, 0.07), transparent 60%), var(--pl-board);
+  border: 10px solid var(--pl-wood); box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.5), 0 6px 0 #5f3c1b, 0 10px 18px rgba(0, 0, 0, 0.35); }
+.pl-board-head { text-align: center; font: 22px var(--pl-chalk); letter-spacing: 0.12em; text-transform: uppercase; color: #f7e9a6; text-shadow: 0 0 2px rgba(255, 255, 255, 0.4); margin-bottom: 4px; }
+.pl-board-foot { display: flex; justify-content: space-between; align-items: center; min-height: 18px; }
+.pl-black { position: relative; color: #f7f7f2; font: 22px/1.35 var(--pl-chalk); overflow-wrap: anywhere; text-align: left; text-shadow: 0 0 1px rgba(255, 255, 255, 0.6), 0 0 6px rgba(255, 255, 255, 0.15); }
+.pl-black.big { font-size: 27px; min-height: 96px; padding: 4px 2px; }
+.pl-pick { font: 18px var(--pl-chalk); color: #f7e9a6; }
+.pl-fill { color: #ffe27a; text-decoration: underline wavy rgba(255, 226, 122, 0.6); text-decoration-thickness: 1px; text-underline-offset: 5px; }
+.pl-extra { display: block; margin-top: 6px; }
+.pl-extra .pl-fill { display: block; }
+.pl-blank { display: inline-block; min-width: 3.4em; border-bottom: 2px dashed rgba(247, 247, 242, 0.85); transform: translateY(-4px); }
+.pl-packtag { font: 600 10px var(--mono-font); letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; }
+.pl-board-foot .pl-packtag { color: #dfe7da; }
+/* Judging slates: little chalkboards */
+.pl-subs { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.pl-sub { display: block; width: 100%; padding: 14px 14px 26px; border-radius: 6px; font-size: 19px; background: var(--pl-board); border: 6px solid var(--pl-wood); box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.45), 0 4px 0 #5f3c1b; }
+.pl .pl-subs button.pl-sub { cursor: pointer; text-transform: none; letter-spacing: normal; color: #f7f7f2; background: var(--pl-board); border: 6px solid var(--pl-wood); font: 19px/1.35 var(--pl-chalk); text-align: left; }
+.pl .pl-subs button.pl-sub:hover:not(:disabled) { transform: translateY(-3px) rotate(-0.6deg); border-color: #f6c544; box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.45), 0 0 0 3px #f6c544, 0 6px 0 #5f3c1b; color: #f7f7f2; }
+.pl .pl-subs button.pl-sub:disabled { opacity: 1; cursor: default; }
+.pl-sub.win { max-width: 560px; margin: 0 auto; font-size: 24px; border-color: #f6c544; box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.45), 0 0 0 4px #f6c544, 0 0 24px rgba(246, 197, 68, 0.6); }
+.pl-who { position: absolute; right: 10px; bottom: 6px; font: 15px var(--pl-hand); color: #f7e9a6; text-shadow: none; }
+/* The hand: lunch slips on an orange tray */
+.pl-tray { padding: 14px; border-radius: 22px; background: linear-gradient(180deg, #ff9a3c, var(--pl-tray)); box-shadow: inset 0 0 0 6px rgba(0, 0, 0, 0.08), inset 0 6px 12px rgba(255, 255, 255, 0.35), inset 0 -6px 12px rgba(0, 0, 0, 0.18), 0 6px 0 #b85c12, 0 10px 18px rgba(0, 0, 0, 0.25); }
+.pl-hand { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.pl-white { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 6px; text-align: left; border-radius: 4px; padding: 10px 11px 8px; overflow-wrap: anywhere; color: var(--pl-ink);
+  background: repeating-linear-gradient(180deg, transparent 0 21px, rgba(29, 79, 163, 0.12) 21px 22px), var(--pl-slip); border: 1px solid #e6dcc3; box-shadow: 0 2px 0 #d8cdb0, 0 4px 8px rgba(0, 0, 0, 0.2); font: 17px/1.3 var(--pl-hand); }
+.pl-white-text { display: block; }
+.pl-white .pl-packtag { align-self: flex-end; color: #8a7a55; }
+.pl .pl-hand button.pl-white { min-height: 108px; cursor: pointer; text-transform: none; letter-spacing: normal; color: var(--pl-ink); transition: transform 0.12s, box-shadow 0.12s;
+  background: repeating-linear-gradient(180deg, transparent 0 21px, rgba(29, 79, 163, 0.12) 21px 22px), var(--pl-slip); border: 1px solid #e6dcc3; font: 17px/1.3 var(--pl-hand); }
+.pl .pl-hand button.pl-white:nth-child(3n) { transform: rotate(-1.2deg); }
+.pl .pl-hand button.pl-white:nth-child(3n+1) { transform: rotate(0.9deg); }
+.pl .pl-hand button.pl-white:hover:not(:disabled) { transform: translateY(-4px) rotate(0deg); box-shadow: 0 6px 0 #d8cdb0, 0 10px 16px rgba(0, 0, 0, 0.25); color: var(--pl-ink); border-color: #e6dcc3; }
 .pl .pl-hand button.pl-white:disabled { opacity: 1; cursor: default; }
-.pl .pl-hand button.pl-white.picked { border-color: var(--magenta); box-shadow: 0 0 0 3px var(--magenta), 0 0 18px rgba(255, 43, 214, 0.6); transform: translateY(-4px); }
-.pl-order { position: absolute; top: -10px; right: -8px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--magenta); color: #fff; font: 900 13px var(--display); box-shadow: 0 0 10px rgba(255, 43, 214, 0.7); }
+.pl .pl-hand button.pl-white.picked { transform: translateY(-6px) rotate(0deg); border: 2px solid #c9443a; box-shadow: 0 0 0 3px rgba(201, 68, 58, 0.35), 0 8px 14px rgba(0, 0, 0, 0.3); }
+.pl-order { position: absolute; top: -10px; right: -8px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: #c9443a; color: #fff; font: 700 15px var(--pl-hand); box-shadow: 0 2px 0 #8e2a22; }
 .pl-bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
-/* Judging */
-.pl-subs { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
-.pl .pl-subs button.pl-black { cursor: pointer; font-size: 17px; text-transform: none; letter-spacing: normal; color: #fff; background: #0b0b0e; }
-.pl .pl-subs button.pl-black:hover:not(:disabled) { border-color: var(--yellow); box-shadow: 0 0 18px rgba(255, 211, 25, 0.55); color: #fff; }
-.pl .pl-subs button.pl-black:disabled { opacity: 1; cursor: default; }
-.pl-sub { font-size: 17px; }
-.pl-sub.win { border-color: var(--yellow); box-shadow: 0 0 0 3px var(--yellow), 0 0 22px rgba(255, 211, 25, 0.6); }
-.pl-who { position: absolute; right: 12px; bottom: 8px; font: 700 11px var(--mono-font); color: var(--cyan); }
-.pl-sub.win .pl-who { color: var(--yellow); }
-.pl-banner { text-align: center; display: flex; flex-direction: column; gap: 6px; align-items: center; }
-.pl-banner .wordmark { font-size: 30px; }
-.pl-log { font: 12px var(--mono-font); color: var(--muted); text-align: center; }
-/* Blurred swearing (Spicy pack) */
+/* Buttons on the tabletop: lunch tickets */
+.pl-formica .pl-bar button { font: 700 17px var(--pl-hand); letter-spacing: 0.02em; text-transform: none; color: var(--pl-ink); background: var(--pl-slip); border: 2px solid #cdbf9c; border-radius: 8px; padding: 8px 16px; box-shadow: 0 3px 0 #b8a983; }
+.pl-formica .pl-bar button:hover:not(:disabled) { color: var(--pl-ink); border-color: #c9443a; box-shadow: 0 3px 0 #b8a983; }
+.pl-formica .pl-bar button.primary { color: #fff; background: #c9443a; border-color: #8e2a22; box-shadow: 0 3px 0 #8e2a22; }
+.pl-formica .pl-bar button.primary:hover:not(:disabled) { color: #fff; background: #d8574c; box-shadow: 0 3px 0 #8e2a22; }
+.pl-formica .pl-bar button:disabled { opacity: 0.55; }
+/* Student of the Week */
+.pl-ribbon { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 0 auto; padding: 10px 22px; color: #fff; background: linear-gradient(180deg, #2a62c9, #1d4fa3);
+  clip-path: polygon(0 0, 100% 0, 96% 50%, 100% 100%, 0 100%, 4% 50%); box-shadow: 0 4px 0 #123372; text-align: center; }
+.pl-ribbon-rosette { font-size: 34px; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4)); }
+.pl-ribbon-title { font: 15px var(--pl-chalk); letter-spacing: 0.14em; text-transform: uppercase; color: #ffe27a; }
+.pl-ribbon-name { font: 700 24px var(--pl-hand); }
+.pl-log { font: 14px var(--pl-hand); color: #6b604d; text-align: center; }
+.pl-formica .pl-credit { color: #6b604d; }
+/* Blurred swearing (Spicy and the 18+ pack) */
 .pl-blur { filter: blur(5px); transition: filter 0.15s; cursor: help; border-radius: 3px; }
 .pl-blur:hover, .pl-blur.show { filter: none; }
 @media (hover: none) { .pl-blur:hover { filter: blur(5px); } .pl-blur.show { filter: none; } }
 @media (max-width: 600px) {
-  .pl-hand { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .pl-black.big { font-size: 19px; min-height: 120px; }
+  .pl-table { padding: 8px; background-size: 30px 30px; }
+  .pl-formica { padding: 10px; border-width: 4px; }
+  .pl-hand { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .pl-tray { padding: 10px; border-radius: 16px; }
+  .pl-black.big { font-size: 22px; min-height: 80px; }
   .pl-subs { grid-template-columns: minmax(0, 1fr); }
+  .pl-carton { width: 70px; }
+  .pl-ribbon { padding: 8px 18px; }
+  .pl-ribbon-name { font-size: 20px; }
 }
 </style>
 <script>
 // Punchline: the fill-in-the-blank party game. Each round a rotating judge
 // reveals a prompt card; everyone else plays their funniest answer card (or
-// two) from a hand of ten; the answers are shown anonymously and the judge
-// picks a favourite, worth a point. First to the target wins. All the card
-// text is DEBROD's own; the optional Spicy pack is cruder, with its swear
-// words blurred until you hover or press them.
+// two, or three) from a hand of ten; the answers are shown anonymously and
+// the judge picks a favourite, worth a point. First to the target wins.
+//
+// Cards come in packs the host picks: Punchline and Lunchroom (DEBROD's own,
+// PG-13 and PG), Spicy (DEBROD's own, crude, swear words blurred until you
+// hover or press them), Custom (typed into the lobby), and, if PunchCAH.html
+// is there, the Cards Against Humanity main deck (18+, CC BY-NC-SA 2.0,
+// credited on screen; Punchline isn't affiliated with them).
 //
 // Online only (it needs people to judge), over Supabase via Party.html. The
 // room's creator hosts: their page holds the whole game and broadcasts it as
@@ -82,9 +143,10 @@
 // messages. The state includes the decks and every hand, so whoever's been
 // there longest can take over if the host leaves; it isn't cheat-proof.
 //
-// Loaded after App.html (el, randomId, storedName, storeName) and Party.html.
+// Loaded after App.html (el, randomId, storedName, storeName), Party.html and
+// PunchCAH.html.
 
-// ── The cards (all DEBROD's own) ──
+// ── The cards (all DEBROD's own; prompts are strings, blanks are ____) ──
 const PL_PROMPTS = [
   "My secret to surviving Monday is ____.",
   "What's the real reason the group project failed?",
@@ -622,8 +684,135 @@ const PL_ANSWERS = [
   "Five-star reviews written by my mom.",
   "A one-star review of the sun.",
 ]
-// The Spicy pack, off unless the host turns it on. Swear words sit in [[ ]]
-// and show blurred.
+// Lunchroom: the school cafeteria.
+const PL_LUNCH_PROMPTS = [
+  "Today's special in the cafeteria: ____.",
+  "The lunch lady winked at me and handed me ____.",
+  "What's really in the mystery meat?",
+  "I traded my pudding cup for ____.",
+  "The vending machine ate my dollar and gave me ____.",
+  "I forgot my lunch money, so I paid with ____.",
+  "The new seating chart put me next to ____.",
+  "Food fight! The first thing thrown was ____.",
+  "Mom's note in my lunchbox just said \"____.\"",
+  "The face on the milk carton is now ____.",
+  "What's that green stuff on my tray?",
+  "Pizza Friday was canceled because of ____.",
+  "You can only sit at the cool table if you bring ____.",
+  "Why is the lunch line so long today?",
+  "My lunchbox permanently smells like ____.",
+  "Nobody will trade with the kid who brings ____.",
+  "The cafeteria's bold new vegan option: ____.",
+  "Secret menu item: ask the lunch lady for ____.",
+  "The tater tots became self-aware because of ____.",
+  "Lunch detention: we have to eat ____ in silence.",
+  "The school nutritionist swears ____ counts as a vegetable.",
+  "I found ____ floating in my chocolate milk.",
+  "What did the janitor mop up after lunch?",
+  "The bake sale's best seller: ____.",
+  "Rumor has it the jello is made from ____.",
+  "Morning announcement: \"Please stop throwing ____ in the cafeteria.\"",
+  "What's stuck under the cafeteria table?",
+  "Sloppy Joe's evil twin: ____.",
+  "____ and ____: the ultimate lunch trade.",
+  "My sandwich had ____ where the ____ should be.",
+  "The lunch lady's secret recipe: one part ____, two parts ____.",
+]
+const PL_LUNCH_ANSWERS = [
+  "Mystery meat.",
+  "Square pizza.",
+  "A chocolate milk that's been open since Tuesday.",
+  "The lunch lady's hairnet.",
+  "Tater tots.",
+  "A spork.",
+  "A tray of soggy fries.",
+  "Fish sticks on a Friday.",
+  "A juice box I stepped on.",
+  "The very last pudding cup.",
+  "A fruit cup that's 90% syrup.",
+  "Fruit snacks shaped like nothing in particular.",
+  "A cracker kit with no crackers.",
+  "A PB&J squished completely flat.",
+  "A sandwich with the crusts cut off.",
+  "Mom's lunchbox note.",
+  "A thermos of something warm and unidentifiable.",
+  "A banana that's mostly brown.",
+  "A lunch bag forgotten in my locker since September.",
+  "A hard-boiled egg that the whole room can smell.",
+  "Tuna salad at 1 PM.",
+  "Leftover tacos.",
+  "A trading empire built on pudding.",
+  "Assigned seats.",
+  "The cool table.",
+  "Eating lunch in the library.",
+  "An IOU for lunch money.",
+  "A vending machine that only takes exact change.",
+  "A bag of chips dangling in the vending machine.",
+  "Shaking the vending machine.",
+  "A lunch tray used as a sled.",
+  "A full-scale food fight.",
+  "Mashed potatoes as ammunition.",
+  "A pea flicked across the room.",
+  "Jello that wiggles back.",
+  "Green jello with fruit trapped inside it.",
+  "Sloppy joes.",
+  "Dinosaur-shaped chicken nuggets.",
+  "A fistful of ketchup packets.",
+  "A ketchup packet that exploded under someone's shoe.",
+  "Milk coming out of someone's nose.",
+  "Strawberry milk.",
+  "Crying over spilled milk.",
+  "Cutting in the lunch line.",
+  "The kid who eats paste.",
+  "A lunch monitor with a whistle.",
+  "Lunch detention.",
+  "Five minutes left to eat.",
+  "Inhaling my lunch in three minutes flat.",
+  "Pizza Friday.",
+  "Taco Tuesday.",
+  "Breakfast for lunch.",
+  "A soggy hot dog bun.",
+  "A corn dog.",
+  "A burrito that's still frozen in the middle.",
+  "The line for the microwave.",
+  "Popcorn burned in the staff room microwave.",
+  "The teachers' secret donuts.",
+  "Brownies of questionable origin.",
+  "Birthday cupcakes I wasn't offered.",
+  "A cookie the size of my face.",
+  "Carrot sticks nobody eats.",
+  "Raisins pretending to be chocolate chips.",
+  "A rogue grape rolling across the floor.",
+  "An apple for the teacher.",
+  "A lunchbox with a cartoon I'm too old for.",
+  "A paper bag with my name spelled wrong.",
+  "Garlic breath for the rest of the day.",
+  "The cafeteria smell.",
+  "The tray return conveyor belt.",
+  "The janitor's mop bucket.",
+  "A wet floor sign.",
+  "Pretending to text while sitting alone.",
+  "Lunch with the principal.",
+  "The new kid's amazing homemade sushi.",
+  "A mystery casserole surprise.",
+  "The salad bar sneeze guard.",
+  "A spoon stuck to the ceiling.",
+  "Gravy on absolutely everything.",
+  "Going back for seconds.",
+  "Double dessert day.",
+  "A pizza slice folded in half.",
+  "The kid who trades a whole lunch for one cookie.",
+  "A lunch lady who remembers everyone's name.",
+  "A milk carton opened from the wrong side.",
+  "Cold chicken nuggets.",
+  "A cafeteria roll as hard as a hockey puck.",
+  "Lunch money in a sweaty fist.",
+  "Chocolate pudding with a skin on top.",
+  "The crumbs at the bottom of the chip bag.",
+  "A sandwich made entirely of cheese.",
+]
+// Spicy: off unless the host picks it. Swear words sit in [[ ]] and show
+// blurred.
 const PL_SPICY_PROMPTS = [
   "My dating profile says I'm into ____.",
   "The worst thing to say on a first date: ____.",
@@ -855,33 +1044,52 @@ function punchline(host, ctx, opts) {
   const seatName = (g, k) => (g.seats[k] ? g.seats[k].name : '?')
 
   // ── Cards ──
-  // A card is a short reference: p/a are the built-in prompts and answers,
-  // x/y the Spicy pack's, q/c the room's custom ones.
-  function text(g, ref) {
-    const i = Number(ref.slice(1))
-    switch (ref[0]) {
-      case 'p': return PL_PROMPTS[i] || ''
-      case 'a': return PL_ANSWERS[i] || ''
-      case 'x': return PL_SPICY_PROMPTS[i] || ''
-      case 'y': return PL_SPICY_ANSWERS[i] || ''
-      case 'q': return (g.cp || [])[i] || ''
-      case 'c': return (g.ca || [])[i] || ''
-      default: return ''
-    }
+  // Cards come in packs: { id, name, prompts: [{ text, pick }], answers }.
+  // A card is a short reference, pack:p12 for a prompt or pack:a7 for an
+  // answer. The host picks which packs are in.
+  const norm = list => list.map(t => (typeof t === 'string' ? { text: t, pick: Math.max(1, blanks(t)) } : t))
+  const blanks = t => (String(t).match(/____/g) || []).length
+  const BUILT_IN = [
+    { id: 'pl', name: 'Punchline', note: 'the originals', prompts: norm(PL_PROMPTS), answers: PL_ANSWERS },
+    { id: 'lunch', name: 'Lunchroom', note: 'school cafeteria', prompts: norm(PL_LUNCH_PROMPTS), answers: PL_LUNCH_ANSWERS },
+    { id: 'spicy', name: 'Spicy', note: 'crude humour, blurred swearing', prompts: norm(PL_SPICY_PROMPTS), answers: PL_SPICY_ANSWERS },
+  ]
+  const cah = () => (typeof PUNCH_CAH !== 'undefined' && PUNCH_CAH && Array.isArray(PUNCH_CAH.prompts) ? PUNCH_CAH : null)
+  const CAH_CREDIT = 'Cards Against Humanity pack: card text © Cards Against Humanity LLC, CC BY-NC-SA 2.0. Punchline isn\'t affiliated with them.'
+  // Every pack this room could use, the custom one built from its text box.
+  function packList(g) {
+    const out = BUILT_IN.slice()
+    const c = cah()
+    if (c) out.push({ id: 'cah', name: c.name || 'Cards Against Humanity', note: '18+ · official deck', prompts: norm(c.prompts), answers: c.answers })
+    const parsed = parseCustom(g.custom)
+    out.push({ id: 'custom', name: 'Custom', note: 'your own', prompts: norm(parsed.cp), answers: parsed.ca })
+    return out
   }
-  const blanks = t => (t.match(/____/g) || []).length
-  const pickOf = (g, ref) => Math.max(1, Math.min(3, blanks(text(g, ref))))
-  const range = (n, letter) => Array.from({ length: n }, (_, i) => `${letter}${i}`)
+  // Packs are looked up once per game (the custom one changes with its box,
+  // so a running game keeps the custom cards it started with: g.cp/g.ca).
+  function pack(g, id) {
+    if (id === 'custom') return { id, name: 'Custom', prompts: norm(g.cp || []), answers: g.ca || [] }
+    if (id === 'cah') { const c = cah(); return c ? { id, name: c.name, prompts: norm(c.prompts), answers: c.answers } : null }
+    return BUILT_IN.find(p => p.id === id) || null
+  }
+  function card(g, ref) {
+    const [id, rest] = String(ref).split(':')
+    const p = pack(g, id)
+    if (!p || !rest) return null
+    const i = Number(rest.slice(1))
+    return rest[0] === 'p' ? (p.prompts[i] ? { text: p.prompts[i].text, pick: p.prompts[i].pick, pack: p.name } : null)
+      : p.answers[i] !== undefined ? { text: p.answers[i], pack: p.name } : null
+  }
+  const text = (g, ref) => { const c = card(g, ref); return c ? c.text : '' }
+  const packName = (g, ref) => { const c = card(g, ref); return c ? c.pack : '' }
+  const pickOf = (g, ref) => { const c = card(g, ref); return c ? Math.max(1, Math.min(3, c.pick || blanks(c.text) || 1)) : 1 }
+  const refs = (id, n, kind) => Array.from({ length: n }, (_, i) => `${id}:${kind}${i}`)
 
   function allPrompts(g) {
-    const custom = range((g.cp || []).length, 'q')
-    if (g.customOnly) return custom
-    return [...range(PL_PROMPTS.length, 'p'), ...(g.spicy ? range(PL_SPICY_PROMPTS.length, 'x') : []), ...custom]
+    return (g.packs || []).flatMap(id => { const p = pack(g, id); return p ? refs(id, p.prompts.length, 'p') : [] })
   }
   function allAnswers(g) {
-    const custom = range((g.ca || []).length, 'c')
-    if (g.customOnly) return custom
-    return [...range(PL_ANSWERS.length, 'a'), ...(g.spicy ? range(PL_SPICY_ANSWERS.length, 'y') : []), ...custom]
+    return (g.packs || []).flatMap(id => { const p = pack(g, id); return p ? refs(id, p.answers.length, 'a') : [] })
   }
   // Cards in someone's hand or on the table right now.
   function inPlay(g) {
@@ -947,6 +1155,7 @@ function punchline(host, ctx, opts) {
       const on = () => s.classList.add('show')
       const off = () => s.classList.remove('show')
       s.addEventListener('pointerdown', on)
+      s.addEventListener('click', e => { if (e.pointerType === 'touch' || matchMedia('(hover: none)').matches) e.stopPropagation() })
       s.addEventListener('pointerup', off)
       s.addEventListener('pointerleave', off)
       s.addEventListener('pointercancel', off)
@@ -954,13 +1163,11 @@ function punchline(host, ctx, opts) {
     })
   }
 
-  // The prompt with these answers filled in (or blank lines if none).
+  // The prompt with these answers filled in (or blank lines if none). Any
+  // answers beyond the blanks (a "Make a haiku." pick 3) go after it.
   function sentence(g, promptRef, answers) {
     const t = text(g, promptRef)
     const parts = t.split('____')
-    if (parts.length === 1) {
-      return [rich(t), answers && answers.length ? [' ', answers.map((r, i) => [i ? ' / ' : '', el('span', { class: 'pl-fill' }, rich(text(g, r)))])] : null]
-    }
     const out = []
     parts.forEach((part, i) => {
       out.push(rich(part))
@@ -968,16 +1175,19 @@ function punchline(host, ctx, opts) {
       const r = answers && answers[i]
       out.push(r ? el('span', { class: 'pl-fill' }, rich(inline(text(g, r), part, parts[i + 1]))) : el('span', { class: 'pl-blank' }, ' '))
     })
+    const extra = (answers || []).slice(parts.length - 1)
+    if (extra.length) out.push(el('span', { class: 'pl-extra' }, extra.map(r => el('span', { class: 'pl-fill' }, rich(text(g, r))))))
     return out
   }
+  const corner = name => name && el('span', { class: 'pl-packtag' }, name)
 
   // ── The game ──
   function newGame(hostId, prev) {
     return {
       gid: randomId(), v: 0, hostId, phase: 'lobby',
       target: prev ? prev.target : 7, bots: prev ? prev.bots : 0,
-      spicy: prev ? !!prev.spicy : false,
-      custom: prev ? prev.custom : '', customOnly: prev ? !!prev.customOnly : false, cp: [], ca: [],
+      packs: prev ? prev.packs.slice() : ['pl'],
+      custom: prev ? prev.custom : '', cp: [], ca: [],
       seats: prev ? prev.seats.filter(x => !x.bot && !x.gone).map(x => ({ id: x.id, name: x.name })) : [],
       round: 0, judge: -1, prompt: '', pdeck: [], adeck: [], hands: {}, subs: {}, need: [], order: [],
       win: -1, winner: -1, log: [], remain: 0,
@@ -988,14 +1198,17 @@ function punchline(host, ctx, opts) {
   }
   const humans = g => g.seats.filter(x => !x.bot && !x.gone)
 
-  // Who can start: three seats, at least two of them people.
+  // Who can start: three seats, at least two of them people, a prompt, and
+  // enough answers for every hand.
   function startProblem(g) {
     if (g.seats.length < 3) return 'Punchline needs at least 3 seats (add a House bot if you\'re only two).'
     if (humans(g).length < 2) return 'Punchline needs at least two people.'
-    if (g.customOnly) {
-      if (!g.cp.length) return 'Add at least one custom prompt (a line with ____ in it).'
-      if (g.ca.length < g.seats.length * HAND + 5) return `Custom-only needs at least ${g.seats.length * HAND + 5} custom answers for ${g.seats.length} players (you have ${g.ca.length}).`
-    }
+    if (!(g.packs || []).length) return 'Pick at least one pack.'
+    const prompts = allPrompts(g).length
+    const answers = allAnswers(g).length
+    if (!prompts) return 'The packs you picked have no prompts. Add one (a line with ____ in it) or pick another pack.'
+    const need = g.seats.length * HAND + 5
+    if (answers < need) return `${g.seats.length} players need at least ${need} answers; the packs you picked have ${answers}.`
     return null
   }
 
@@ -1003,6 +1216,7 @@ function punchline(host, ctx, opts) {
     const parsed = parseCustom(g.custom)
     g.cp = parsed.cp
     g.ca = parsed.ca
+    g.packs = (g.packs || []).filter(id => pack(g, id))
     const err = startProblem(g)
     if (err) return err
     g.seats.forEach(x => { x.score = 0; x.swapped = false })
@@ -1071,19 +1285,22 @@ function punchline(host, ctx, opts) {
 
   // The Spicy pack can be switched mid-game: hands keep what they have, and
   // only new draws change.
-  function setSpicy(g, on) {
-    g.spicy = !!on
-    if (g.phase === 'lobby' || g.customOnly) return
-    const spicyRef = r => r[0] === 'x' || r[0] === 'y'
-    if (on) {
+  function setPack(g, id, on) {
+    const has = g.packs.includes(id)
+    if (on === has) return
+    g.packs = on ? g.packs.concat(id) : g.packs.filter(x => x !== id)
+    if (g.phase === 'lobby') return
+    const mine = r => r.startsWith(`${id}:`)
+    const p = pack(g, id)
+    if (on && p) {
       const used = inPlay(g)
-      g.adeck = shuffle(g.adeck.concat(range(PL_SPICY_ANSWERS.length, 'y').filter(r => !used.has(r) && !g.adeck.includes(r))))
-      g.pdeck = shuffle(g.pdeck.concat(range(PL_SPICY_PROMPTS.length, 'x').filter(r => r !== g.prompt && !g.pdeck.includes(r))))
+      g.adeck = shuffle(g.adeck.concat(refs(id, p.answers.length, 'a').filter(r => !used.has(r))))
+      g.pdeck = shuffle(g.pdeck.concat(refs(id, p.prompts.length, 'p').filter(r => r !== g.prompt)))
     } else {
-      g.adeck = g.adeck.filter(r => !spicyRef(r))
-      g.pdeck = g.pdeck.filter(r => !spicyRef(r))
+      g.adeck = g.adeck.filter(r => !mine(r))
+      g.pdeck = g.pdeck.filter(r => !mine(r))
     }
-    say(g, `The Spicy pack is ${on ? 'in' : 'out'}.`)
+    say(g, `The ${p ? p.name : id} pack is ${on ? 'in' : 'out'}.`)
   }
 
   // One move from seat k. Returns an error to show, or nothing.
@@ -1414,6 +1631,20 @@ function punchline(host, ctx, opts) {
     if (!draftName) nameInput.focus()
   }
 
+  // The packs, as chips: tap to put one in or take it out.
+  function packChips(g, editable) {
+    const list = packList(g)
+    return el('div', { class: 'pl-packs' }, list.map(p => {
+      const on = (g.packs || []).includes(p.id)
+      return el(editable ? 'button' : 'span', Object.assign({
+        class: `pl-packchip ${on ? 'on' : ''} ${p.id}`,
+        title: `${p.name}: ${p.note}`,
+      }, editable ? { type: 'button', 'aria-pressed': on ? 'true' : 'false', onClick: () => { if (p.id === 'custom') G.custom = customEl.value; setPack(G, p.id, !on); change() } } : {}),
+        el('strong', null, `${on ? '✓ ' : ''}${p.name}`),
+        el('span', { class: 'small' }, `${p.note} · ${p.prompts.length} prompts · ${p.answers.length} answers`))
+    }))
+  }
+
   function lobby() {
     const hostHere = isHost()
     const k = mySeat()
@@ -1428,11 +1659,9 @@ function punchline(host, ctx, opts) {
     if (document.activeElement !== customEl) customEl.value = G.custom || ''
     customEl.disabled = !hostHere
     const parsed = parseCustom(G.custom)
-    const problem = (() => {
-      const g = Object.assign({}, G, parsed)
-      return startProblem(g)
-    })()
-    fill(wrap, el('div', { class: 'card stack pl-menu' },
+    const problem = startProblem(Object.assign({}, G, parsed))
+    const hasCah = (G.packs || []).includes('cah')
+    fill(wrap, el('div', { class: 'card stack pl-menu pl-lobby' },
       el('div', null, el('p', { class: 'wordmark' }, 'Punchline'), el('p', { class: 'tagline' }, 'Room')),
       el('p', { class: 'pl-code' }, room ? room.code : ''),
       el('button', { type: 'button', onClick: async () => { ctx.toast(await partyInvite('punch', room.code, 'Punchline')) } }, 'Invite friends'),
@@ -1441,20 +1670,18 @@ function punchline(host, ctx, opts) {
         hostHere && seat.bot && el('button', { type: 'button', class: 'chip', title: 'Remove this bot', onClick: () => { G.bots = Math.max(0, G.bots - 1); hostSeats(); render() } }, '✕')))),
       watchers.length > 0 && el('p', { class: 'muted small' }, `Watching: ${watchers.map(p => p.name).join(', ')}`),
       k < 0 && el('p', { class: 'muted small' }, 'The table is full, so you\'re watching.'),
+      el('div', { class: 'field' }, el('span', null, hostHere ? 'Packs (tap to pick)' : 'Packs'), packChips(G, hostHere)),
+      hasCah && el('p', { class: 'muted small pl-credit' }, CAH_CREDIT),
       hostHere
         ? [
+          el('label', { class: 'field' }, el('span', null, 'Custom cards (pick the Custom pack to use them)'), customEl),
           el('div', { class: 'row' },
             el('button', { type: 'button', disabled: G.bots >= MAX_BOTS || G.seats.length >= MAX_SEATS, onClick: () => { G.bots++; hostSeats(); render() } }, '+ Add a House bot'),
             (() => {
-              const s = el('select', { 'aria-label': 'Points to win', onChange: e => { G.target = Number(e.target.value); change() } }, [5, 7, 10].map(n => el('option', { value: n }, `First to ${n}`)))
-              s.value = String(G.target)
-              return s
+              const sel = el('select', { 'aria-label': 'Points to win', onChange: e => { G.target = Number(e.target.value); change() } }, [5, 7, 10].map(n => el('option', { value: n }, `First to ${n}`)))
+              sel.value = String(G.target)
+              return sel
             })()),
-          el('label', { class: 'pl-check' }, el('input', { type: 'checkbox', checked: G.spicy, onChange: e => { G.spicy = e.target.checked; change() } }), 'Spicy pack (crude humour, blurred swearing)'),
-          el('label', { class: 'field' }, el('span', null, 'Custom cards'), customEl),
-          el('div', { class: 'row' },
-            el('label', { class: 'pl-check' }, el('input', { type: 'checkbox', checked: G.customOnly, onChange: e => { G.custom = customEl.value; G.customOnly = e.target.checked; change() } }), 'Only custom cards'),
-            el('span', { class: 'muted small' }, `${parsed.cp.length} prompt${parsed.cp.length === 1 ? '' : 's'}, ${parsed.ca.length} answer${parsed.ca.length === 1 ? '' : 's'}`)),
           problem && el('p', { class: 'muted small' }, problem),
           notice && el('p', { class: 'error' }, notice),
           el('button', { type: 'button', class: 'primary', disabled: !!problem, onClick: () => {
@@ -1463,10 +1690,10 @@ function punchline(host, ctx, opts) {
             notice = err || ''
             if (err) render()
             else change()
-          } }, problem ? 'Waiting for players…' : `Start with ${G.seats.length}`),
+          } }, problem ? 'Not ready yet' : `Start with ${G.seats.length}`),
         ]
         : [
-          el('p', { class: 'muted small' }, `First to ${G.target}${G.spicy ? ' · Spicy pack on' : ''}${parsed.cp.length + parsed.ca.length ? ` · ${parsed.cp.length + parsed.ca.length} custom cards${G.customOnly ? ' only' : ''}` : ''}`),
+          el('p', { class: 'muted small' }, `First to ${G.target}`),
           el('p', { class: 'muted' }, `Waiting for ${hostName} to start…`),
         ],
       el('button', { type: 'button', class: 'link', onClick: () => menu() }, '‹ Leave')))
@@ -1482,19 +1709,34 @@ function punchline(host, ctx, opts) {
     clockEl.classList.toggle('hurry', left <= 10)
   }
 
+  // Scores are milk cartons; the judge wears the hairnet.
   function scores() {
-    return el('div', { class: 'pl-scores' }, G.seats.map((x, k) => el('span', {
-      class: `pl-score ${k === G.judge && G.phase !== 'over' ? 'judge' : ''} ${x.id === me ? 'me' : ''} ${x.gone ? 'gone' : ''}`,
-    },
-      k === G.judge && G.phase !== 'over' ? '⚖️ ' : x.bot ? '🤖 ' : '',
-      el('span', { class: 'truncate' }, x.name),
-      el('b', null, String(x.score || 0)),
-      G.phase === 'submit' && G.subs[k] && el('span', { class: 'tick', title: 'Played' }, '✓'))))
+    return el('div', { class: 'pl-scores' }, G.seats.map((x, k) => {
+      const judge = k === G.judge && G.phase !== 'over'
+      return el('div', {
+        class: `pl-carton ${judge ? 'judge' : ''} ${x.id === me ? 'me' : ''} ${x.gone ? 'gone' : ''}`,
+        title: `${x.name}: ${x.score || 0} point${x.score === 1 ? '' : 's'}${judge ? ' (judging)' : ''}${x.gone ? ' (away)' : ''}`,
+      },
+        el('span', { class: 'pl-carton-n' }, String(x.score || 0)),
+        el('span', { class: 'pl-carton-name truncate' }, x.bot ? '🤖 ' : '', x.name),
+        judge && el('span', { class: 'pl-hairnet' }, '👩‍🍳 judge'),
+        G.phase === 'submit' && G.subs[k] && el('span', { class: 'pl-tick', title: 'Played' }, '✓'))
+    }))
   }
 
+  // The prompt, chalked on the menu board.
   function promptCard(answers) {
     const pick = pickOf(G, G.prompt)
-    return el('div', { class: 'pl-black big' }, sentence(G, G.prompt, answers), pick > 1 && el('span', { class: 'pl-pick' }, `PICK ${pick}`))
+    return el('div', { class: 'pl-board' },
+      el('p', { class: 'pl-board-head' }, '★ Today\'s special ★'),
+      el('div', { class: 'pl-black big' }, sentence(G, G.prompt, answers)),
+      el('div', { class: 'pl-board-foot' }, corner(packName(G, G.prompt)), pick > 1 && el('span', { class: 'pl-pick' }, `Pick ${pick}`)))
+  }
+  // A filled-in prompt, as a little chalkboard (judging and the reveal).
+  function slate(j, opts = {}) {
+    return el(opts.button ? 'button' : 'div', Object.assign({ class: `pl-black pl-sub ${opts.win ? 'win' : ''}` }, opts.button || {}),
+      sentence(G, G.prompt, G.subs[j]),
+      opts.who && el('span', { class: 'pl-who' }, opts.who))
   }
 
   function table() {
@@ -1518,7 +1760,7 @@ function punchline(host, ctx, opts) {
         clockEl))
       parts.push(promptCard(mine ? G.subs[k] : canPlay ? chosen.map(i => hand[i]) : null))
       if (k >= 0 && !judging) {
-        parts.push(el('div', { class: 'pl-hand' }, hand.map((r, i) => {
+        parts.push(el('div', { class: 'pl-tray' }, el('div', { class: 'pl-hand' }, hand.map((r, i) => {
           const at = chosen.indexOf(i)
           return el('button', {
             type: 'button', class: `pl-white ${at >= 0 ? 'picked' : ''}`, disabled: !canPlay || hold,
@@ -1528,50 +1770,53 @@ function punchline(host, ctx, opts) {
               else if (pick === 1) chosen = [i]
               render()
             },
-          }, rich(text(G, r)), at >= 0 && pick > 1 && el('span', { class: 'pl-order' }, String(at + 1)))
-        })))
+          }, el('span', { class: 'pl-white-text' }, rich(text(G, r))), corner(packName(G, r)), at >= 0 && pick > 1 && el('span', { class: 'pl-order' }, String(at + 1)))
+        }))))
         parts.push(el('div', { class: 'pl-bar' },
           canPlay && el('button', { type: 'button', class: 'primary', disabled: chosen.length !== pick || hold, onClick: () => { move({ type: 'submit', cards: chosen.slice() }) } }, chosen.length === pick ? 'Play it' : `Pick ${pick - chosen.length} more`),
           k >= 0 && !G.seats[k].swapped && !mine && el('button', { type: 'button', disabled: hold, title: 'Once per game: throw your whole hand back for ten new cards', onClick: () => { if (confirm('Swap your whole hand for ten new cards? You can do this once per game.')) move({ type: 'swap' }) } }, '↻ Swap hand (once)')))
       } else if (judging) {
-        parts.push(el('p', { class: 'muted small', style: 'text-align:center' }, 'Sit back. The answers show up here once everyone has played.'))
+        parts.push(el('p', { class: 'pl-note' }, 'You\'re on lunch duty. The answers show up here once everyone has played.'))
       }
     } else if (G.phase === 'judge') {
       parts.push(el('p', { class: `pl-status ${judging ? 'mine' : ''}` }, judging ? 'Pick the funniest' : `${judgeName} is picking a favourite`, clockEl))
-      parts.push(el('div', { class: 'pl-subs' }, G.order.map((j, i) => el('button', {
-        type: 'button', class: 'pl-black pl-sub', disabled: !judging || hold,
-        onClick: () => move({ type: 'pick', index: i }),
-      }, sentence(G, G.prompt, G.subs[j])))))
+      parts.push(promptCard(null))
+      parts.push(el('div', { class: 'pl-subs' }, G.order.map((j, i) => slate(j, { button: { type: 'button', disabled: !judging || hold, onClick: () => move({ type: 'pick', index: i }) } }))))
     } else if (G.phase === 'reveal' || G.phase === 'over') {
       const over = G.phase === 'over'
-      parts.push(el('div', { class: 'pl-banner' },
-        over ? el('p', { class: 'wordmark' }, `${seatName(G, G.winner)} wins!`) : el('p', { class: 'pl-status mine' }, `${seatName(G, G.win)} wins the round`),
-        over && el('p', { class: 'muted small' }, `First to ${G.target}. GG.`)))
-      const winning = G.subs[G.win]
-      if (winning) parts.push(el('div', { class: 'pl-black big pl-sub win' }, sentence(G, G.prompt, winning), el('span', { class: 'pl-who' }, seatName(G, G.win))))
-      parts.push(el('div', { class: 'pl-subs' }, G.order.filter(j => j !== G.win).map(j => el('div', { class: 'pl-black pl-sub' },
-        sentence(G, G.prompt, G.subs[j]), el('span', { class: 'pl-who' }, seatName(G, j))))))
+      const who = over ? G.winner : G.win
+      parts.push(el('div', { class: 'pl-ribbon' },
+        el('span', { class: 'pl-ribbon-rosette', 'aria-hidden': 'true' }, '🏅'),
+        el('div', null,
+          el('p', { class: 'pl-ribbon-title' }, over ? 'Student of the Week' : 'Round winner'),
+          el('p', { class: 'pl-ribbon-name' }, `${seatName(G, who)}${over ? ' wins the game!' : ''}`),
+          over && el('p', { class: 'small' }, `First to ${G.target}. GG.`))))
+      if (G.subs[G.win]) parts.push(slate(G.win, { win: true, who: seatName(G, G.win) }))
+      parts.push(el('div', { class: 'pl-subs' }, G.order.filter(j => j !== G.win).map(j => slate(j, { who: seatName(G, j) }))))
       parts.push(el('div', { class: 'pl-bar' },
         !over && (judging || isHost()) && el('button', { type: 'button', class: 'primary', disabled: hold, onClick: () => move({ type: 'next' }) }, 'Next round'),
-        !over && !(judging || isHost()) && el('p', { class: 'muted small' }, 'Next round in a few seconds…'),
+        !over && !(judging || isHost()) && el('p', { class: 'pl-note' }, 'Next round in a few seconds…'),
         over && isHost() && el('button', { type: 'button', class: 'primary', onClick: () => { G = newGame(me, G); hostSeats(); change() } }, 'Play again'),
-        over && !isHost() && el('p', { class: 'muted small' }, 'The host can start another game.')))
+        over && !isHost() && el('p', { class: 'pl-note' }, 'The host can start another game.')))
     }
+    const spicyOn = (G.packs || []).includes('spicy')
     fill(wrap,
       el('div', { class: 'pl-top' },
         el('span', { class: 'pill' }, `Round ${G.round}`),
         el('span', { class: 'pill' }, `First to ${G.target}`),
         isHost()
-          ? el('button', { type: 'button', class: `chip ${G.spicy ? 'on' : ''}`, title: 'Spicy pack (crude humour, blurred swearing): new draws only', onClick: () => { setSpicy(G, !G.spicy); change() } }, G.spicy ? '🌶️ Spicy on' : '🌶️ Spicy off')
-          : G.spicy && el('span', { class: 'pill' }, '🌶️ Spicy'),
+          ? el('button', { type: 'button', class: `chip ${spicyOn ? 'on' : ''}`, title: 'Spicy pack (crude humour, blurred swearing): new draws only', onClick: () => { setPack(G, 'spicy', !spicyOn); change() } }, spicyOn ? '🌶️ Spicy on' : '🌶️ Spicy off')
+          : spicyOn && el('span', { class: 'pill' }, '🌶️ Spicy'),
         el('span', { class: 'grow' }),
         room && el('button', { type: 'button', class: 'chip', onClick: async () => { ctx.toast(await partyInvite('punch', room.code, 'Punchline')) } }, `Room ${room.code} · Invite`),
         el('button', { type: 'button', class: 'link', onClick: () => menu() }, 'Leave')),
       el('div', { class: 'pl-table' },
-        scores(),
-        parts,
-        notice && el('p', { class: 'error', style: 'text-align:center' }, notice),
-        el('p', { class: 'pl-log' }, (G.log || []).slice(-2).join('  ·  '))))
+        el('div', { class: 'pl-formica' },
+          scores(),
+          parts,
+          notice && el('p', { class: 'error', style: 'text-align:center' }, notice),
+          el('p', { class: 'pl-log' }, (G.log || []).slice(-2).join('  ·  ')),
+          (G.packs || []).includes('cah') && el('p', { class: 'pl-credit' }, CAH_CREDIT))))
     renderClock()
   }
 

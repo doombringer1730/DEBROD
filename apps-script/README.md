@@ -65,8 +65,8 @@ any key skips it, and it's off for anyone with reduced motion turned on.
 ## The arcade
 
 **Arcade** in the header opens Snake, 2048, Blocks, Breakout, Flap, Pong,
-Minesweeper, Memory, Star Sling, Doom, Scribble, Color Clash, Sea Battle,
-Pokémon Showdown and Tic-tac-toe. They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
+Minesweeper, Memory, Star Sling, Doom, Scribble, Punchline, Color Clash,
+Sea Battle, Pokémon Showdown and Tic-tac-toe. They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
 timer shows how long you've been procrastinating. Switching back to
 **Search** pauses whatever's running.
 
@@ -92,6 +92,21 @@ the same layout. Run out of heroes and you can retry the level from the
 score you came in with, or ask for a new layout of it.
 It's a fan tribute with its own names and art, not the original game or
 its characters, and isn't made by or affiliated with Rovio or Lucasfilm.
+
+**Punchline** is the fill-in-the-blank party game, dressed as a school
+lunchroom: a rotating judge chalks a prompt on the "Today's special" board,
+everyone else plays their funniest answer from a lunch tray of 10 (some
+prompts take 2 or 3), the answers are read out anonymously with the
+sentence filled in, and the judge's favourite scores a milk carton. First
+to 5, 7 or 10 wins. 3 to 10 people online (`?punch=CODE`), plus up to
+three House bots that play a random card, so two friends can play. The
+host picks the packs: **Punchline** (original cards), **Lunchroom**,
+**Spicy** (crude humour; swear words are blurred until you hover or press
+them), **Cards Against Humanity** (the official main deck, 18+, from
+`PunchCAH.html`, © Cards Against Humanity LLC under CC BY-NC-SA 2.0; six
+cards that put children in a sexual context are left out), and **Custom**
+(one card per line; lines with a ____ are prompts). Punchline isn't made
+by or affiliated with Cards Against Humanity.
 
 **Color Clash** is the colour-matching card game: 108 cards with Skips,
 Reverses, +2s, Wilds and Wild +4s (only when you hold none of the current
