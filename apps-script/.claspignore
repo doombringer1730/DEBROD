@@ -3,3 +3,4 @@
 doom/**
 **/*.md
 showdown/**
+supabase/**
