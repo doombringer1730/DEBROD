@@ -11,6 +11,7 @@ keys live in the script's properties instead of environment variables.
 | `Code.gs` | Server side: the menu, settings, TMDB lookups, Torrentio URLs and room codes. |
 | `Index.html` | The page shell. |
 | `App.html` | The search, player and watch-together room (from `app/browser.tsx` and `app/watch/[room]/room.tsx`). |
+| `Hub.html` | Home: the hub, styled as a 70s mission-control console. |
 | `Study.html` | The Study tab: assignments with due dates and turn-in, flashcards, coins and the shop (from Hiranda's old Study section). |
 | `Party.html` | The Supabase rooms Color Clash and Sea Battle share. |
 | `Cards.html` | Color Clash, the color-matching card game. |
@@ -27,7 +28,7 @@ keys live in the script's properties instead of environment variables.
 
 1. Create a Google Doc, then open **Extensions → Apps Script**.
 2. Replace `Code.gs` with the one here. Add the HTML files with **+ → HTML**,
-   named `Index`, `App`, `Study`, `Party`, `Cards`, `Sea`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
+   named `Index`, `App`, `Hub`, `Study`, `Party`, `Cards`, `Sea`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
    one in. To edit `appsscript.json`, turn on **Project Settings → Show
    "appsscript.json" manifest file in editor**.
 3. Save, reload the doc, and open **DEBROD → Settings**. Approve the
@@ -44,6 +45,19 @@ Or push it with [clasp](https://github.com/google/clasp): run
 **Deploy → New deployment → Web app** gives the same page full screen at its
 own URL. `?page=settings` opens the keys form, and `?room=CODE` is an invite
 link (as are `?scribble=`, `?showdown=`, `?cards=` and `?sea=` for the games).
+
+## Home
+
+DEBROD opens on **Home**, a hub dressed as a 70s mission-control console
+(the rest of DEBROD keeps its neon look). It shows what's due in Study,
+games to jump back into (with Star Sling's endless level), a quick search
+and watch-party join, and **Online now**: everyone else on your DEBROD,
+what they're doing, and a **Join** button for their Scribble, Showdown,
+Color Clash or Sea Battle room or watch party. That's live Supabase presence,
+nothing stored; flip **Show me** off to hide (you then see nobody either).
+
+Every tab opens with a second of an old terminal booting it up; a click or
+any key skips it, and it's off for anyone with reduced motion turned on.
 
 ## The arcade
 

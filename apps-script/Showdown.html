@@ -908,6 +908,7 @@ function showdown(host, ctx, opts) {
       hostId: null, mode: null, expect: 0, buffer: {}, teamSent: false, seat: null,
     }
     net = n
+    if (typeof hubActivity === 'function') hubActivity({ game: 'showdown', code, label: role === 'host' ? `Pokémon Showdown (${showdownFormatName(n.format)})` : 'Pokémon Showdown', joinable: true })
     n.send = (event, payload) => channel.send({ type: 'broadcast', event, payload: Object.assign({ from: me }, payload) })
 
     channel.on('presence', { event: 'sync' }, () => {
@@ -943,6 +944,7 @@ function showdown(host, ctx, opts) {
 
   function leaveNet() {
     if (!net) return
+    if (typeof hubActivity === 'function') hubActivity({ game: 'showdown', label: 'Pokémon Showdown', joinable: false })
     for (const t of net.timers) clearTimeout(t)
     if (net.timerTick) clearInterval(net.timerTick)
     if (net.draftTick) clearInterval(net.draftTick)

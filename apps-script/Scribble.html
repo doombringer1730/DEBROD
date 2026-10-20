@@ -242,6 +242,7 @@ function scribble(host, ctx, opts) {
   function connect(c, creating) {
     code = c
     left = false
+    if (typeof hubActivity === 'function') hubActivity({ game: 'scribble', code: c, label: 'Scribble', joinable: true })
     gameScreen()
     sys(creating ? `Room ${code} created. Invite your friends!` : `Joining room ${code}…`)
     renderAll()
@@ -294,6 +295,7 @@ function scribble(host, ctx, opts) {
 
   function leave(why) {
     left = true
+    if (code && typeof hubActivity === 'function') hubActivity({ game: 'scribble', label: 'Scribble', joinable: false })
     for (const t of timers) { clearInterval(t); clearTimeout(t) }
     timers = []
     if (channel) { channel.untrack(); sb.removeChannel(channel) }

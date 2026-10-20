@@ -1371,6 +1371,7 @@ const Arcade = (() => {
 
   function hub() {
     if (current) { current.api.stop(); current = null }
+    if (typeof hubActivity === 'function') hubActivity(null)
     wastedEl = el('span', { class: 'pill' }, '')
     root.replaceChildren(
       el('div', { class: 'arcade-top' },
@@ -1391,8 +1392,18 @@ const Arcade = (() => {
     updateWasted()
   }
 
+  // The last few games played, for Home's "Jump back in".
+  function remember(id) {
+    try {
+      const list = (JSON.parse(localStorage.getItem('ds_arcade_recent')) || []).filter(x => x !== id)
+      localStorage.setItem('ds_arcade_recent', JSON.stringify([id, ...list].slice(0, 8)))
+    } catch (e) { /* private mode */ }
+  }
+
   function play(game, opts) {
     if (current) current.api.stop()
+    remember(game.id)
+    if (typeof hubActivity === 'function') hubActivity({ game: game.id, label: game.name, joinable: false })
     const scoreEl = el('span', { class: 'mono' }, '0')
     const bestEl = el('span', { class: 'mono' }, fmtScore(game, bestOf(game)))
     const host = el('div', { class: `game-host game-${game.id}` })
@@ -1492,6 +1503,10 @@ const Arcade = (() => {
   return {
     // The same element every time, so a game survives the page re-rendering.
     root,
+    // The games, with your best, for Home.
+    list() {
+      return GAMES.map(g => ({ id: g.id, name: g.name, icon: g.icon, best: !g.noScore && bestOf(g) ? `Best ${fmtScore(g, bestOf(g))}` : '' }))
+    },
     // Straight into a game, e.g. from a Scribble invite link.
     open(id, opts) {
       const game = GAMES.find(x => x.id === id)
