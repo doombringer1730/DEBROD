@@ -460,6 +460,17 @@ a { color: var(--cyan); }
 .pk-ball.out { background: #333; box-shadow: 0 0 0 1px #000; }
 .pk-ball.unknown { background: rgba(255, 255, 255, 0.15); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3); cursor: default; }
 .pk-conditions { position: absolute; left: 50%; top: 3%; transform: translateX(-50%); display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; max-width: 50%; }
+/* Four players: a row of balls per trainer, and whose Pokémon is whose. */
+.pk-ballrow { display: flex; align-items: center; gap: 4px; }
+.pk-ballname { font-size: 10px; color: var(--muted); max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-balls:has(.pk-ballrow) { flex-direction: column; gap: 3px; }
+.pk-balls.foe:has(.pk-ballrow) { align-items: flex-end; }
+.pk-owner { font-size: 10px; padding: 0 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); color: var(--muted); }
+.pk-owner.you { background: var(--magenta); color: #fff; }
+.pk-owner.ally { background: rgba(0, 240, 255, 0.25); color: var(--text); }
+.pk-seats p { margin: 2px 0; }
+.pk-field.four .pk-side-conds.foe { top: 13%; }
+.pk-field.four .pk-side-conds.me { top: 63%; }
 .pk-side-conds { position: absolute; display: flex; gap: 4px; flex-wrap: wrap; max-width: 45%; }
 .pk-side-conds.foe { right: 3%; top: 9%; justify-content: flex-end; }
 .pk-side-conds.me { left: 3%; top: 60%; }

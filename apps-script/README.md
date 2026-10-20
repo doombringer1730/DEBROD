@@ -116,6 +116,13 @@ battle, the guest sends their moves, and anyone else in the room watches.
   - **Draft Battle / Draft Doubles:** both players snake-draft six from a
     pool of 16 random Pokémon, then battle with what they picked. Works
     against the CPU or a friend, with a 45-second pick clock online.
+  - **4 players:** Free-for-all Random Battle (everyone against everyone,
+    last one standing) and Multi Random Battle (2 vs 2, one Pokémon each).
+    Play three CPUs, or open a room for up to three friends; the CPU takes
+    any empty seat, **Change partners** picks your Multi teammate, and if
+    someone leaves mid-battle the CPU plays for them after 20 seconds.
+    Anyone past the fourth watches. Showdown itself doesn't offer Free-for-all
+    random teams, so these use ordinary random-battle sets.
   - **Battle Tower:** a streak against the CPU with a rental team. Every
     floor's trainer is stronger and smarter, a Tower Tycoon waits every 7th
     floor, and after a win you can swap in one of the Pokémon you beat.

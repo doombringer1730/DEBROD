@@ -6,6 +6,8 @@
 // - Formats: Random Battles for every generation, Random Doubles, and
 //   bring-your-own-team formats (OU, Ubers, Doubles OU, VGC and more),
 //   checked by Showdown's own team validator.
+// - Four-player Free-for-all and Multi battles, against CPUs or friends
+//   (the host's page runs those too, with the CPU in any empty seat).
 // - A team builder with Showdown's import/export text, saved in this
 //   browser.
 // - Battles against the CPU, or against a friend over Supabase Realtime:
@@ -23,6 +25,10 @@ const SHOWDOWN_FORMATS = [
     ['debrod-draft', 'Draft Battle (snake draft, then battle)'],
     ['debrod-draftdoubles', 'Draft Doubles'],
     ['debrod-tower', 'Battle Tower (a streak against the CPU)'],
+  ]],
+  ['4 players', [
+    ['gen9freeforallrandombattle', 'Free-for-all Random Battle (4 players, last one standing)'],
+    ['gen9multirandombattle', 'Multi Random Battle (2 vs 2, one Pokémon each)'],
   ]],
   ['Random battles', [
     ['gen9randombattle', 'Gen 9 Random Battle'],
@@ -57,7 +63,7 @@ const SHOWDOWN_FORMATS = [
     ['gen9doublescustomgame', 'Gen 9 Doubles Custom Game'],
   ]],
 ]
-const SHOWDOWN_TEAM_FORMATS = SHOWDOWN_FORMATS[2][1]
+const SHOWDOWN_TEAM_FORMATS = SHOWDOWN_FORMATS.find(([group]) => group === 'Bring your own team')[1]
 // DEBROD's own modes run on Showdown's custom-game rules, plus the usual
 // clauses.
 const SHOWDOWN_CLAUSES = 'Sleep Clause Mod,Species Clause,OHKO Clause,Evasion Moves Clause'
@@ -80,6 +86,12 @@ const TYPE_COLORS = {
 }
 const STAT_NAMES = { hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe' }
 const SHOWDOWN_TIMER_MS = 150000
+// Four-player battles: p1 and p3 share one half of the field, p2 and p4 the
+// other (in Multi they're the teams). A seat nobody takes is the CPU's, and
+// the CPU takes over for anyone who's gone this long mid-battle.
+const SHOWDOWN_FOUR = ['p1', 'p2', 'p3', 'p4']
+const SHOWDOWN_CPU_NAMES = { p2: 'CPU Kai', p3: 'CPU Mae', p4: 'CPU Zed' }
+const SHOWDOWN_TAKEOVER_MS = 20000
 let showdownEngine = null
 
 // The engine is about 1 MB over the wire, so it loads the first time.
@@ -137,6 +149,8 @@ function showdown(host, ctx, opts) {
   const needsTeam = id => SHOWDOWN_TEAM_FORMATS.some(([f]) => f === id)
   const isDoubles = id => /doubles|vgc/.test(id)
   const isDraft = id => id.startsWith('debrod-draft')
+  const isFour = id => /freeforall|multi/.test(id)
+  const isMulti = id => /multi/.test(id)
   const simFormat = id => SHOWDOWN_SIM_FORMATS[id] || id
   let tower = null      // the Battle Tower run in progress
   const pick = list => list[Math.floor(Math.random() * list.length)]
@@ -158,6 +172,15 @@ function showdown(host, ctx, opts) {
     const sets = PS.Teams.generate(isDoubles(fid) ? 'gen9randomdoublesbattle' : 'gen9randombattle')
     for (const s of sets) s.level = fid === 'gen9lc' ? 5 : fid.includes('vgc') || fid.includes('bss') ? 50 : 100
     return PS.Teams.pack(sets)
+  }
+
+  // The engine can't make Free-for-all teams itself, so every format here
+  // gets ordinary random-battle sets: six singles sets each for
+  // Free-for-all, three doubles sets each for Multi.
+  function fourTeam(fid) {
+    return isMulti(fid)
+      ? PS.Teams.pack(PS.Teams.generate('gen9randomdoublesbattle').slice(0, 3))
+      : PS.Teams.pack(PS.Teams.generate('gen9randombattle'))
   }
 
   // ── Sound ──
@@ -216,10 +239,13 @@ function showdown(host, ctx, opts) {
         el('div', { class: 'row' }, teamSelect, el('button', { type: 'button', onClick: () => builder(teamSelect.value) }, 'Edit'))),
       record && el('p', { class: 'muted small' }, `Your record here: ${record.w} won · ${record.l} lost${record.t ? ` · ${record.t} tied` : ''}`),
       format === 'debrod-tower' && el('p', { class: 'muted small' }, `Climb floor by floor with a rental team; the CPU gets tougher, and after each win you can swap in one of theirs. Best: floor ${pkStore.get('tower', { best: 0 }).best || 0}.`),
+      isFour(format) && el('p', { class: 'muted small' }, isMulti(format)
+        ? 'You and a partner against two others, one Pokémon out each. Play with up to three friends; the CPU takes any empty seat.'
+        : 'Four trainers, one Pokémon out each, everyone against everyone. Play with up to three friends; the CPU takes any empty seat.'),
       isDraft(format) && el('p', { class: 'muted small' }, `Take turns picking from ${SHOWDOWN_DRAFT_POOL} random Pokémon (snake order) until you each have ${SHOWDOWN_DRAFT_PICKS}, then battle with what you drafted.`),
       el('div', { class: 'row pk-menu-buttons' },
-        el('button', { type: 'button', class: 'primary grow', onClick: () => { if (okName()) startCpu() } }, 'Battle the CPU'),
-        canOnline && format !== 'debrod-tower' && el('button', { type: 'button', class: 'grow', onClick: () => { if (okName()) online(newCode(), 'host') } }, 'Battle a friend')),
+        el('button', { type: 'button', class: 'primary grow', onClick: () => { if (okName()) startCpu() } }, isFour(format) ? 'Play 3 CPUs' : 'Battle the CPU'),
+        canOnline && format !== 'debrod-tower' && el('button', { type: 'button', class: 'grow', onClick: () => { if (okName()) online(newCode(), 'host') } }, isFour(format) ? 'Play with friends' : 'Battle a friend')),
       canOnline
         ? el('form', { class: 'row', onSubmit: e => {
           e.preventDefault()
@@ -457,7 +483,7 @@ function showdown(host, ctx, opts) {
   }
 
   // ── Running a battle (CPU, or the host's side of an online one) ──
-  function runSim(fid, p1, p2, handlers) {
+  function runSim(fid, p1, p2, handlers, more = []) {
     const stream = new PS.BattleStreams.BattleStream()
     const streams = PS.BattleStreams.getPlayerStreams(stream)
     let over = false
@@ -472,9 +498,11 @@ function showdown(host, ctx, opts) {
     }
     pump(streams.p1, handlers.p1)
     pump(streams.p2, handlers.p2)
+    more.forEach((p, i) => pump(streams[`p${i + 3}`], handlers[`p${i + 3}`]))
     pump(streams.spectator, handlers.spectator)
     const player = p => JSON.stringify(Object.assign({ name: p.name }, p.team ? { team: p.team } : {}))
-    streams.omniscient.write(`>start ${JSON.stringify({ formatid: fid })}\n>player p1 ${player(p1)}\n>player p2 ${player(p2)}`)
+    const extra = more.map((p, i) => `\n>player p${i + 3} ${player(p)}`).join('')
+    streams.omniscient.write(`>start ${JSON.stringify({ formatid: fid })}\n>player p1 ${player(p1)}\n>player p2 ${player(p2)}${extra}`)
     return {
       stream,
       choose: (side, choice) => { if (!over) streams[side].write(choice) },
@@ -493,6 +521,7 @@ function showdown(host, ctx, opts) {
     if (dead) return
     if (format === 'debrod-tower') return towerStart()
     if (isDraft(format)) return draftVsCpu()
+    if (isFour(format)) return cpuFour()
     const problem = myTeamProblem()
     if (problem) return menu(problem)
     cpuBattle(format, needsTeam(format) ? teamById(teamId).packed : null, needsTeam(format) ? cpuTeam(format) : null)
@@ -518,6 +547,45 @@ function showdown(host, ctx, opts) {
         }
       },
     })
+    match = { sim, view }
+    music(true)
+  }
+
+  // A CPU in one seat: answers each request after a beat, and falls back on
+  // the default choice if the battle turns its pick down.
+  function cpuSeat(getSim, sideId, skill) {
+    let retried = false
+    return chunk => {
+      if (/(^|\n)\|error\|/.test(chunk)) {
+        if (!retried) { retried = true; setTimeout(() => getSim().choose(sideId, 'default'), 50) }
+        return
+      }
+      for (const req of requestsIn(chunk)) {
+        if (req.wait) continue
+        retried = false
+        setTimeout(() => { const sim = getSim(); const c = cpuChoice(req, sim.stream.battle, sideId, skill); if (c) sim.choose(sideId, c) }, 400 + Math.random() * 600)
+      }
+    }
+  }
+
+  // You and three CPUs.
+  function cpuFour() {
+    endMatch()
+    const names = Object.assign({ p1: name }, SHOWDOWN_CPU_NAMES, isMulti(format) ? { p3: 'Partner Mae' } : {})
+    const fid = format
+    const view = viewer('p1', { format: fid, me: name, foe: 'the CPUs', names, vsCpu: true }, {
+      choose: choice => sim.choose('p1', choice),
+      forfeit: () => sim.forfeit('p1'),
+      again: () => startCpu(),
+      back: () => { endMatch(); menu() },
+    })
+    const get = () => sim
+    const sim = runSim(fid, { name, team: fourTeam(fid) }, { name: names.p2, team: fourTeam(fid) }, {
+      p1: chunk => view.feed(chunk),
+      p2: cpuSeat(get, 'p2'),
+      p3: cpuSeat(get, 'p3'),
+      p4: cpuSeat(get, 'p4'),
+    }, [{ name: names.p3, team: fourTeam(fid) }, { name: names.p4, team: fourTeam(fid) }])
     match = { sim, view }
     music(true)
   }
@@ -718,7 +786,9 @@ function showdown(host, ctx, opts) {
     if (!req || req.wait || !battle) return null
     if (req.teamPreview) return 'default'
     const sideObj = battle[sideId]
-    const foeObj = battle[sideId === 'p1' ? 'p2' : 'p1']
+    const four = battle.sides.length > 2
+    // In four-player battles everyone but your partner is a foe.
+    const foeSides = four ? battle.sides.filter(x => x !== sideObj && x !== sideObj.allySide) : [battle[sideId === 'p1' ? 'p2' : 'p1']]
     const team = req.side.pokemon
     const doubles = battle.gameType !== 'singles'
     const taken = new Set()
@@ -738,7 +808,15 @@ function showdown(host, ctx, opts) {
       const mon = team[slot]
       if (!active || !mon || mon.condition.endsWith(' fnt') || mon.commanding) return 'pass'
       const mine = sideObj.active[slot]
-      const foes = foeObj.active.map((f, i) => ({ f, i })).filter(({ f }) => f && !f.fainted)
+      const foes = foeSides.flatMap(x => x.active.map((f, i) => ({ f, i }))).filter(({ f }) => f && !f.fainted)
+      const ally = four && sideObj.allySide ? sideObj.allySide.active.find(a => a && !a.fainted) : null
+      // A target's number from where we stand: positive across the field,
+      // negative on our own half.
+      const loc = t => {
+        if (mine.getLocOf) return mine.getLocOf(t)
+        const position = t.position + Math.floor(t.side.n / 2) * t.side.active.length + 1
+        return mine.side.n % 2 === t.side.n % 2 ? -position : position
+      }
       const score = (id, foe) => {
         const move = dex.moves.get(id)
         if (move.category === 'Status') return 35 * (0.6 + Math.random() * 0.8)
@@ -756,7 +834,8 @@ function showdown(host, ctx, opts) {
       active.moves.forEach((m, j) => {
         if (m.disabled) return
         if (!foes.length) return options.push({ j, s: 1, t: null })
-        for (const { f, i } of foes) options.push({ j, s: score(m.id, f), t: i, target: m.target })
+        if (four && m.target === 'adjacentAlly' && !ally) return
+        for (const { f, i } of foes) options.push({ j, s: score(m.id, f), t: i, foe: f, target: m.target })
       })
       options.sort((a, b) => b.s - a.s)
       const trapped = active.trapped || active.maybeTrapped
@@ -769,7 +848,11 @@ function showdown(host, ctx, opts) {
       if (!options.length) return 'move 1'
       const c = Math.random() < skill ? options[0] : pick(options)
       let target = ''
-      if (doubles) {
+      if (four && mine) {
+        if (['normal', 'any', 'adjacentFoe'].includes(c.target) && c.foe) target = ` ${loc(c.foe)}`
+        if (c.target === 'adjacentAlly' && ally) target = ` ${loc(ally)}`
+        if (c.target === 'adjacentAllyOrSelf') target = ` ${loc(mine)}`
+      } else if (doubles) {
         if (['normal', 'any', 'adjacentFoe'].includes(c.target) && c.t !== null) target = ` ${c.t + 1}`
         if (c.target === 'adjacentAlly') target = ` -${(slot ^ 1) + 1}`
         if (c.target === 'adjacentAllyOrSelf') target = ` -${slot + 1}`
@@ -801,8 +884,9 @@ function showdown(host, ctx, opts) {
       sb, channel, code, role, players: [], joinedAt: Date.now(), timers: [],
       // host
       format, guestId: null, guestName: '', guestTeam: null, battle: null, chunks: [], spec: [], timerOn: false, deadline: { p1: null, p2: null },
+      four: role === 'host' && isFour(format), seats: { p2: null, p3: null, p4: null }, names: null,
       // guest / spectator
-      hostId: null, mode: null, expect: 0, buffer: {}, teamSent: false,
+      hostId: null, mode: null, expect: 0, buffer: {}, teamSent: false, seat: null,
     }
     net = n
     n.send = (event, payload) => channel.send({ type: 'broadcast', event, payload: Object.assign({ from: me }, payload) })
@@ -853,6 +937,7 @@ function showdown(host, ctx, opts) {
 
   function waitingRoom(note) {
     const n = net
+    if (n.four) return fourLobby()
     const link = inviteLink(n)
     pkFill(wrap, el('div', { class: 'card stack pk-menu' },
       el('p', { class: 'wordmark' }, 'Showdown'),
@@ -872,6 +957,7 @@ function showdown(host, ctx, opts) {
   function hostRoom() {
     const n = net
     if (!n) return
+    if (n.four) return fourRoom()
     n.send('room', {
       format: n.format, hostName: name, guestId: n.guestId, guestName: n.guestName,
       needsTeam: needsTeam(n.format), battle: n.battle, timer: n.timerOn, draft: n.draft && !n.battle ? n.draft.id : null,
@@ -882,6 +968,7 @@ function showdown(host, ctx, opts) {
     const n = net
     // Presence can arrive before the engine has loaded; we run again then.
     if (!n || !n.ready) return
+    if (n.four) return fourPresence()
     const others = n.players.filter(p => p.id !== me)
     if (n.guestId && !others.some(p => p.id === n.guestId)) {
       n.guestId = null
@@ -901,6 +988,183 @@ function showdown(host, ctx, opts) {
       }
     }
     hostRoom()
+  }
+
+  // ── Four players online ──
+  // The host is p1; friends take p2, p3 and p4 in the order they arrive,
+  // and anyone past that watches. Seats nobody takes go to the CPU.
+  const SEATS = ['p2', 'p3', 'p4']
+  const seatOf = (n, id) => SEATS.find(x => n.seats[x] && n.seats[x].id && n.seats[x].id === id) || null
+
+  function fourRoom() {
+    const n = net
+    const seats = {}
+    for (const x of SEATS) seats[x] = n.seats[x] && { id: n.seats[x].id, name: n.seats[x].name, cpu: !!n.seats[x].cpu }
+    n.send('room', { four: true, format: n.format, hostName: name, seats, names: n.names, battle: n.battle, timer: n.timerOn })
+  }
+
+  function fourName(n, wanted) {
+    const taken = new Set([name, ...SEATS.map(x => n.seats[x] && n.seats[x].name)].filter(Boolean))
+    let out = wanted || 'Trainer'
+    for (let k = 2; taken.has(out); k++) out = `${wanted} ${k}`
+    return out
+  }
+
+  function fourPresence() {
+    const n = net
+    const others = n.players.filter(p => p.id !== me)
+    const here = id => others.some(p => p.id === id)
+    for (const x of SEATS) {
+      const seat = n.seats[x]
+      if (!seat || !seat.id || here(seat.id)) continue
+      if (n.battle) {
+        // Their seat waits for them; the CPU steps in if they stay away.
+        seat.id = null
+        seat.goneAt = Date.now()
+        if (match) match.view.notice(`${seat.name} left. If they're not back in ${SHOWDOWN_TAKEOVER_MS / 1000} seconds, the CPU plays for them.`)
+      } else n.seats[x] = null
+    }
+    for (const p of others) {
+      if (seatOf(n, p.id)) continue
+      if (n.battle) {
+        const x = SEATS.find(k => n.seats[k] && !n.seats[k].id && !n.seats[k].bot && n.seats[k].name === p.name)
+        if (!x) continue
+        Object.assign(n.seats[x], { id: p.id, cpu: false, goneAt: null })
+        if (match) match.view.notice(`${p.name} is back.`)
+        fourReplay(x)
+      } else {
+        const x = SEATS.find(k => !n.seats[k])
+        if (x) n.seats[x] = { id: p.id, name: fourName(n, p.name) }
+      }
+    }
+    fourRoom()
+    if (!match) fourLobby()
+  }
+
+  // Multi: change who's your partner by moving everyone round a seat.
+  function fourRotate() {
+    const n = net
+    const [a, b, c] = SEATS.map(x => n.seats[x])
+    n.seats = { p2: c, p3: a, p4: b }
+    fourRoom()
+    fourLobby()
+  }
+
+  function fourLobby() {
+    const n = net
+    if (!n || match) return
+    const link = inviteLink(n)
+    const multi = isMulti(n.format)
+    const who = x => (x === 'p1' ? `${name} (you)` : n.seats[x] ? n.seats[x].name : 'CPU')
+    const filled = SEATS.filter(x => n.seats[x]).length
+    pkFill(wrap, el('div', { class: 'card stack pk-menu' },
+      el('p', { class: 'wordmark' }, 'Showdown'),
+      el('p', { class: 'tagline' }, showdownFormatName(n.format)),
+      multi
+        ? el('div', { class: 'pk-seats' },
+          el('p', null, el('strong', null, 'Your team: '), `${who('p1')} & ${who('p3')}`),
+          el('p', null, el('strong', null, 'Against: '), `${who('p2')} & ${who('p4')}`))
+        : el('div', { class: 'pk-seats' }, SHOWDOWN_FOUR.map(x => el('p', null, `${x.toUpperCase()} · ${who(x)}`))),
+      el('p', { class: 'pk-code' }, n.code),
+      el('p', { class: 'muted small' }, `${link ? 'Send the link, or have' : 'Have'} friends open Arcade → Pokémon Showdown and enter the code. Up to three can play; the CPU takes any empty seat, and anyone after that watches.`),
+      el('button', { type: 'button', onClick: async () => {
+        const ok = await copyText(link || n.code)
+        if (!ok) window.prompt('Send this:', link || n.code)
+      } }, link ? 'Copy invite link' : 'Copy code'),
+      multi && filled > 0 && el('button', { type: 'button', onClick: fourRotate }, 'Change partners'),
+      el('button', { type: 'button', class: 'primary', onClick: fourStart }, filled === 3 ? 'Start the battle' : `Start (${3 - filled} CPU${3 - filled === 1 ? '' : 's'})`),
+      el('button', { type: 'button', class: 'link', onClick: () => { leaveNet(); menu() } }, '‹ Cancel')))
+  }
+
+  function fourStart() {
+    const n = net
+    if (!n) return
+    if (match) endMatch()
+    for (const x of SEATS) if (!n.seats[x]) n.seats[x] = { id: null, name: fourName(n, SHOWDOWN_CPU_NAMES[x]), cpu: true, bot: true }
+    n.names = { p1: name }
+    for (const x of SEATS) n.names[x] = n.seats[x].name
+    n.chunks = { p2: [], p3: [], p4: [] }
+    n.spec = []
+    n.battle = randomId()
+    n.deadline = { p1: null, p2: null, p3: null, p4: null }
+    n.awaiting = { p1: false, p2: false, p3: false, p4: false }
+    n.lastReq = {}
+    n.retried = {}
+    const fid = n.format
+    const view = viewer('p1', { format: fid, me: name, foe: 'the others', names: n.names, online: true, host: true }, {
+      choose: choice => { hostChoice('p1', choice) },
+      forfeit: () => sim.forfeit('p1'),
+      again: () => {
+        // The CPU's seats open up again for anyone who's arrived since.
+        endMatch()
+        n.battle = null
+        for (const x of SEATS) if (n.seats[x] && (n.seats[x].bot || !n.seats[x].id)) n.seats[x] = null
+        fourPresence()
+        fourStart()
+      },
+      emote: e => n.send('emote', { e }),
+      back: () => { endMatch(); leaveNet(); menu() },
+      chat: text => { n.send('chat', { name, text }); view.chat(name, text) },
+      timer: on => {
+        n.timerOn = on
+        for (const x of SHOWDOWN_FOUR) n.deadline[x] = on && n.awaiting[x] && !(n.seats[x] && n.seats[x].cpu) ? Date.now() + SHOWDOWN_TIMER_MS : null
+        hostTimer()
+        fourRoom()
+      },
+    })
+    const seatHandler = x => chunk => {
+      const seq = n.chunks[x].push(chunk) - 1
+      n.send('chunk', { battle: n.battle, seq, data: chunk, side: x })
+      const seat = n.seats[x]
+      // Once per request, the CPU falls back on the default if its pick
+      // was turned down.
+      if (/(^|\n)\|error\|/.test(chunk) && seat.cpu) {
+        if (!n.retried[x]) { n.retried[x] = true; hostChoice(x, 'default') }
+        return
+      }
+      const reqs = requestsIn(chunk).filter(r => !r.wait)
+      if (!reqs.length) return
+      n.retried[x] = false
+      n.lastReq[x] = reqs[reqs.length - 1]
+      hostArm(x)
+      if (seat.cpu) fourCpu(x)
+    }
+    const sim = runSim(simFormat(fid), { name, team: fourTeam(fid) }, { name: n.names.p2, team: fourTeam(fid) }, {
+      p1: chunk => { view.feed(chunk); if (requestsIn(chunk).some(r => !r.wait)) hostArm('p1') },
+      p2: seatHandler('p2'),
+      p3: seatHandler('p3'),
+      p4: seatHandler('p4'),
+      spectator: chunk => {
+        const seq = n.spec.push(chunk) - 1
+        n.send('schunk', { battle: n.battle, seq, data: chunk })
+      },
+    }, [{ name: n.names.p3, team: fourTeam(fid) }, { name: n.names.p4, team: fourTeam(fid) }])
+    match = { sim, view }
+    if (n.timerTick) clearInterval(n.timerTick)
+    n.timerTick = setInterval(hostTimerCheck, 1000)
+    fourRoom()
+    music(true)
+  }
+
+  // The CPU answers for a seat it holds (or has taken over).
+  function fourCpu(x) {
+    const n = net
+    const battleId = n.battle
+    setTimeout(() => {
+      if (net !== n || !match || n.battle !== battleId || !n.awaiting[x] || !n.seats[x].cpu) return
+      const c = cpuChoice(n.lastReq[x], match.sim.stream.battle, x)
+      hostChoice(x, c || 'default')
+    }, 400 + Math.random() * 600)
+  }
+
+  function fourReplay(x) {
+    const n = net
+    const seat = n.seats[x]
+    fourRoom()
+    if (!seat || !seat.id || !n.battle) return
+    n.send('reset', { battle: n.battle, to: seat.id })
+    n.chunks[x].forEach((data, seq) => n.send('chunk', { battle: n.battle, seq, data, side: x }))
+    hostTimer()
   }
 
   // An online draft: the host keeps the board and the pick clock.
@@ -1005,24 +1269,39 @@ function showdown(host, ctx, opts) {
     const n = net
     if (!n) return
     n.awaiting[side] = true
-    n.deadline[side] = n.timerOn ? Date.now() + SHOWDOWN_TIMER_MS : null
+    n.deadline[side] = n.timerOn && !(n.four && n.seats[side] && n.seats[side].cpu) ? Date.now() + SHOWDOWN_TIMER_MS : null
     hostTimer()
   }
   function hostTimer() {
     const n = net
     if (!n || !match) return
     const left = side => (n.deadline[side] ? Math.max(0, n.deadline[side] - Date.now()) : null)
-    const state = { on: n.timerOn, p1: left('p1'), p2: left('p2') }
+    const state = { on: n.timerOn }
+    for (const x of n.four ? SHOWDOWN_FOUR : ['p1', 'p2']) state[x] = left(x)
     match.view.timer(state)
     n.send('timer', Object.assign({ battle: n.battle }, state))
   }
   function hostTimerCheck() {
     const n = net
-    if (!n || !match || !n.timerOn) return
-    for (const side of ['p1', 'p2']) {
+    if (!n || !match) return
+    // Four players: the CPU takes the seat of anyone who's been gone a while.
+    if (n.four) {
+      for (const x of SEATS) {
+        const seat = n.seats[x]
+        if (!seat || seat.cpu || seat.id || !seat.goneAt || Date.now() - seat.goneAt < SHOWDOWN_TAKEOVER_MS) continue
+        seat.cpu = true
+        n.deadline[x] = null
+        match.view.notice(`The CPU is playing for ${seat.name} now.`)
+        n.send('chat', { name: '🤖', text: `The CPU is playing for ${seat.name} now.` })
+        if (n.awaiting[x]) fourCpu(x)
+        hostTimer()
+      }
+    }
+    if (!n.timerOn) return
+    for (const side of n.four ? SHOWDOWN_FOUR : ['p1', 'p2']) {
       if (n.deadline[side] && Date.now() > n.deadline[side]) {
         n.deadline[side] = null
-        const who = side === 'p1' ? name : n.guestName
+        const who = side === 'p1' ? name : n.four ? n.names[side] : n.guestName
         match.view.notice(`${who} ran out of time, so the battle chose for them.`)
         n.send('chat', { name: '⏱', text: `${who} ran out of time, so the battle chose for them.` })
         match.sim.choose(side, 'default')
@@ -1042,9 +1321,25 @@ function showdown(host, ctx, opts) {
   function hostEvent(ev, p) {
     const n = net
     if (!n) return
+    if (ev === 'hello' && n.four) { const x = seatOf(n, p.from); if (n.battle && x) fourReplay(x); else fourRoom(); return }
     if (ev === 'hello') { hostRoom(); if (n.battle && p.from === n.guestId) hostReplay(); else if (n.draft && !n.battle) hostDraftSync(); return }
     if (ev === 'emote') { if (match) match.view.emote(String(p.e || '').slice(0, 4)); return }
     if (ev === 'chat') { if (match) match.view.chat(String(p.name || '?').slice(0, 18), String(p.text || '').slice(0, 200)); return }
+    if (ev === 'resend' && n.four) {
+      if (p.battle !== n.battle) return
+      const x = p.spectator ? null : seatOf(n, p.from)
+      if (!p.spectator && !x) return
+      const list = x ? n.chunks[x] : n.spec
+      for (let seq = Math.max(0, p.from_seq | 0); seq < list.length; seq++) n.send(x ? 'chunk' : 'schunk', Object.assign({ battle: n.battle, seq, data: list[seq] }, x ? { side: x } : {}))
+      return
+    }
+    if (n.four) {
+      const x = seatOf(n, p.from)
+      if (!x || !match || p.battle !== n.battle) return
+      if (ev === 'choice') hostChoice(x, String(p.data || '').slice(0, 120))
+      if (ev === 'forfeit') { match.view.notice(`${n.seats[x].name} forfeited.`); match.sim.forfeit(x) }
+      return
+    }
     if (ev === 'resend') {
       if (p.battle !== n.battle) return
       const list = p.spectator ? n.spec : n.chunks
@@ -1083,6 +1378,43 @@ function showdown(host, ctx, opts) {
   async function followerEvent(ev, p) {
     const n = net
     if (!n) return
+    if (ev === 'room' && p.four) {
+      n.hostId = p.from
+      n.hostName = p.hostName
+      n.format = p.format
+      n.four = true
+      const seat = SEATS.find(x => p.seats && p.seats[x] && p.seats[x].id === me) || null
+      if (!p.battle) {
+        n.battle = null
+        n.seat = seat
+        if (match) return
+        const who = x => (x === 'p1' ? p.hostName : p.seats[x] ? `${p.seats[x].name}${x === seat ? ' (you)' : ''}` : 'CPU')
+        pkFill(wrap, el('div', { class: 'card stack pk-menu' },
+          el('p', { class: 'wordmark' }, 'Showdown'),
+          el('p', { class: 'tagline' }, showdownFormatName(p.format)),
+          isMulti(p.format)
+            ? el('div', { class: 'pk-seats' },
+              el('p', null, el('strong', null, 'Team 1: '), `${who('p1')} & ${who('p3')}`),
+              el('p', null, el('strong', null, 'Team 2: '), `${who('p2')} & ${who('p4')}`))
+            : el('div', { class: 'pk-seats' }, SHOWDOWN_FOUR.map(x => el('p', null, `${x.toUpperCase()} · ${who(x)}`))),
+          el('p', { class: 'muted' }, seat ? `Waiting for ${p.hostName} to start…` : 'The seats are full, so you\'ll watch.'),
+          el('button', { type: 'button', class: 'link', onClick: () => { leaveNet(); menu() } }, '‹ Leave')))
+        return
+      }
+      const mode = seat ? 'guest' : 'spectator'
+      if (n.battle === p.battle && n.mode === mode && n.seat === seat && match) return
+      n.battle = p.battle
+      n.mode = mode
+      n.seat = seat
+      n.names = p.names || {}
+      n.expect = 0
+      n.buffer = {}
+      try { await engine() } catch (e) { return menu(e.message) }
+      if (dead || net !== n || n.battle !== p.battle) return
+      followerView()
+      n.send('resend', { battle: n.battle, from_seq: n.expect, spectator: mode === 'spectator' })
+      return
+    }
     if (ev === 'room') {
       n.hostId = p.from
       n.hostName = p.hostName
@@ -1140,8 +1472,10 @@ function showdown(host, ctx, opts) {
     }
     if (p.battle !== n.battle) return
     if (ev === 'timer' && match) {
-      // The timer is the host's p1 / guest's p2; spectators see both.
-      match.view.timer(n.mode === 'guest' ? { on: p.on, p1: p.p2, p2: p.p1 } : { on: p.on, p1: p.p1, p2: p.p2 })
+      // The timer is the host's p1 / guest's p2; spectators see both. With
+      // four players everyone sees every seat as it is.
+      if (n.four) match.view.timer({ on: p.on, p1: p.p1, p2: p.p2, p3: p.p3, p4: p.p4 })
+      else match.view.timer(n.mode === 'guest' ? { on: p.on, p1: p.p2, p2: p.p1 } : { on: p.on, p1: p.p1, p2: p.p2 })
       return
     }
     if (ev === 'reset' && n.mode === 'guest' && p.to === me) {
@@ -1151,6 +1485,8 @@ function showdown(host, ctx, opts) {
       return
     }
     const wanted = n.mode === 'guest' ? 'chunk' : 'schunk'
+    // Four players: only our own seat's view.
+    if (ev === 'chunk' && n.four && p.side !== n.seat) return
     if (ev === wanted && Number.isInteger(p.seq) && p.seq >= n.expect) {
       n.buffer[p.seq] = String(p.data || '')
       followerFlush()
@@ -1213,8 +1549,8 @@ function showdown(host, ctx, opts) {
     const n = net
     if (match) match.view.destroy()
     const spectator = n.mode === 'spectator'
-    const view = viewer(spectator ? 'p1' : 'p2', {
-      format: n.format, me: spectator ? n.hostName : name, foe: spectator ? n.guestName : n.hostName, online: true, spectator,
+    const view = viewer(spectator ? 'p1' : n.four ? n.seat : 'p2', {
+      format: n.format, me: spectator ? n.hostName : name, foe: n.four ? 'the others' : spectator ? n.guestName : n.hostName, online: true, spectator, names: n.names,
     }, {
       choose: choice => n.send('choice', { battle: n.battle, data: choice }),
       forfeit: () => n.send('forfeit', { battle: n.battle }),
@@ -1231,13 +1567,38 @@ function showdown(host, ctx, opts) {
   // Follows one side's view of the battle (or a spectator's) and offers
   // that player's choices. Lines play out with a little pacing so a turn
   // reads like it does on Showdown.
-  function viewer(side, info, io) {
+  function viewer(player, info, io) {
+    // Four-player battles are drawn as doubles: each half of the field holds
+    // two trainers' Pokémon (p1 and p3, p2 and p4), and side is the half
+    // nearest us. Otherwise side is simply who we're playing as.
+    const four = isFour(info.format)
+    const multi = four && isMulti(info.format)
+    const halfOf = s => (s === 'p1' || s === 'p3' ? 'p1' : 'p2')
+    const posOf = s => (s === 'p1' || s === 'p2' ? 0 : 1)
+    const side = four ? halfOf(player) : player
     const battle = new PS.Battle(new PS.Generations(PS.Dex))
-    const fmt = new PS.LogFormatter(side, battle)
+    const fmt = new PS.LogFormatter(player, battle)
     const foeSide = side === 'p1' ? 'p2' : 'p1'
     const spectator = !!info.spectator
-    const doubles = isDoubles(info.format)
+    const doubles = isDoubles(info.format) || four
     const slots = doubles ? [0, 1] : [0]
+    const decide = four ? [0] : slots   // the slots we choose for
+    const names = info.names || {}
+    const nameOf = s => (battle[s] && battle[s].name) || names[s] || s
+    const onField = {}                  // four players: the ident each has out
+    const fieldMon = s => (onField[s] && battle.getPokemon(onField[s])) || null
+    const others = () => SHOWDOWN_FOUR.filter(s => s !== player)
+    const allyOf = () => (multi ? others().find(s => halfOf(s) === halfOf(player)) : null)
+    const opponents = () => others().filter(s => s !== allyOf())
+    const targetLoc = s => (halfOf(s) === halfOf(player) ? -(posOf(s) + 1) : posOf(s) + 1)
+    const myLive = slot => (four ? fieldMon(player) : battle[side].active[slot])
+    // Where an ident like p3b: Name is drawn.
+    function placeOf(ident) {
+      const m = /^(p[1-4])([ab])?/.exec(ident || '')
+      if (!m) return null
+      if (four) return { s: halfOf(m[1]), i: posOf(m[1]) }
+      return { s: m[1], i: m[2] === 'b' && doubles ? 1 : 0 }
+    }
     let request = null
     let nextRequest = null
     let waiting = false
@@ -1274,7 +1635,7 @@ function showdown(host, ctx, opts) {
     const sideConds = { p1: el('div', { class: `pk-side-conds ${side === 'p1' ? 'me' : 'foe'}` }), p2: el('div', { class: `pk-side-conds ${side === 'p2' ? 'me' : 'foe'}` }) }
     const banner = el('div', { class: 'pk-banner', hidden: true })
     const fx = el('div', { class: 'pk-fx', 'aria-hidden': 'true' })
-    const field = el('div', { class: `pk-field ${doubles ? 'doubles' : ''}` },
+    const field = el('div', { class: `pk-field ${doubles ? 'doubles' : ''} ${four ? 'four' : ''}` },
       conditions, balls.p1, balls.p2, sideConds.p1, sideConds.p2,
       ...['p1', 'p2'].flatMap(s => slots.map(i => sprites[s][i])),
       fx,
@@ -1300,13 +1661,13 @@ function showdown(host, ctx, opts) {
     // big hits. Skipped at Instant speed.
     const fxOn = () => speed !== 'instant' && !destroyed
     function spot(ident) {
-      const m = /^(p[12])([ab])?/.exec(ident || '')
+      const at = placeOf(ident)
       const f = field.getBoundingClientRect()
-      if (!m || !f.width) return null
-      const img = sprites[m[1]][m[2] === 'b' && doubles ? 1 : 0]
+      if (!at || !f.width) return null
+      const img = sprites[at.s][at.i]
       const r = img && !img.hidden ? img.getBoundingClientRect() : null
       if (r && r.width) return { x: r.left - f.left + r.width / 2, y: r.top - f.top + r.height / 2, h: r.height }
-      const near = m[1] === side
+      const near = at.s === side
       return { x: f.width * (near ? 0.25 : 0.72), y: f.height * (near ? 0.72 : 0.36), h: f.height * 0.3 }
     }
     function spawn(node, ms) {
@@ -1374,7 +1735,7 @@ function showdown(host, ctx, opts) {
         animate(args[1], 'faint')
         if (lastMover && sideOf(lastMover) !== sideOf(args[1])) credit(lastMover).kos++
         // The CPU has feelings too.
-        if (info.vsCpu && Math.random() < 0.35) setTimeout(() => floatEmote(sideOf(args[1]) === side ? pick(['😂', '🔥', '😎']) : pick(['😤', '💀', '😱'])), 500)
+        if (info.vsCpu && Math.random() < 0.35) setTimeout(() => floatEmote(sideOf(args[1]) === player ? pick(['😂', '🔥', '😎']) : pick(['😤', '💀', '😱'])), 500)
       } else if (kind === '-terastallize') { burst(args[1], TYPE_COLORS[args[2]] || '#fff', 260); bigText(`Tera ${args[2]}!`, 'tera') }
       else if (kind === '-mega') { burst(args[1], '#ff7a1a', 260); bigText('Mega Evolution!', 'tera') }
       else if (kind === '-zpower') bigText('Z-Power!', 'tera')
@@ -1404,7 +1765,7 @@ function showdown(host, ctx, opts) {
     // Our own Pokémon: everything the request tells us.
     function myTip(p) {
       const sp = PS.Dex.species.get(p.speciesForme)
-      const live = battle[side].team.find(x => x.originalIdent === p.ident) || null
+      const live = battle[player].team.find(x => x.originalIdent === p.ident) || null
       const types = live && live.isTerastallized ? [live.teraType] : sp.types
       return [
         el('p', { class: 'name' }, `${p.name}${p.name !== sp.name ? ` (${sp.name})` : ''} `, el('span', { class: 'muted' }, `L${p.level}`)),
@@ -1472,7 +1833,7 @@ function showdown(host, ctx, opts) {
 
     const hpClass = frac => (frac > 0.5 ? 'good' : frac > 0.2 ? 'warn' : 'bad')
 
-    function infoBox(box, poke, near, slot) {
+    function infoBox(box, poke, near, slot, owner) {
       if (!poke) { box.hidden = true; return }
       box.hidden = false
       const frac = poke.maxhp ? poke.hp / poke.maxhp : 0
@@ -1483,6 +1844,7 @@ function showdown(host, ctx, opts) {
       const vol = Object.keys(poke.volatiles || {}).filter(v => ['dynamax', 'substitute', 'confusion', 'leechseed', 'taunt', 'encore', 'perishsong', 'yawn', 'protosynthesis', 'quarkdrive'].some(x => v.startsWith(x)))
       pkFill(box, 
         el('div', { class: 'pk-name' },
+          four && owner && el('span', { class: `pk-owner ${owner === player && !spectator ? 'you' : multi && owner === allyOf() ? 'ally' : ''}` }, owner === player && !spectator ? 'You' : nameOf(owner)),
           el('strong', null, poke.name),
           el('span', { class: 'muted' }, ` L${poke.level}`),
           poke.isTerastallized && el('span', { class: 'pk-type', style: `background: ${TYPE_COLORS[poke.teraType] || '#888'}` }, `Tera ${poke.teraType}`)),
@@ -1499,18 +1861,26 @@ function showdown(host, ctx, opts) {
     // Six balls per side: who's still standing, and how many of theirs
     // we've seen.
     function drawBalls(target, sideObj, sideId) {
+      pkFill(target, ...ballNodes(sideObj, sideId))
+    }
+    // Four players: each trainer on this half gets a labelled row.
+    function drawBallsFour(target, half) {
+      pkFill(target, SHOWDOWN_FOUR.filter(s => halfOf(s) === half && battle[s]).map(s =>
+        el('div', { class: 'pk-ballrow' }, el('span', { class: 'pk-ballname' }, s === player && !spectator ? 'You' : nameOf(s)), ballNodes(battle[s], s))))
+    }
+    function ballNodes(sideObj, sideId) {
       const team = sideObj.team || []
       const total = Math.max(sideObj.totalPokemon || 6, team.length)
       const out = []
       for (let i = 0; i < total; i++) {
         const p = team[i]
         const b = el('span', { class: `pk-ball ${!p ? 'unknown' : p.fainted ? 'out' : ''}` })
-        if (p) tippable(b, () => (sideId === side && !spectator && request && request.side
+        if (p) tippable(b, () => (sideId === player && !spectator && request && request.side
           ? myTip(request.side.pokemon.find(x => x.ident === p.originalIdent) || {})
           : foeTip(p)))
         out.push(b)
       }
-      pkFill(target, ...out)
+      return out
     }
 
     function drawConditions() {
@@ -1523,13 +1893,25 @@ function showdown(host, ctx, opts) {
       for (const id of Object.keys(f.pseudoWeather || {})) chips.push(PS.Dex.conditions.get(id).name || id)
       pkFill(conditions, ...chips.map(c => el('span', { class: 'pk-chip' }, c)))
       for (const s of ['p1', 'p2']) {
-        const sc = (battle[s] && battle[s].sideConditions) || {}
+        const sc = {}
+        for (const x of four ? SHOWDOWN_FOUR.filter(x => halfOf(x) === s) : [s]) Object.assign(sc, (battle[x] && battle[x].sideConditions) || {})
         pkFill(sideConds[s], ...Object.entries(sc).map(([id, c]) => el('span', { class: 'pk-chip small' },
           `${c.name || PS.Dex.conditions.get(id).name || id}${c.level > 1 ? ` ×${c.level}` : ''}`)))
       }
     }
 
     function renderField() {
+      if (four) {
+        for (const s of SHOWDOWN_FOUR) {
+          const poke = fieldMon(s)
+          const at = placeOf(s)
+          setSprite(sprites[at.s][at.i], poke, at.s === side)
+          infoBox(boxes[at.s][at.i], poke, at.s === side, at.i, s)
+        }
+        for (const s of ['p1', 'p2']) drawBallsFour(balls[s], s)
+        drawConditions()
+        return
+      }
       // Nobody is out yet during team preview.
       const previewing = !!request && request.requestType === 'team'
       for (const s of ['p1', 'p2']) {
@@ -1556,10 +1938,9 @@ function showdown(host, ctx, opts) {
     }
 
     function animate(ident, cls) {
-      if (!ident) return
-      const m = /^(p[12])([ab])?/.exec(ident)
-      if (!m) return
-      const img = sprites[m[1]][m[2] === 'b' && doubles ? 1 : 0]
+      const at = placeOf(ident)
+      if (!at) return
+      const img = sprites[at.s][at.i]
       if (!img) return
       img.classList.remove(cls)
       void img.offsetWidth
@@ -1575,14 +1956,17 @@ function showdown(host, ctx, opts) {
       const t = timer
       const now = Date.now()
       const left = k => (t && t[k] !== null && t[k] !== undefined ? Math.max(0, t[k] - (now - t.at)) : null)
-      const mineLeft = left('p1')
+      const mineLeft = left(four ? player : 'p1')
       const foeLeft = left('p2')
+      const everyone = SHOWDOWN_FOUR.map(s => (s === player && !spectator ? 'You' : nameOf(s)))
       pkFill(bar, 
         el('span', { class: 'pk-format' }, showdownFormatName(info.format)),
         info.banner && el('span', { class: 'pill pk-tower-pill' }, info.banner),
         turn > 0 && el('span', { class: 'pill' }, `Turn ${turn}`),
-        spectator && el('span', { class: 'pill' }, `👀 ${info.me} vs ${info.foe}`),
-        t && t.on && el('span', { class: `pill ${mineLeft !== null && mineLeft < 30000 ? 'pk-hurry' : ''}` }, `⏱ ${spectator ? info.me : 'You'} ${mineLeft === null ? '—' : fmtTime(mineLeft)} · ${info.foe} ${foeLeft === null ? '—' : fmtTime(foeLeft)}`),
+        spectator && el('span', { class: 'pill' }, four ? `👀 ${multi ? `${nameOf('p1')} & ${nameOf('p3')} vs ${nameOf('p2')} & ${nameOf('p4')}` : everyone.join(' · ')}` : `👀 ${info.me} vs ${info.foe}`),
+        t && t.on && four && el('span', { class: `pill ${!spectator && mineLeft !== null && mineLeft < 30000 ? 'pk-hurry' : ''}` },
+          `⏱ ${SHOWDOWN_FOUR.map((s, i) => `${everyone[i]} ${left(s) === null ? '—' : fmtTime(left(s))}`).join(' · ')}`),
+        t && t.on && !four && el('span', { class: `pill ${mineLeft !== null && mineLeft < 30000 ? 'pk-hurry' : ''}` }, `⏱ ${spectator ? info.me : 'You'} ${mineLeft === null ? '—' : fmtTime(mineLeft)} · ${info.foe} ${foeLeft === null ? '—' : fmtTime(foeLeft)}`),
         el('span', { class: 'grow' }),
         io.timer && !result && el('button', { type: 'button', class: 'chip', onClick: () => io.timer(!(t && t.on)) }, t && t.on ? 'Timer on' : 'Timer off'),
         !spectator && el('button', { type: 'button', class: `chip ${coach ? 'on' : ''}`, title: 'Show how each move matches up, and suggest one', onClick: () => { coach = !coach; pkStore.set('coach', coach); renderBar(); renderControls() } }, '💡 Coach'),
@@ -1594,13 +1978,18 @@ function showdown(host, ctx, opts) {
           return s
         })(),
         el('button', { type: 'button', class: 'chip', onClick: downloadReplay }, 'Replay ⤓'),
-        !spectator && !result && io.forfeit && el('button', { type: 'button', class: 'chip pk-forfeit', onClick: () => { if (confirm('Forfeit this battle?')) io.forfeit() } }, 'Forfeit'))
+        !spectator && !result && io.forfeit && el('button', { type: 'button', class: 'chip pk-forfeit', onClick: () => {
+          if (!confirm('Forfeit this battle?')) return
+          io.forfeit()
+          // In a free-for-all the other three play on without you.
+          if (four && !multi) finish('lose', null, 'You forfeited')
+        } }, 'Forfeit'))
     }
 
     // Showdown's own replay format: open the file and Showdown's replay
     // player plays it back.
     function downloadReplay() {
-      const names = `${info.me} vs. ${info.foe}`
+      const names = four ? SHOWDOWN_FOUR.map(nameOf).join(multi ? ' & ' : ' vs. ').replace(/^(.*?) & (.*?) & (.*?) & (.*)$/, '$1 & $3 vs. $2 & $4') : `${info.me} vs. ${info.foe}`
       const data = rawLog.join('\n').replace(/<\//g, '<\\/')
       const html = `<!DOCTYPE html>\n<meta charset="utf-8" />\n<title>${showdownFormatName(info.format)} replay: ${names}</title>\n` +
         '<div class="wrapper replay-wrapper" style="max-width:1180px;margin:0 auto">\n<input type="hidden" name="replayid" value="debrod" />\n' +
@@ -1609,7 +1998,7 @@ function showdown(host, ctx, opts) {
         `<script type="text/plain" class="battle-log-data">${data}</` + 'script>\n</div>\n' +
         `<script>let daily = Math.floor(Date.now()/1000/60/60/24);document.write('<script src="${SHOWDOWN_SITE}js/replay-embed.js?version'+daily+'"></'+'script>');</` + 'script>\n'
       const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
-      const a = el('a', { href: url, download: `${info.format}-${PS.toID(info.me)}-${PS.toID(info.foe)}.html` })
+      const a = el('a', { href: url, download: `${info.format}-${four ? SHOWDOWN_FOUR.map(s => PS.toID(nameOf(s))).join('-') : `${PS.toID(info.me)}-${PS.toID(info.foe)}`}.html` })
       document.body.append(a)
       a.click()
       a.remove()
@@ -1617,7 +2006,7 @@ function showdown(host, ctx, opts) {
     }
 
     // ── Controls ──
-    const activeMons = () => (request && request.side ? request.side.pokemon.slice(0, slots.length) : [])
+    const activeMons = () => (request && request.side ? request.side.pokemon.slice(0, decide.length) : [])
     const typeOf = id => PS.Dex.moves.get(id).type || 'Normal'
 
     const genDex = () => PS.Dex.forGen((battle.gen && battle.gen.num) || 9)
@@ -1627,7 +2016,8 @@ function showdown(host, ctx, opts) {
       const dex = genDex()
       const move = dex.moves.get(id)
       if (!move.exists || move.category === 'Status') return null
-      return slots.map(i => battle[foeSide].active[i]).filter(f => f && !f.fainted).map(f => {
+      const foes = four ? opponents().map(fieldMon) : slots.map(i => battle[foeSide].active[i])
+      return foes.filter(f => f && !f.fainted).map(f => {
         const types = f.types && f.types.length ? f.types : dex.species.get(f.speciesForme).types
         if (!dex.getImmunity(move.type, types)) return 0
         return Math.pow(2, dex.getEffectiveness(move.type, types))
@@ -1638,7 +2028,7 @@ function showdown(host, ctx, opts) {
       const move = dex.moves.get(id)
       if (!move.exists) return 0
       if (move.category === 'Status') return 25
-      const mine = battle[side].active[slot]
+      const mine = myLive(slot)
       const stab = mine && mine.types && mine.types.includes(move.type) ? 1.5 : 1
       const best = Math.max(0, ...(matchup(id) || [1]))
       return (move.basePower || 70) * stab * best * (move.accuracy === true ? 1 : move.accuracy / 100)
@@ -1649,7 +2039,7 @@ function showdown(host, ctx, opts) {
       let label = m.name || PS.Dex.moves.get(m.id).name
       let id = m.id
       let disabled = !!m.disabled
-      const live = battle[side].active[slot]
+      const live = myLive(slot)
       const dynamaxed = live && live.volatiles && live.volatiles.dynamax
       if (mech === 'zmove') {
         const z = active.zMoves && active.zMoves[j]
@@ -1698,8 +2088,8 @@ function showdown(host, ctx, opts) {
     // Which slots still need a decision this turn.
     function slotsToDecide() {
       if (!request) return []
-      if (request.requestType === 'switch') return slots.filter(i => request.forceSwitch && request.forceSwitch[i])
-      if (request.requestType === 'move') return slots.filter(i => request.active && request.active[i] && !(request.side.pokemon[i] || {}).commanding)
+      if (request.requestType === 'switch') return decide.filter(i => request.forceSwitch && request.forceSwitch[i])
+      if (request.requestType === 'move') return decide.filter(i => request.active && request.active[i] && !(request.side.pokemon[i] || {}).commanding)
       return []
     }
 
@@ -1709,8 +2099,8 @@ function showdown(host, ctx, opts) {
       mech = ''
       const left = slotsToDecide().filter(i => pending[i] === undefined)
       if (left.length) return renderControls()
-      const all = slots.map(i => (pending[i] !== undefined ? pending[i] : 'pass'))
-      send(doubles ? all.join(', ') : all[0])
+      const all = decide.map(i => (pending[i] !== undefined ? pending[i] : 'pass'))
+      send(all.length > 1 ? all.join(', ') : all[0])
     }
 
     function send(choice) {
@@ -1732,14 +2122,14 @@ function showdown(host, ctx, opts) {
       }
       if (spectator) {
         pkFill(controls, el('div', { class: 'row pk-wait' },
-          el('p', { class: 'muted' }, `Watching ${info.me} and ${info.foe}.`),
+          el('p', { class: 'muted' }, four ? `Watching ${SHOWDOWN_FOUR.map(nameOf).join(', ')}.` : `Watching ${info.me} and ${info.foe}.`),
           el('button', { type: 'button', class: 'link', onClick: io.back }, 'Leave')))
         return
       }
       if (!request || request.requestType === 'wait' || waiting || pumping || nextRequest) {
         const canCancel = waiting && request && request.requestType !== 'wait' && !pumping
         pkFill(controls, el('div', { class: 'row pk-wait' },
-          el('p', { class: 'muted' }, !request ? 'Starting the battle…' : pumping ? '…' : `Waiting for ${info.foe}…`),
+          el('p', { class: 'muted' }, !request ? 'Starting the battle…' : pumping ? '…' : four && fieldMon(player) && fieldMon(player).fainted && request.requestType === 'wait' && !(request.side.pokemon || []).some(p => !p.fainted) ? 'You\'re out. Watching the rest…' : `Waiting for ${four ? 'the others' : info.foe}…`),
           canCancel && el('button', { type: 'button', onClick: () => { waiting = false; pending = []; io.choose('undo'); renderControls() } }, 'Cancel'),
           el('button', { type: 'button', class: 'link', onClick: io.back }, 'Leave')))
         return
@@ -1798,14 +2188,25 @@ function showdown(host, ctx, opts) {
         const t = targeting.target
         const opts = []
         const foeActive = battle[foeSide].active
-        if (['normal', 'any', 'adjacentFoe'].includes(t)) {
+        if (four) {
+          // Everyone else on the field, by where they stand.
+          const ally = allyOf()
+          for (const s of others()) {
+            const ok = ['normal', 'any'].includes(t) || (t === 'adjacentFoe' && s !== ally) || (['adjacentAlly', 'adjacentAllyOrSelf'].includes(t) && s === ally)
+            if (!ok) continue
+            const p = fieldMon(s)
+            opts.push({ label: p ? `${p.name} (${s === ally ? 'your partner' : nameOf(s)})` : nameOf(s), n: targetLoc(s), ok: !!p && !p.fainted })
+          }
+          if (t === 'adjacentAllyOrSelf') opts.push({ label: `${now.name} (itself)`, n: targetLoc(player), ok: true })
+          if (!opts.length) return commit(slot, `move ${targeting.j + 1}${targeting.mech ? ` ${targeting.mech}` : ''}`)
+        } else if (['normal', 'any', 'adjacentFoe'].includes(t)) {
           for (const i of slots) opts.push({ label: foeActive[i] ? `${foeActive[i].name} (theirs)` : `Their slot ${i + 1}`, n: i + 1, ok: !!foeActive[i] && !foeActive[i].fainted })
         }
-        if (['normal', 'any', 'adjacentAlly', 'adjacentAllyOrSelf'].includes(t)) {
+        if (!four && ['normal', 'any', 'adjacentAlly', 'adjacentAllyOrSelf'].includes(t)) {
           const ally = slot ^ 1
           if (team[ally]) opts.push({ label: `${team[ally].name} (yours)`, n: -(ally + 1), ok: !team[ally].fainted })
         }
-        if (t === 'adjacentAllyOrSelf') opts.push({ label: `${now.name} (itself)`, n: -(slot + 1), ok: true })
+        if (!four && t === 'adjacentAllyOrSelf') opts.push({ label: `${now.name} (itself)`, n: -(slot + 1), ok: true })
         pkFill(controls, 
           el('p', { class: 'pk-prompt' }, `${PS.Dex.moves.get(active.moves[targeting.j].id).name}: who should ${now.name} target?`),
           el('div', { class: 'pk-targets' }, opts.map(o => el('button', { type: 'button', disabled: !o.ok, onClick: () => commit(slot, `move ${targeting.j + 1} ${o.n}${targeting.mech ? ` ${targeting.mech}` : ''}`) }, o.label))),
@@ -1880,10 +2281,12 @@ function showdown(host, ctx, opts) {
         battle.add(args, kwArgs)
         if (text) addText(text)
         try { effects(kind, args, kwArgs, before) } catch (e) { /* effects are only decoration */ }
+        if (four && ['switch', 'drag', 'replace'].includes(kind)) onField[String(args[1]).slice(0, 2)] = String(args[1])
         if (kind === 'switch' || kind === 'drag') { cry(String(args[2] || '').split(',')[0]); setTimeout(() => animate(args[1], 'enter'), 0) }
         if (kind === '-damage') animate(args[1], 'hit')
         if (kind === 'turn') turn = Number(args[1]) || turn
-        if (kind === 'win') finish(args[1] === (battle[side] && battle[side].name) ? 'win' : 'lose', args[1])
+        // A Multi win names both partners: "A & B".
+        if (kind === 'win') finish((four ? String(args[1]).split(' & ') : [args[1]]).includes(battle[player] && battle[player].name) ? 'win' : 'lose', args[1])
         if (kind === 'tie') finish('tie')
         delay = Math.max(delay, DELAYS[kind] || 0)
       }
@@ -1927,7 +2330,7 @@ function showdown(host, ctx, opts) {
 
     // Who carried the battle: damage dealt (in % of HP) and KOs.
     function summary() {
-      const rows = Object.values(credits).filter(c => spectator || c.side === side)
+      const rows = Object.values(credits).filter(c => spectator || c.side === player)
       if (!rows.length) return null
       const score = c => c.dealt + c.kos * 40
       rows.sort((a, b) => score(b) - score(a))
@@ -1937,13 +2340,13 @@ function showdown(host, ctx, opts) {
         el('div', { class: 'pk-summary-rows' }, rows.slice(1, 6).map(c => el('span', { class: 'muted small' }, `${c.name} ${Math.round(c.dealt)}% · ${c.kos} KO`))))
     }
 
-    function finish(kind, who) {
+    function finish(kind, who, title) {
       if (result) return
       result = kind
       music(false)
       banner.hidden = false
       pkFill(banner, 
-        el('p', { class: 'wordmark' }, spectator ? `${who || 'Nobody'} won` : kind === 'win' ? 'You won!' : kind === 'lose' ? `${who} won` : 'It\'s a tie'),
+        el('p', { class: 'wordmark' }, title || (spectator ? `${who || 'Nobody'} won` : kind === 'win' ? 'You won!' : kind === 'lose' ? `${who} won` : 'It\'s a tie')),
         el('p', { class: 'muted small' }, spectator ? 'GG.' : kind === 'win' ? 'GG.' : kind === 'lose' ? 'Better luck next time.' : 'Nobody\'s left standing.'),
         summary())
       if (kind === 'win' && !spectator) for (let i = 0; i < 8; i++) setTimeout(() => floatEmote(pick(['🎉', '✨', '🏆', '🔥'])), i * 140)
