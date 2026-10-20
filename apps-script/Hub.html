@@ -108,6 +108,27 @@ body:has(.page.mc:not([hidden])) { color: #2d2f33; }
 .hub-key .name { font: 700 13px var(--hub-sans); }
 .hub-key .sub { font: 10px var(--hub-mono); color: #6b6457; text-transform: uppercase; letter-spacing: 0.06em; }
 .hub-note { font: 12px var(--hub-mono); color: #b8b1a1; }
+/* Invites: a floating button while you're in a room, and the popup a friend gets. */
+.hub-fab { position: fixed; right: 16px; bottom: 16px; z-index: 45; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; font-family: 'IBM Plex Mono', var(--mono-font); }
+.hub-fab-btn { border: none; border-radius: 999px; padding: 10px 16px; background: linear-gradient(180deg, #ffc23d, #f0a000); color: #2d2f33; font: 700 12px 'IBM Plex Sans Condensed', var(--display); letter-spacing: 0.12em; text-transform: uppercase;
+  box-shadow: 0 3px 0 #a86f00, 0 8px 22px rgba(0, 0, 0, 0.45); cursor: pointer; }
+.hub-fab-btn:hover:not(:disabled) { border: none; color: #2d2f33; box-shadow: 0 3px 0 #a86f00, 0 0 18px rgba(255, 176, 0, 0.6); }
+.hub-fab-list { width: min(320px, calc(100vw - 32px)); max-height: 50vh; overflow-y: auto; padding: 10px; border-radius: 14px; background: #2d2f33; color: #ece6d8; box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5); display: flex; flex-direction: column; gap: 6px; }
+.hub-fab-list .ttl { font: 700 11px 'IBM Plex Sans Condensed', sans-serif; letter-spacing: 0.2em; text-transform: uppercase; color: #ffb000; padding: 2px 4px 6px; }
+.hub-fab-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: #17181b; font-size: 13px; }
+.hub-fab-row .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ffb000; }
+.hub-fab-row .what { display: block; font-size: 10px; color: #9b7a37; }
+.hub-fab-row button, .hub-invite button { border: none; border-radius: 8px; padding: 6px 10px; font: 700 11px 'IBM Plex Sans Condensed', sans-serif; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer;
+  background: linear-gradient(180deg, #7aa58e, #5c8a72); color: #fff; box-shadow: 0 2px 0 #3c5c4b; }
+.hub-fab-row button:disabled { background: #4a4c50; box-shadow: none; color: #b8b1a1; opacity: 1; }
+.hub-fab-row button:hover:not(:disabled), .hub-invite button:hover:not(:disabled) { border: none; color: #fff; box-shadow: 0 2px 0 #3c5c4b, 0 0 10px rgba(92, 138, 114, 0.7); }
+.hub-invites { position: fixed; top: 16px; right: 16px; z-index: 48; display: flex; flex-direction: column; gap: 8px; width: min(340px, calc(100vw - 32px)); }
+.hub-invite { padding: 12px 14px; border-radius: 14px; background: #2d2f33; color: #ece6d8; box-shadow: inset 4px 0 0 #ffb000, 0 14px 30px rgba(0, 0, 0, 0.5); font: 13px/1.4 'IBM Plex Mono', var(--mono-font); animation: hub-pop 0.25s ease-out; }
+.hub-invite strong { color: #ffb000; }
+.hub-invite .row { margin-top: 8px; gap: 8px; }
+.hub-invite button.no { background: linear-gradient(180deg, #f6f1e5, #ddd5c2); color: #2d2f33; box-shadow: 0 2px 0 #9f9886; }
+.hub-invite button.no:hover:not(:disabled) { color: #2d2f33; box-shadow: 0 2px 0 #9f9886; }
+@keyframes hub-pop { from { transform: translateY(-8px); opacity: 0; } }
 @media (max-width: 860px) {
   .hub-wide, .hub-narrow, .hub-half { grid-column: 1 / -1; }
   .hub-clock { font-size: 18px; }
@@ -153,6 +174,11 @@ const Hub = (() => {
   let query = ''
   let kind = 'movie'
   let watchCode = ''
+  const invited = {}          // id -> when we last invited them
+  const INVITE_GAP = 30000
+  let fabOpen = false
+  const fab = el('div', { class: 'hub-fab', hidden: true })
+  const invites = el('div', { class: 'hub-invites', 'aria-live': 'polite' })
 
   const read = (key, fallback) => { try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v) } catch (e) { return fallback } }
   const write = (key, v) => { try { localStorage.setItem(key, JSON.stringify(v)) } catch (e) { /* private mode */ } }
@@ -168,17 +194,24 @@ const Hub = (() => {
     if (channel || !partyReady() || !shown) return
     const cfg = S.cfg
     sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey)
-    channel = sb.channel('ds-hub', { config: { presence: { key: me } } })
+    channel = sb.channel('ds-hub', { config: { presence: { key: me }, broadcast: { self: false } } })
     channel.on('presence', { event: 'sync' }, () => {
       others = Object.values(channel.presenceState()).map(m => m[m.length - 1]).filter(p => p.id !== me)
       others.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
       if (visible) draw()
+      drawFab()
     })
+    channel.on('broadcast', { event: 'invite' }, ({ payload }) => {
+      if (payload && payload.to === me && payload.act) showInvite(payload)
+    })
+    // Re-announce on every (re)subscribe, or a reconnect would leave us
+    // missing from everyone's list.
     channel.subscribe(status => {
-      if (status !== 'SUBSCRIBED' || subscribed) return
+      if (status !== 'SUBSCRIBED') return
       subscribed = true
       track()
       if (visible) draw()
+      drawFab()
     })
   }
   function disconnect() {
@@ -187,16 +220,69 @@ const Hub = (() => {
     channel = null
     subscribed = false
     others = []
+    drawFab()
   }
   const partyReady = () => !!(S.cfg && S.cfg.supabaseUrl && S.cfg.supabaseKey && window.supabase)
   function track() {
+    drawFab()
     if (!channel || !subscribed) return
     channel.track({ id: me, joinedAt, name: storedName() || 'Someone', act: hubActivityNow })
+  }
+
+  // ── Invites ──
+  const myRoom = () => (hubActivityNow && hubActivityNow.joinable && hubActivityNow.code ? hubActivityNow : null)
+  const inMyRoom = p => { const r = myRoom(); return !!(r && p.act && p.act.game === r.game && p.act.code === r.code) }
+  const canInvite = p => !!(myRoom() && channel && subscribed && !inMyRoom(p))
+  function invite(p) {
+    const room = myRoom()
+    if (!room || !channel || !subscribed) return
+    if (invited[p.id] && Date.now() - invited[p.id] < INVITE_GAP) return
+    invited[p.id] = Date.now()
+    channel.send({ type: 'broadcast', event: 'invite', payload: { to: p.id, from: me, name: storedName() || 'Someone', act: room } })
+    setTimeout(() => { drawFab(); if (visible) draw() }, INVITE_GAP + 50)
+    drawFab()
+    if (visible) draw()
+  }
+  function inviteButton(p, cls) {
+    if (!canInvite(p)) return null
+    const recent = invited[p.id] && Date.now() - invited[p.id] < INVITE_GAP
+    return el('button', { type: 'button', class: cls || '', disabled: !!recent, onClick: () => invite(p) }, recent ? 'Invited ✓' : 'Invite')
+  }
+  // Someone invited us: a popup wherever we are in DEBROD.
+  function showInvite(pl) {
+    const a = pl.act
+    const here = hubActivityNow && hubActivityNow.game === a.game && hubActivityNow.code === a.code
+    if (here) return
+    for (const old of [...invites.children]) if (old.dataset.key === `${a.game}:${a.code}`) old.remove()
+    const box = el('div', { class: 'hub-invite', 'data-key': `${a.game}:${a.code}` },
+      el('div', null, '🎟 ', el('strong', null, String(pl.name || 'Someone').slice(0, 18)), ` invited you to ${String(a.label || a.game).slice(0, 60)}${a.code ? ` · ${a.code}` : ''}.`),
+      el('div', { class: 'row' },
+        el('button', { type: 'button', onClick: () => { box.remove(); join({ act: a }) } }, 'Join'),
+        el('button', { type: 'button', class: 'no', onClick: () => box.remove() }, 'Not now')))
+    invites.append(box)
+    if (!invites.isConnected) document.body.append(invites)
+    setTimeout(() => box.remove(), 45000)
+  }
+  // While we're in a room, a floating button to invite whoever's online.
+  function drawFab() {
+    const room = myRoom()
+    const list = room && channel && subscribed ? others.filter(p => !inMyRoom(p)) : []
+    if (!fab.isConnected) document.body.append(fab)
+    fab.hidden = !list.length || (visible && S.tab === 'home')
+    if (fab.hidden) { fabOpen = false; fab.replaceChildren(); return }
+    fill(fab,
+      fabOpen && el('div', { class: 'hub-fab-list' },
+        el('div', { class: 'ttl' }, `Invite to ${room.label}`),
+        list.map(p => el('div', { class: 'hub-fab-row' },
+          el('span', { class: 'who' }, p.name || 'Someone', el('span', { class: 'what' }, p.act ? `${p.act.joinable ? 'In' : 'Playing'} ${p.act.label}` : 'Standing by')),
+          inviteButton(p)))),
+      el('button', { type: 'button', class: 'hub-fab-btn', onClick: () => { fabOpen = !fabOpen; drawFab() } }, fabOpen ? 'Close' : `👥 Invite (${list.length} online)`))
   }
 
   function join(p) {
     const a = p.act
     if (!a || !a.joinable || !a.code) return
+    if (inRoom && typeof exitRoom === 'function') exitRoom()
     if (a.game === 'watch') {
       S.roomCode = a.code
       joinRoom({ preventDefault() {} })
@@ -346,7 +432,9 @@ const Hub = (() => {
                 el('span', { class: `hub-led ${p.act ? 'green' : 'amber'}` }),
                 el('span', { class: 'what' }, p.name || 'Someone',
                   el('span', { class: 'sub' }, p.act ? `${p.act.joinable ? 'In' : 'Playing'} ${p.act.label}${p.act.code ? ` · ${p.act.code}` : ''}` : 'Standing by')),
-                p.act && p.act.joinable && el('button', { type: 'button', class: 'go', onClick: () => join(p) }, 'Join'))))
+                inMyRoom(p) ? el('span', { class: 'hub-chip' }, 'In your room') : [
+                  p.act && p.act.joinable && el('button', { type: 'button', class: 'go', onClick: () => join(p) }, 'Join'),
+                  inviteButton(p, 'primary')])))
               : el('p', { class: 'dim' }, 'NOBODY ELSE ON THE LINE RIGHT NOW.')),
       party.length && el('p', { class: 'hub-note' }, 'Start something with friends:'),
       party.length && el('div', { class: 'hub-chips' }, party.map(g => el('button', { type: 'button', onClick: () => toArcade(g.id) }, `${g.icon} ${g.name}`))),
@@ -375,12 +463,13 @@ const Hub = (() => {
       visible = true
       connect()
       draw()
+      drawFab()
       clearInterval(tick)
       clearInterval(clockTick)
       tick = setInterval(() => { if (visible && !root.contains(document.activeElement)) draw() }, 30000)
       clockTick = setInterval(() => { const c = root.querySelector('.hub-clock'); if (c) c.textContent = clockText() }, 1000)
     },
-    hide() { visible = false; clearInterval(tick); clearInterval(clockTick) },
+    hide() { visible = false; clearInterval(tick); clearInterval(clockTick); drawFab() },
     refresh() { if (visible) draw() },
     track,
   }
