@@ -1,29 +1,30 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Sans+Condensed:wght@500;600;700&display=swap');
-/* ── Home: the hub, as a 70s mission-control console ──
-   Only Home looks like this: warm off-white casing, charcoal panels with
-   labelled plates and corner screws, amber readouts on dark screens,
-   chunky keys, rounded switches and indicator lamps. The rest of DEBROD
+/* ── Mission control: the look Home and Study share ──
+   A 70s mission-control console: warm off-white casing, charcoal panels
+   with labelled plates and corner screws, amber readouts on dark screens,
+   chunky keys, rounded switches and indicator lamps. Pages opt in with
+   class "mc" (App.html gives it to Home and Study); the rest of DEBROD
    keeps its neon look. */
-.hub {
+.mc {
   --hub-paper: #ece6d8; --hub-paper-2: #e2dbc9; --hub-ink: #2d2f33; --hub-ink-2: #3a3c41; --hub-screen: #17181b;
   --hub-amber: #ffb000; --hub-red: #d9482b; --hub-green: #5c8a72; --hub-dim: #8a8578;
   --hub-sans: 'IBM Plex Sans Condensed', 'Arial Narrow', system-ui, sans-serif;
   --hub-mono: 'IBM Plex Mono', ui-monospace, monospace;
-  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px;
   color: var(--hub-ink); font-family: var(--hub-sans);
 }
+.hub { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
 /* The page around it: paper instead of the neon sky, no grid, no scanlines. */
-html:has(.page:not([hidden]) > .hub) { background: #ece6d8 radial-gradient(rgba(45, 47, 51, 0.07) 1px, transparent 1.2px) 0 0 / 5px 5px fixed; }
-body:has(.page:not([hidden]) > .hub) #backdrop, body:has(.page:not([hidden]) > .hub)::after { display: none; }
-body:has(.page:not([hidden]) > .hub) { color: #2d2f33; }
-.page:has(> .hub) { max-width: 1120px; }
-.page:has(> .hub) .wordmark { background: none; color: #2d2f33; filter: none; font: 700 28px/1 'IBM Plex Sans Condensed', system-ui, sans-serif; letter-spacing: 0.22em; }
-.page:has(> .hub) .tagline { color: #6b6457; text-shadow: none; font-family: 'IBM Plex Mono', monospace; }
-.page:has(> .hub) .tabs { gap: 4px; padding: 4px; background: #2d2f33; border-radius: 999px; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 1px 0 #fff; }
-.page:has(> .hub) .tabs .link { padding: 6px 12px; border-radius: 999px; color: #ece6d8; font: 600 11px 'IBM Plex Sans Condensed', sans-serif; letter-spacing: 0.16em; }
-.page:has(> .hub) .tabs .link.on { background: #ffb000; color: #2d2f33; text-shadow: none; box-shadow: 0 0 10px rgba(255, 176, 0, 0.5); }
-.page:has(> .hub) .tabs .link:hover:not(.on) { color: #ffb000; text-shadow: none; }
+html:has(.page.mc:not([hidden])) { background: #ece6d8 radial-gradient(rgba(45, 47, 51, 0.07) 1px, transparent 1.2px) 0 0 / 5px 5px fixed; }
+body:has(.page.mc:not([hidden])) #backdrop, body:has(.page.mc:not([hidden]))::after { display: none; }
+body:has(.page.mc:not([hidden])) { color: #2d2f33; }
+.page.mc { max-width: 1120px; }
+.page.mc .wordmark { background: none; color: #2d2f33; filter: none; font: 700 28px/1 'IBM Plex Sans Condensed', system-ui, sans-serif; letter-spacing: 0.22em; }
+.page.mc .tagline { color: #6b6457; text-shadow: none; font-family: 'IBM Plex Mono', monospace; }
+.page.mc .tabs { gap: 4px; padding: 4px; background: #2d2f33; border-radius: 999px; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 1px 0 #fff; }
+.page.mc .tabs .link { padding: 6px 12px; border-radius: 999px; color: #ece6d8; font: 600 11px 'IBM Plex Sans Condensed', sans-serif; letter-spacing: 0.16em; }
+.page.mc .tabs .link.on { background: #ffb000; color: #2d2f33; text-shadow: none; box-shadow: 0 0 10px rgba(255, 176, 0, 0.5); }
+.page.mc .tabs .link:hover:not(.on) { color: #ffb000; text-shadow: none; }
 
 /* Panels */
 .hub-panel { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 14px 18px 18px; border-radius: 16px; background: linear-gradient(180deg, var(--hub-ink-2), var(--hub-ink)); color: var(--hub-paper);
@@ -61,21 +62,21 @@ body:has(.page:not([hidden]) > .hub) { color: #2d2f33; }
 .hub-half { grid-column: span 6; }
 
 /* Controls inside the hub: keys, screens and switches */
-.hub button { font: 600 12px var(--hub-sans); letter-spacing: 0.1em; text-transform: uppercase; color: var(--hub-ink); background: linear-gradient(180deg, #f6f1e5, #ddd5c2);
+.mc button { font: 600 12px var(--hub-sans); letter-spacing: 0.1em; text-transform: uppercase; color: var(--hub-ink); background: linear-gradient(180deg, #f6f1e5, #ddd5c2);
   border: none; border-radius: 10px; padding: 9px 14px; box-shadow: 0 3px 0 #9f9886, inset 0 1px 0 #fff; transition: transform 0.08s, box-shadow 0.08s, background 0.15s; }
-.hub button:hover:not(:disabled) { background: linear-gradient(180deg, #fffaf0, #e8e0cc); color: var(--hub-ink); box-shadow: 0 3px 0 #9f9886, inset 0 1px 0 #fff; border: none; }
-.hub button:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #9f9886, inset 0 1px 0 #fff; }
-.hub button.primary { background: linear-gradient(180deg, #ffc23d, #f0a000); box-shadow: 0 3px 0 #a86f00, inset 0 1px 0 #ffe0a0; color: var(--hub-ink); }
-.hub button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ffcf5e, #ffb000); box-shadow: 0 3px 0 #a86f00, inset 0 1px 0 #ffe0a0; }
-.hub button.go { background: linear-gradient(180deg, #7aa58e, #5c8a72); color: #fff; box-shadow: 0 3px 0 #3c5c4b, inset 0 1px 0 #a6c9b5; }
-.hub button.go:hover:not(:disabled) { background: linear-gradient(180deg, #86b29a, #66957c); color: #fff; box-shadow: 0 3px 0 #3c5c4b, inset 0 1px 0 #a6c9b5; }
-.hub button.link { background: none; box-shadow: none; padding: 2px 4px; color: var(--hub-amber); font: 600 11px var(--hub-mono); letter-spacing: 0.12em; }
-.hub button.link:hover:not(:disabled) { background: none; box-shadow: none; color: #ffd06b; text-shadow: none; }
-.hub .hub-paper button.link { color: #8a5a00; }
-.hub input { background: var(--hub-screen); color: var(--hub-amber); border: 1px solid #45474c; border-radius: 10px; font: 15px var(--hub-mono); caret-color: var(--hub-amber); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.7); }
-.hub input::placeholder { color: #8a6f3a; }
-.hub input:focus { border-color: var(--hub-amber); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.7), 0 0 0 3px rgba(255, 176, 0, 0.25); }
-.hub .hub-paper input { background: #fffaf0; color: var(--hub-ink); border-color: #c9c1ad; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15); caret-color: var(--hub-ink); }
+.mc button:hover:not(:disabled) { background: linear-gradient(180deg, #fffaf0, #e8e0cc); color: var(--hub-ink); box-shadow: 0 3px 0 #9f9886, inset 0 1px 0 #fff; border: none; }
+.mc button:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #9f9886, inset 0 1px 0 #fff; }
+.mc button.primary { background: linear-gradient(180deg, #ffc23d, #f0a000); box-shadow: 0 3px 0 #a86f00, inset 0 1px 0 #ffe0a0; color: var(--hub-ink); }
+.mc button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ffcf5e, #ffb000); box-shadow: 0 3px 0 #a86f00, inset 0 1px 0 #ffe0a0; }
+.mc button.go { background: linear-gradient(180deg, #7aa58e, #5c8a72); color: #fff; box-shadow: 0 3px 0 #3c5c4b, inset 0 1px 0 #a6c9b5; }
+.mc button.go:hover:not(:disabled) { background: linear-gradient(180deg, #86b29a, #66957c); color: #fff; box-shadow: 0 3px 0 #3c5c4b, inset 0 1px 0 #a6c9b5; }
+.mc button.link { background: none; box-shadow: none; padding: 2px 4px; color: var(--hub-amber); font: 600 11px var(--hub-mono); letter-spacing: 0.12em; }
+.mc button.link:hover:not(:disabled) { background: none; box-shadow: none; color: #ffd06b; text-shadow: none; }
+.mc .hub-paper button.link { color: #8a5a00; }
+.mc input { background: var(--hub-screen); color: var(--hub-amber); border: 1px solid #45474c; border-radius: 10px; font: 15px var(--hub-mono); caret-color: var(--hub-amber); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.7); }
+.mc input::placeholder { color: #8a6f3a; }
+.mc input:focus { border-color: var(--hub-amber); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.7), 0 0 0 3px rgba(255, 176, 0, 0.25); }
+.mc .hub-paper input { background: #fffaf0; color: var(--hub-ink); border-color: #c9c1ad; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15); caret-color: var(--hub-ink); }
 .hub-rocker { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--hub-screen); box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.8); }
 .hub .hub-rocker button { border-radius: 999px; padding: 5px 12px; background: none; box-shadow: none; color: #b8b1a1; }
 .hub .hub-rocker button:hover:not(:disabled) { background: none; box-shadow: none; color: var(--hub-amber); }

@@ -353,7 +353,7 @@ function bootScreen(tab, first) {
   if (bootEl) bootEl.remove()
   const lines = bootLines(tab, first)
   const out = el('pre', { class: 'boot-text' })
-  const node = el('div', { class: `boot ${tab === 'home' ? 'amber' : ''}`, 'aria-hidden': 'true' }, out)
+  const node = el('div', { class: `boot ${tab === 'home' || tab === 'study' ? 'amber' : ''}`, 'aria-hidden': 'true' }, out)
   bootEl = node
   document.body.append(node)
   const step = first ? 85 : 55
@@ -390,7 +390,7 @@ function render() {
   const study = S.tab === 'study'
   const home = S.tab === 'home' && typeof Hub !== 'undefined'
   backdrop.hidden = false
-  if (!homePage && typeof Hub !== 'undefined') homePage = el('main', { class: 'page' }, el('header'), Hub.root)
+  if (!homePage && typeof Hub !== 'undefined') homePage = el('main', { class: 'page mc' }, el('header'), Hub.root)
   if (homePage) {
     homePage.firstElementChild.replaceWith(header())
     homePage.hidden = !home
@@ -402,7 +402,7 @@ function render() {
   if (arcade) Arcade.show()
   else Arcade.hide()
   const hasStudy = typeof Study !== 'undefined'
-  if (!studyPage || !studyPage.isConnected) studyPage = el('main', { class: 'page' }, el('header'), hasStudy ? Study.root : studyMissing())
+  if (!studyPage || !studyPage.isConnected) studyPage = el('main', { class: 'page mc' }, el('header'), hasStudy ? Study.root : studyMissing())
   studyPage.firstElementChild.replaceWith(header())
   studyPage.hidden = !study
   if (hasStudy) { if (study) Study.show(); else Study.hide() }

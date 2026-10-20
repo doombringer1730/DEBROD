@@ -49,7 +49,8 @@ link (as are `?scribble=`, `?showdown=`, `?cards=` and `?sea=` for the games).
 ## Home
 
 DEBROD opens on **Home**, a hub dressed as a 70s mission-control console
-(the rest of DEBROD keeps its neon look). It shows what's due in Study,
+(Study shares the look, with flashcards as ruled index cards; the rest of
+DEBROD keeps its neon look). It shows what's due in Study,
 games to jump back into (with Star Sling's endless level), a quick search
 and watch-party join, and **Online now**: everyone else on your DEBROD,
 what they're doing, and a **Join** button for their Scribble, Showdown,
