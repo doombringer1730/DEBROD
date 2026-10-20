@@ -1715,6 +1715,13 @@ function showdown(host, ctx, opts) {
     let lastMover = null        // who used the last move, to credit damage and KOs
     const credits = {}          // per Pokémon: damage dealt (in % of HP) and KOs
     const lastShown = { p1: [null, null], p2: [null, null] }
+    const teraUsed = {}         // per trainer: the type they Terastallized into
+    const teraColor = t => TYPE_COLORS[t] || '#fff'
+    // Which Pokémon have Terastallized, from the log: the battle model loses
+    // it for our own side each time it reads a request.
+    const teraMons = {}
+    const monKey = ident => String(ident || '').replace(/^(p\d)[a-d]?: /, '$1: ')
+    const teraOf = poke => (!poke ? '' : poke.isTerastallized ? poke.teraType : teraMons[monKey(poke.originalIdent || poke.ident)] || '')
 
     // Field: up to two Pokémon a side.
     const sprites = { p1: [], p2: [] }
@@ -1862,7 +1869,7 @@ function showdown(host, ctx, opts) {
     function myTip(p) {
       const sp = PS.Dex.species.get(p.speciesForme)
       const live = battle[player].team.find(x => x.originalIdent === p.ident) || null
-      const types = live && live.isTerastallized ? [live.teraType] : sp.types
+      const types = p.terastallized ? [p.terastallized] : live && teraOf(live) ? [teraOf(live)] : sp.types
       return [
         el('p', { class: 'name' }, `${p.name}${p.name !== sp.name ? ` (${sp.name})` : ''} `, el('span', { class: 'muted' }, `L${p.level}`)),
         typeChips(types),
@@ -1910,6 +1917,10 @@ function showdown(host, ctx, opts) {
       const key = `${id}${back ? ':b' : ''}${poke.shiny ? ':s' : ''}`
       img.hidden = false
       img.classList.toggle('fainted', !!poke.fainted)
+      // Terastallized: a glow in its Tera type's colour.
+      const tera = teraOf(poke)
+      img.classList.toggle('tera', !!tera)
+      if (tera) img.style.setProperty('--tera', teraColor(tera))
       if (img.dataset.id === key) return
       img.dataset.id = key
       const shiny = poke.shiny ? '-shiny' : ''
@@ -1943,13 +1954,15 @@ function showdown(host, ctx, opts) {
           four && owner && el('span', { class: `pk-owner ${owner === player && !spectator ? 'you' : multi && owner === allyOf() ? 'ally' : ''}` }, owner === player && !spectator ? 'You' : nameOf(owner)),
           el('strong', null, poke.name),
           el('span', { class: 'muted' }, ` L${poke.level}`),
-          poke.isTerastallized && el('span', { class: 'pk-type', style: `background: ${TYPE_COLORS[poke.teraType] || '#888'}` }, `Tera ${poke.teraType}`)),
+          teraOf(poke) && el('span', { class: 'pk-tera-badge', style: `--tera: ${teraColor(teraOf(poke))}`, title: `Terastallized into ${teraOf(poke)}` }, `💎 Tera ${teraOf(poke)}`)),
         el('div', { class: 'pk-hp' }, el('div', { class: `pk-hp-fill ${hpClass(frac)}`, style: `width: ${Math.max(0, pct)}%` })),
         el('div', { class: 'pk-hp-text' },
           mine ? `${Math.max(0, Math.round(mine.hp))}/${mine.maxhp} HP` : `${pct}%`,
           status && el('span', { class: `pk-status ${status}` }, status.toUpperCase()),
           boosts.map(([stat, v]) => el('span', { class: `pk-boost ${v > 0 ? 'up' : 'down'}` }, `${v > 0 ? '+' : ''}${v} ${STAT_NAMES[stat] || stat}`)),
           vol.map(v => el('span', { class: 'pk-vol' }, v.replace(/^./, c => c.toUpperCase())))))
+      box.classList.toggle('tera', !!teraOf(poke))
+      if (teraOf(poke)) box.style.setProperty('--tera', teraColor(teraOf(poke)))
       box.onpointerenter = null
       box._tip = () => (mine ? myTip(mine) : foeTip(poke))
     }
@@ -1957,12 +1970,17 @@ function showdown(host, ctx, opts) {
     // Six balls per side: who's still standing, and how many of theirs
     // we've seen.
     function drawBalls(target, sideObj, sideId) {
-      pkFill(target, ...ballNodes(sideObj, sideId))
+      pkFill(target, ...ballNodes(sideObj, sideId), teraChip(sideId))
+    }
+    // Each trainer can Terastallize once a battle.
+    function teraChip(sideId) {
+      const t = teraUsed[sideId]
+      return t ? el('span', { class: 'pk-tera-used', style: `--tera: ${teraColor(t.type)}`, title: `${t.name} Terastallized into ${t.type}` }, '💎 Tera used') : null
     }
     // Four players: each trainer on this half gets a labelled row.
     function drawBallsFour(target, half) {
       pkFill(target, SHOWDOWN_FOUR.filter(s => halfOf(s) === half && battle[s]).map(s =>
-        el('div', { class: 'pk-ballrow' }, el('span', { class: 'pk-ballname' }, s === player && !spectator ? 'You' : nameOf(s)), ballNodes(battle[s], s))))
+        el('div', { class: 'pk-ballrow' }, el('span', { class: 'pk-ballname' }, s === player && !spectator ? 'You' : nameOf(s)), ballNodes(battle[s], s), teraChip(s))))
     }
     function ballNodes(sideObj, sideId) {
       const team = sideObj.team || []
@@ -1970,7 +1988,8 @@ function showdown(host, ctx, opts) {
       const out = []
       for (let i = 0; i < total; i++) {
         const p = team[i]
-        const b = el('span', { class: `pk-ball ${!p ? 'unknown' : p.fainted ? 'out' : ''}` })
+        const tera = teraOf(p)
+        const b = el('span', { class: `pk-ball ${!p ? 'unknown' : p.fainted ? 'out' : ''} ${tera ? 'tera' : ''}`, style: tera ? `--tera: ${teraColor(tera)}` : '' })
         if (p) tippable(b, () => (sideId === player && !spectator && request && request.side
           ? myTip(request.side.pokemon.find(x => x.ident === p.originalIdent) || {})
           : foeTip(p)))
@@ -2171,12 +2190,14 @@ function showdown(host, ctx, opts) {
     function teamButton(p, i, enabled, onPick) {
       const id = PS.Dex.species.get(p.speciesForme).spriteid || PS.toID(p.speciesForme)
       const frac = p.maxhp ? p.hp / p.maxhp : 0
+      const tera = p.terastallized || ''
       const b = el('button', {
-        type: 'button', class: `pk-mon ${p.fainted ? 'out' : ''} ${p.active ? 'active' : ''}`, disabled: !enabled || waiting,
+        type: 'button', class: `pk-mon ${p.fainted ? 'out' : ''} ${p.active ? 'active' : ''} ${tera ? 'tera' : ''}`, disabled: !enabled || waiting,
+        style: tera ? `--tera: ${teraColor(tera)}` : '',
         onClick: () => (onPick ? onPick() : null),
       },
         el('img', { src: `${SHOWDOWN_SPRITES}gen5/${id}.png`, alt: '', loading: 'lazy', onError: e => { e.target.style.visibility = 'hidden' } }),
-        el('span', { class: 'pk-mon-name' }, p.name),
+        el('span', { class: 'pk-mon-name' }, tera && el('span', { class: 'pk-mon-tera', title: `Terastallized into ${tera}` }, '💎 '), p.name),
         el('span', { class: `pk-mon-hp ${hpClass(frac)}` }, p.fainted ? 'fainted' : `${Math.round(frac * 100)}%`))
       return tippable(b, () => myTip(p))
     }
@@ -2381,6 +2402,10 @@ function showdown(host, ctx, opts) {
         if (kind === 'switch' || kind === 'drag') { cry(String(args[2] || '').split(',')[0]); setTimeout(() => animate(args[1], 'enter'), 0) }
         if (kind === '-damage') animate(args[1], 'hit')
         if (kind === 'turn') turn = Number(args[1]) || turn
+        if (kind === '-terastallize') {
+          teraUsed[sideOf(args[1])] = { type: args[2], name: String(args[1]).split(': ').slice(1).join(': ') }
+          teraMons[monKey(args[1])] = args[2]
+        }
         // A Multi win names both partners: "A & B".
         if (kind === 'win') finish((four ? String(args[1]).split(' & ') : [args[1]]).includes(battle[player] && battle[player].name) ? 'win' : 'lose', args[1])
         if (kind === 'tie') finish('tie')
