@@ -46,6 +46,8 @@ function openDebrod() {
   t.room = ''
   t.scribble = ''
   t.showdown = ''
+  t.cards = ''
+  t.sea = ''
   t.web = ''
   const html = t.evaluate()
     .setWidth(1200)
@@ -64,7 +66,8 @@ function openSettings() {
 
 // Run as a web app (Deploy → Web app): the same page full screen, with
 // ?page=settings for the keys, ?room=CODE for a watch-together invite and
-// ?scribble=CODE and ?showdown=CODE for Scribble and Pokémon Showdown ones.
+// ?scribble=CODE, ?showdown=CODE, ?cards=CODE and ?sea=CODE for Scribble,
+// Pokémon Showdown, Color Clash and Sea Battle ones.
 function doGet(e) {
   const params = (e && e.parameter) || {}
   const page = params.page === 'settings' ? 'Settings' : 'Index'
@@ -72,6 +75,8 @@ function doGet(e) {
   t.room = String(params.room || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 32)
   t.scribble = String(params.scribble || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8)
   t.showdown = String(params.showdown || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8)
+  t.cards = String(params.cards || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8)
+  t.sea = String(params.sea || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8)
   t.web = 'web'
   return t.evaluate()
     .setTitle(page === 'Settings' ? `${siteName_()} settings` : siteName_())

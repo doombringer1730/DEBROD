@@ -133,7 +133,7 @@ const S = {
   loading: false,
   error: null,
   roomCode: '',
-  tab: 'search', // or 'arcade'
+  tab: 'search', // or 'arcade', 'study'
 }
 let inRoom = false
 
@@ -283,6 +283,7 @@ function header() {
     el('nav', { class: 'tabs' },
       tab('search', 'Search'),
       tab('arcade', 'Arcade'),
+      tab('study', 'Study'),
       S.cfg.appUrl && document.body.dataset.web && el('a', { class: 'link', href: `${S.cfg.appUrl}?page=settings`, target: '_top' }, 'Settings')))
 }
 
@@ -312,23 +313,36 @@ function player(s) {
 // hidden, so a game carries on (Scribble keeps you in your room) and is
 // just as you left it when you come back.
 let arcadePage = null
+// Study (Study.html) keeps its page the same way, so a review session or a
+// half-typed assignment survives a trip to Search.
+let studyPage = null
+const studyMissing = () => el('div', { class: 'card stack' },
+  el('p', { class: 'name' }, 'Study.html is missing'),
+  el('p', { class: 'muted small' }, 'Add it in the Apps Script editor with + → HTML, named Study (no .html), paste in Study.html, and make sure Index has <?!= include(\'Study\') ?> after include(\'App\'). Then save and reload.'))
 
 function render() {
   if (inRoom || !S.cfg) return
   if (!S.playing) playerEl = null
   const arcade = S.tab === 'arcade'
+  const study = S.tab === 'study'
   backdrop.hidden = false
   if (!arcadePage || !arcadePage.isConnected) arcadePage = el('main', { class: 'page' }, el('header'), Arcade.root)
   arcadePage.firstElementChild.replaceWith(header())
   arcadePage.hidden = !arcade
   if (arcade) Arcade.show()
   else Arcade.hide()
+  const hasStudy = typeof Study !== 'undefined'
+  if (!studyPage || !studyPage.isConnected) studyPage = el('main', { class: 'page' }, el('header'), hasStudy ? Study.root : studyMissing())
+  studyPage.firstElementChild.replaceWith(header())
+  studyPage.hidden = !study
+  if (hasStudy) { if (study) Study.show(); else Study.hide() }
 
-  for (const n of [...app.children]) if (n !== arcadePage) n.remove()
-  const search = arcade ? null : el('main', { class: 'page' }, header(), view())
+  for (const n of [...app.children]) if (n !== arcadePage && n !== studyPage) n.remove()
+  const search = arcade || study ? null : el('main', { class: 'page' }, header(), view())
   if (search) app.prepend(search)
   if (!arcadePage.isConnected) app.append(arcadePage)
-  const f = (search || arcadePage).querySelector('[autofocus]')
+  if (!studyPage.isConnected) app.append(studyPage)
+  const f = (search || (study ? studyPage : arcadePage)).querySelector('[autofocus]')
   if (f) f.focus()
 }
 
@@ -870,7 +884,7 @@ call('getConfig')
       S.roomCode = code
       joinRoom({ preventDefault() {} })
     }
-    for (const game of ['scribble', 'showdown']) {
+    for (const game of ['scribble', 'showdown', 'cards', 'sea']) {
       const invite = document.body.dataset[game]
       if (invite && !code) {
         S.tab = 'arcade'

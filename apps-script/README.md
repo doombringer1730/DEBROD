@@ -11,6 +11,10 @@ keys live in the script's properties instead of environment variables.
 | `Code.gs` | Server side: the menu, settings, TMDB lookups, Torrentio URLs and room codes. |
 | `Index.html` | The page shell. |
 | `App.html` | The search, player and watch-together room (from `app/browser.tsx` and `app/watch/[room]/room.tsx`). |
+| `Study.html` | The Study tab: assignments with due dates and turn-in, flashcards, coins and the shop (from Hiranda's old Study section). |
+| `Party.html` | The Supabase rooms Color Clash and Sea Battle share. |
+| `Cards.html` | Color Clash, the color-matching card game. |
+| `Sea.html` | Sea Battle, the hide-your-fleet grid game. |
 | `Games.html` | The arcade's games. |
 | `Scribble.html` | Scribble, the multiplayer draw-and-guess game. |
 | `Showdown.html` | Pokémon Showdown battles, on Showdown's own simulator. |
@@ -23,7 +27,7 @@ keys live in the script's properties instead of environment variables.
 
 1. Create a Google Doc, then open **Extensions → Apps Script**.
 2. Replace `Code.gs` with the one here. Add the HTML files with **+ → HTML**,
-   named `Index`, `App`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
+   named `Index`, `App`, `Study`, `Party`, `Cards`, `Sea`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
    one in. To edit `appsscript.json`, turn on **Project Settings → Show
    "appsscript.json" manifest file in editor**.
 3. Save, reload the doc, and open **DEBROD → Settings**. Approve the
@@ -39,7 +43,7 @@ Or push it with [clasp](https://github.com/google/clasp): run
 
 **Deploy → New deployment → Web app** gives the same page full screen at its
 own URL. `?page=settings` opens the keys form, and `?room=CODE` is an invite
-link.
+link (as are `?scribble=`, `?showdown=`, `?cards=` and `?sea=` for the games).
 
 ## The arcade
 

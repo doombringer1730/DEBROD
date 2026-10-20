@@ -10,7 +10,7 @@
   <?!= include('Styles') ?>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 </head>
-<body data-room="<?= room ?>" data-scribble="<?= scribble ?>" data-showdown="<?= showdown ?>" data-web="<?= web ?>">
+<body data-room="<?= room ?>" data-scribble="<?= scribble ?>" data-showdown="<?= showdown ?>" data-cards="<?= cards ?>" data-sea="<?= sea ?>" data-web="<?= web ?>">
   <div id="backdrop" class="backdrop" aria-hidden="true">
     <div class="sky"><div class="sun"></div></div>
     <div class="horizon"></div>
@@ -18,6 +18,10 @@
   </div>
   <div id="app"></div>
   <?!= include('App') ?>
+  <?!= include('Study') ?>
+  <?!= include('Party') ?>
+  <?!= include('Cards') ?>
+  <?!= include('Sea') ?>
   <?!= include('Scribble') ?>
   <?!= include('Showdown') ?>
   <?!= include('StarSling') ?>
