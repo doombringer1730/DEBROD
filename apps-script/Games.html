@@ -1320,11 +1320,9 @@ const Arcade = (() => {
     }
   }
 
-  // Scribble (Scribble.html) and Pokémon Showdown (Showdown.html) live in
-  // their own files.
-
-  // Scribble and Pokémon Showdown come from their own files. If one isn't in
-  // the Apps Script project (or Index doesn't include it), its card says so
+  // Scribble (Scribble.html), Pokémon Showdown (Showdown.html) and Star
+  // Sling (StarSling.html) come from their own files. If one isn't in the
+  // Apps Script project (or Index doesn't include it), its card says so
   // instead of the whole arcade failing to load.
   function fromFile(fn, file) {
     if (typeof fn === 'function') return fn
@@ -1347,6 +1345,7 @@ const Arcade = (() => {
     { id: 'pong', name: 'Pong', icon: '🏓', blurb: 'You against the machine.', hint: '↑ ↓, mouse or finger moves your paddle.', start: pong },
     { id: 'mines', name: 'Minesweeper', icon: '💣', blurb: 'Ten mines. Fastest clear wins.', hint: 'Click to dig, right-click or flag mode to flag.', start: mines, lowerIsBetter: true, unit: 's' },
     { id: 'memory', name: 'Memory', icon: '🃏', blurb: 'Find the eight pairs in as few moves as you can.', hint: 'Click or tap two cards.', start: memory, lowerIsBetter: true, unit: ' moves' },
+    { id: 'sling', name: 'Star Sling', icon: '🌠', blurb: 'A memorial to Angry Birds Star Wars: sling heroes at trooper forts.', hint: 'Drag back and let go (or arrows to aim, Space to fire). Tap or Space mid-flight for the hero\'s power.', start: fromFile(typeof starSling === 'function' ? starSling : null, 'StarSling') },
     { id: 'doom', name: 'Doom', icon: '👹', blurb: 'The real thing: DoomPDF\'s engine, shareware episode one.', hint: 'Loads about 5 MB the first time. No sound.', start: doom, noScore: true },
     { id: 'scribble', name: 'Scribble', icon: '✏️', blurb: 'Draw and guess with friends, skribbl.io style, right here.', hint: 'Plays over your Supabase, like watch together. Make a room, then Invite. Switching to Search keeps you in the room.', start: fromFile(typeof scribble === 'function' ? scribble : null, 'Scribble'), noScore: true, noRestart: true },
     { id: 'showdown', name: 'Pokémon Showdown', icon: '⚔️', blurb: 'Random battles on Showdown\'s own engine, vs the CPU or a friend.', hint: 'Gen 9 Random Battles. Battling a friend runs over your Supabase, like Scribble. Hover a move for what it does.', start: fromFile(typeof showdown === 'function' ? showdown : null, 'Showdown'), noScore: true, noRestart: true },

@@ -387,7 +387,7 @@ a { color: var(--cyan); }
 .ttt .x { color: var(--cyan); text-shadow: var(--glow-cyan); }
 .ttt .o { color: var(--magenta); text-shadow: var(--glow-magenta); }
 
-.game-stage:has(.game-doom) { width: min(100%, 820px); }
+.game-stage:has(.game-doom), .game-stage:has(.game-sling) { width: min(100%, 820px); }
 .game-stage:has(.game-scribble) { width: 100%; touch-action: auto; user-select: auto; -webkit-user-select: auto; }
 .page:has(.game-scribble .sc-board) { max-width: 1480px; }
 .game-stage:has(.game-showdown) { width: 100%; touch-action: auto; user-select: auto; -webkit-user-select: auto; }
