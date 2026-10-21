@@ -14,6 +14,8 @@ keys live in the script's properties instead of environment variables.
 | `Chat.html` | The public chat: channels, messages, profiles and who's online. |
 | `App.html` | The search, player and watch-together room (from `app/browser.tsx` and `app/watch/[room]/room.tsx`). |
 | `Hub.html` | Home: the hub, styled as a 70s mission-control console. |
+| `Classes.html` | Classes and their shared assignments, inside Study. |
+| `Focus.html` | The focus timer and study rooms, on Study's home. |
 | `Study.html` | The Study tab: assignments with due dates and turn-in, flashcards, coins and the shop (from Hiranda's old Study section). |
 | `Party.html` | The Supabase rooms Color Clash and Sea Battle share. |
 | `Cards.html` | Color Clash, the color-matching card game. |
@@ -33,7 +35,7 @@ keys live in the script's properties instead of environment variables.
 
 1. Create a Google Doc, then open **Extensions → Apps Script**.
 2. Replace `Code.gs` with the one here. Add the HTML files with **+ → HTML**,
-   named `Index`, `App`, `Account`, `Chat`, `Themes`, `Hub`, `Study`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
+   named `Index`, `App`, `Account`, `Chat`, `Themes`, `Hub`, `Study`, `Classes`, `Focus`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
    one in. To edit `appsscript.json`, turn on **Project Settings → Show
    "appsscript.json" manifest file in editor**.
 3. Save, reload the doc, and open **DEBROD → Settings**. Approve the
@@ -322,14 +324,34 @@ saved to Supabase under your account (one result per 15 seconds at most).
 ## Study
 
 **Study** is Hiranda's old Study section (as it was before it became
-Grow), for one person and saved in this browser: assignments with due
+Grow), now saved to your account: assignments with due
 dates ("2d overdue", "due today", "in 4 days"), turned in once for XP and
 coins, on a month calendar; flashcard sets you can paste in, studied with
 Learn, Write, Quiz, Match, Flashcards or spaced-repetition Review; and
 health, coins with a daily cap, a weekly XP goal, an activity log,
 personal bests and a reward shop to spend coins in. **Export** saves a
-backup file and **Import** loads one, so you can move it to another
-browser.
+backup file and **Import** loads one.
+
+- **Sync.** Study saves to your account a moment after every change and
+  loads when you sign in, so it follows you between devices (a badge says
+  whether it's synced). The newer copy wins; the first time a browser
+  links to an account the two copies are merged. If someone else signs
+  in on the same browser, their own Study replaces what's there and the
+  previous copy is set aside, not deleted.
+- **Classes.** Anyone can make a class; everyone can browse and join.
+  Members post its assignments, tests, quizzes, projects and readings with
+  a due date, **what each one entails** and a link. Everyone in the class
+  gets them in their Study assignments, tagged with the class: click one
+  for the details, turn it in for XP, see it on the calendar and on Home.
+  Hiding one only hides it for you; the poster or Huddy can edit or take
+  it down.
+- **Focus.** A study timer: 25, 50 or 90 minutes, then a break. Every
+  minute focused is 1 XP (plus coins under the daily cap); stop early and
+  5+ minutes still count. Study with others in the always-open **Study
+  hall** or a room code: one timer for everyone, anyone can start or pause
+  it, and Home's Online now shows who's in with a Join button.
+- **Study leaderboard** on Home: XP this week, focus time, cards reviewed,
+  streak and all-time XP for everyone, from what their Study sync reports.
 
 ## How it differs from the site
 

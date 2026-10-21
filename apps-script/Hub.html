@@ -392,15 +392,43 @@ const Hub = (() => {
   let board = null
   let boardAt = 0
   let boardBusy = false
+  // The study one too: what each person's Study sync reports (Study.html).
+  let studyBoard = null
   async function loadBoard(force) {
     if (boardBusy || typeof Account === 'undefined' || !Account.ready()) return
     if (!force && board && Date.now() - boardAt < 60000) return
     boardBusy = true
-    const { data, error } = await Account.client().rpc('debrod_pk_leaderboard')
+    const auth = Account.client()
+    const [pk, st] = await Promise.all([auth.rpc('debrod_pk_leaderboard'), auth.rpc('debrod_study_leaderboard')])
     boardBusy = false
     boardAt = Date.now()
-    board = error ? { error: error.message } : data || []
+    board = pk.error ? { error: pk.error.message } : pk.data || []
+    studyBoard = st.error ? { error: st.error.message } : st.data || []
     if (visible) draw()
+  }
+
+  function studyBoardPanel() {
+    if (typeof Account === 'undefined' || !Account.ready()) return null
+    const myId = (Account.profile() || {}).id
+    const rows = Array.isArray(studyBoard) ? studyBoard : []
+    const safe = c => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '#8a8578')
+    const hm = m => (m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m}m`)
+    return panel('hub-full', 'D2', 'Study leaderboard', el('button', { type: 'button', class: 'link', onClick: () => { S.tab = 'study'; render() } }, 'Study ›'),
+      el('div', { class: 'hub-screen hub-board-screen' },
+        studyBoard === null ? el('p', { class: 'dim' }, 'PULLING THE STANDINGS…')
+          : studyBoard.error ? el('p', { class: 'dim' }, `NO STANDINGS: ${studyBoard.error.toUpperCase()}`)
+            : !rows.length ? el('p', { class: 'dim' }, 'NOBODY HAS STUDIED THIS WEEK YET. A FOCUS SESSION PUTS YOU ON THE BOARD.')
+              : el('table', { class: 'hub-board' },
+                el('thead', null, el('tr', null, ['#', 'Student', 'XP this week', 'Focus this week', 'Cards reviewed', 'Streak', 'All-time XP'].map(h => el('th', null, h)))),
+                el('tbody', null, rows.map((r, i) => el('tr', { class: r.user_id === myId ? 'me' : '' },
+                  el('td', { class: 'rank' }, i === 0 && r.week_xp > 0 ? '★' : String(i + 1)),
+                  el('td', null, el('span', { class: 'who' }, el('span', { class: 'hub-av', style: `background: ${safe(r.color)}` }, r.avatar || '🙂'), r.display)),
+                  el('td', { class: 'pts' }, r.week_xp.toLocaleString()),
+                  el('td', null, r.focus_week ? hm(r.focus_week) : '—'),
+                  el('td', null, String(r.cards_week)),
+                  el('td', null, r.streak ? `🔥 ${r.streak}` : '—'),
+                  el('td', null, r.total_xp.toLocaleString())))))),
+      el('p', { class: 'hub-note' }, 'From everyone\'s Study: XP from sets, turn-ins and focus. It updates as people study.'))
   }
 
   function boardPanel() {
@@ -433,7 +461,7 @@ const Hub = (() => {
     const active = document.activeElement
     const typing = active && root.contains(active) && active.tagName === 'INPUT' && active.type !== 'checkbox' ? active.placeholder : null
     const sum = study()
-    fill(root, strip(sum), log(sum), watchPanel(), studyPanel(sum), gamesPanel(), crewPanel(), boardPanel())
+    fill(root, strip(sum), log(sum), watchPanel(), studyPanel(sum), gamesPanel(), crewPanel(), studyBoardPanel(), boardPanel())
     if (typing) {
       const back = [...root.querySelectorAll('input')].find(i => i.placeholder === typing)
       if (back) { back.focus(); const n = back.value.length; try { back.setSelectionRange(n, n) } catch (e) { /* not a text input */ } }
