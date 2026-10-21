@@ -154,6 +154,31 @@ function getConfig() {
   }
 }
 
+// ── Members ─────────────────────────────────────────────────────────────────
+
+// Everything past the sign-in screen sends the caller's Supabase session,
+// and only an approved member's gets an answer, so a copied web app link
+// alone gets nobody in. A yes is remembered for five minutes per session.
+function requireMember_(token) {
+  const t = String(token || '')
+  if (!t) throw new Error('Sign in first.')
+  const cache = CacheService.getScriptCache()
+  const key = 'member:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, t))
+  if (cache.get(key)) return
+  const url = (prop_('SUPABASE_URL') || DEFAULT_SUPABASE_URL).replace(/\/+$/, '')
+  const anon = prop_('SUPABASE_ANON_KEY') || DEFAULT_SUPABASE_ANON_KEY
+  if (!url || !anon) throw new Error('Supabase is not set up. Open DEBROD → Settings.')
+  const res = UrlFetchApp.fetch(`${url}/rest/v1/rpc/debrod_approved`, {
+    method: 'post', contentType: 'application/json', payload: '{}',
+    headers: { apikey: anon, Authorization: `Bearer ${t}` }, muteHttpExceptions: true,
+  })
+  const code = res.getResponseCode()
+  if (code === 401) throw new Error('Your session ran out. Sign in again.')
+  if (code >= 400) throw new Error(`Could not check your account (Supabase answered ${code}).`)
+  if (res.getContentText().trim() !== 'true') throw new Error('Your account is waiting for Huddy to approve it.')
+  cache.put(key, '1', 300)
+}
+
 // ── TMDB ────────────────────────────────────────────────────────────────────
 
 function tmdb_(path, params) {
@@ -173,7 +198,8 @@ function kind_(kind) {
   return kind
 }
 
-function searchTitles(kind, query) {
+function searchTitles(token, kind, query) {
+  requireMember_(token)
   const q = String(query || '').trim()
   if (!q) return []
   const data = tmdb_(`search/${kind_(kind)}`, { query: q, include_adult: 'false' })
@@ -185,14 +211,16 @@ function searchTitles(kind, query) {
   }))
 }
 
-function getSeasons(showId) {
+function getSeasons(token, showId) {
+  requireMember_(token)
   const data = tmdb_(`tv/${Number(showId)}`)
   return (data.seasons || [])
     .filter(s => s.season_number > 0)
     .map(s => ({ number: s.season_number, name: s.name, episodes: s.episode_count }))
 }
 
-function getEpisodes(showId, season) {
+function getEpisodes(token, showId, season) {
+  requireMember_(token)
   const data = tmdb_(`tv/${Number(showId)}/season/${Number(season)}`)
   return (data.episodes || []).map(e => ({ number: e.episode_number, name: e.name }))
 }
@@ -208,7 +236,8 @@ function unescape_(s) {
 
 // Embeddable videos only, since they play inside DEBROD. Each search costs
 // 100 of the key's 10,000 daily quota units.
-function searchYouTube(query) {
+function searchYouTube(token, query) {
+  requireMember_(token)
   const q = String(query || '').trim()
   if (!q) return []
   const key = prop_('YOUTUBE_API_KEY') || DEFAULT_YOUTUBE_API_KEY
@@ -237,7 +266,8 @@ function searchYouTube(query) {
 // Torrentio sits behind Cloudflare, which blocks many server IPs (Google's
 // included), so the page fetches the streams itself. This only hands it the
 // URLs to ask.
-function getStreamSources(kind, tmdbId, season, episode) {
+function getStreamSources(token, kind, tmdbId, season, episode) {
+  requireMember_(token)
   const rd = prop_('REALDEBRID_API_KEY')
   const tb = prop_('TORBOX_API_KEY')
   if (!rd && !tb) throw new Error('Set a Real-Debrid or TorBox key in DEBROD → Settings.')
@@ -265,7 +295,8 @@ const isHttps_ = u => typeof u === 'string' && u.indexOf('https://') === 0
 
 const isYoutubeId_ = id => typeof id === 'string' && /^[\w-]{11}$/.test(id)
 
-function createRoom(source) {
+function createRoom(token, source) {
+  requireMember_(token)
   if (source && isYoutubeId_(source.youtube)) {
     return putRoom_({ title: String(source.title || 'Watching together').slice(0, 200), poster: null, youtube: source.youtube, src: '', fallbacks: [] })
   }
@@ -284,7 +315,8 @@ function putRoom_(clean) {
   return id
 }
 
-function getRoom(id) {
+function getRoom(token, id) {
+  requireMember_(token)
   const code = String(id || '').trim().toUpperCase()
   if (!/^[A-Z0-9]{6,32}$/.test(code)) throw new Error('That room code looks wrong.')
   const raw = CacheService.getScriptCache().get(`room:${code}`)

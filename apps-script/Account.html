@@ -1,0 +1,354 @@
+<script>
+// Accounts: the sign-in and sign-up screens in front of DEBROD, the "waiting
+// for Huddy" screen, and the Members tab where Huddy approves sign-ups.
+//
+// Logins are Supabase Auth users made by the debrod-auth Edge Function
+// (supabase/functions/debrod-auth); each has a debrod_profiles row that
+// starts 'pending' (supabase/schema.sql). Nothing past this screen works
+// until Huddy approves it: Code.gs checks the session on every server call.
+
+const Account = (() => {
+  const EMAIL_DOMAIN = 'debrod.example.com' // never mailed; logins are by username
+  const POLL_MS = 30000 // waiting screen re-checks this often, besides live updates
+
+  let cfg = null
+  let auth = null
+  let profile = null
+  let ready = false
+  let resolveReady = null
+  let waitTimer = null
+  let waitChannel = null
+
+  // Admin (Members tab) state.
+  let people = []
+  let adminChannel = null
+  let busy = null
+  let resetFor = null
+  let resetDraft = ''
+  let adminError = null
+
+  const email = u => `${u.trim().toLowerCase()}@${EMAIL_DOMAIN}`
+
+  async function session() {
+    const { data } = await auth.auth.getSession()
+    return data.session
+  }
+
+  async function token() {
+    const s = await session()
+    if (!s) {
+      signOut()
+      throw new Error('Sign in first.')
+    }
+    return s.access_token
+  }
+
+  // The account desk: sign-ups, and Huddy's resets and removals.
+  async function desk(body) {
+    const s = await session()
+    const res = await fetch(`${cfg.supabaseUrl.replace(/\/+$/, '')}/functions/v1/debrod-auth`, {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json', apikey: cfg.supabaseKey },
+        s ? { Authorization: `Bearer ${s.access_token}` } : {}),
+      body: JSON.stringify(body),
+    })
+    let data = {}
+    try { data = await res.json() } catch (e) { /* not JSON */ }
+    if (!res.ok) throw new Error(data.error || `The account desk answered ${res.status}.`)
+    return data
+  }
+
+  async function loadProfile() {
+    const s = await session()
+    if (!s) return null
+    const { data, error } = await auth.from('debrod_profiles')
+      .select('id, username, display, status, is_admin').eq('id', s.user.id).maybeSingle()
+    if (error) throw new Error(error.message)
+    return data
+  }
+
+  // Resolves once someone approved is signed in.
+  function start(c) {
+    cfg = c
+    return new Promise(resolve => {
+      resolveReady = resolve
+      if (!cfg.supabaseUrl || !cfg.supabaseKey || !window.supabase) {
+        return mount(el('main', { class: 'login' }, el('div', { class: 'card stack' },
+          el('p', { class: 'name' }, 'DEBROD needs Supabase'),
+          el('p', { class: 'muted small' }, 'Accounts live in Supabase. Add SUPABASE_URL and SUPABASE_ANON_KEY in DEBROD → Settings, then reopen.'))))
+      }
+      // Its own storage key, so the games' Supabase clients never see (or
+      // refresh) this session.
+      auth = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
+        auth: { storageKey: 'debrod-account', persistSession: true, autoRefreshToken: true },
+      })
+      route()
+    })
+  }
+
+  async function route(note) {
+    stopWaiting()
+    let p = null
+    try {
+      p = await loadProfile()
+    } catch (e) {
+      return signInScreen('in', e.message)
+    }
+    if (!p) return signInScreen('in', note)
+    profile = p
+    if (p.status === 'approved') {
+      ready = true
+      watchMe()
+      if (p.is_admin) watchPeople()
+      const r = resolveReady
+      resolveReady = null
+      if (r) r(p)
+      else render()
+      return
+    }
+    ready = false
+    if (inRoom) exitRoom()
+    if (p.status === 'rejected') return rejectedScreen()
+    waitingScreen()
+  }
+
+  // Live updates to your own account: approval lets you in, and being
+  // locked out sends you back to the waiting screen.
+  function watchMe() {
+    waitChannel = auth.channel(`debrod-me:${profile.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'debrod_profiles', filter: `id=eq.${profile.id}` }, () => route())
+      .subscribe()
+  }
+
+  // ── Screens ──
+
+  function shell(...kids) {
+    backdrop.hidden = false
+    mount(el('main', { class: 'login' }, el('div', { class: 'card stack' },
+      el('div', null,
+        el('p', { class: 'tagline' }, 'Study · games · watch parties'),
+        el('h1', { class: 'wordmark' }, cfg.siteName || 'DEBROD')),
+      ...kids)))
+  }
+
+  function signInScreen(mode, note) {
+    let username = ''
+    let password = ''
+    let confirm = ''
+    let display = ''
+    const msg = el('p', { class: note ? 'error' : 'muted small' }, note || '')
+    const submit = el('button', { type: 'submit', class: 'primary' }, mode === 'in' ? 'Sign in' : 'Ask to join')
+
+    async function go(e) {
+      e.preventDefault()
+      const u = username.trim().toLowerCase()
+      if (mode === 'up') {
+        if (!/^[a-z0-9_]{3,20}$/.test(u)) return say('Usernames are 3–20 letters, numbers or _.')
+        if (password.length < 8) return say('Passwords need at least 8 characters.')
+        if (password !== confirm) return say('Those passwords don\'t match.')
+      } else if (!u || !password) {
+        return say('Enter your username and password.')
+      }
+      submit.disabled = true
+      say(mode === 'in' ? 'Signing in…' : 'Sending your request…', true)
+      try {
+        if (mode === 'up') await desk({ action: 'signup', username: u, password, display: display.trim() || u })
+        const { error } = await auth.auth.signInWithPassword({ email: email(u), password })
+        if (error) throw new Error(/invalid/i.test(error.message) ? 'Wrong username or password.' : error.message)
+        route()
+      } catch (err) {
+        submit.disabled = false
+        say(err.message)
+      }
+    }
+
+    function say(text, quiet) {
+      msg.className = quiet ? 'muted small' : 'error'
+      msg.textContent = text
+    }
+
+    shell(
+      el('div', { class: 'toggle' },
+        el('button', { type: 'button', class: mode === 'in' ? 'on' : '', onClick: () => signInScreen('in') }, 'Sign in'),
+        el('button', { type: 'button', class: mode === 'up' ? 'on' : '', onClick: () => signInScreen('up') }, 'Sign up')),
+      el('form', { class: 'stack', onSubmit: go },
+        el('label', { class: 'field' },
+          el('span', null, 'Username'),
+          el('input', { autofocus: true, autocomplete: 'username', maxlength: 20, autocapitalize: 'none', spellcheck: 'false', onInput: e => { username = e.target.value } })),
+        mode === 'up' && el('label', { class: 'field' },
+          el('span', null, 'Display name (what people see)'),
+          el('input', { maxlength: 24, onInput: e => { display = e.target.value } })),
+        el('label', { class: 'field' },
+          el('span', null, 'Password'),
+          el('input', { type: 'password', autocomplete: mode === 'in' ? 'current-password' : 'new-password', onInput: e => { password = e.target.value } })),
+        mode === 'up' && el('label', { class: 'field' },
+          el('span', null, 'Password again'),
+          el('input', { type: 'password', autocomplete: 'new-password', onInput: e => { confirm = e.target.value } })),
+        msg,
+        submit),
+      el('p', { class: 'muted small' }, mode === 'in'
+        ? 'New here? Sign up, then Huddy lets you in.'
+        : 'Huddy approves every new account before it can get in. Forgot your password later? Ask Huddy to reset it.'))
+  }
+
+  function waitingScreen() {
+    const check = el('button', { type: 'button' }, 'Check again')
+    check.addEventListener('click', async () => { check.disabled = true; await route() })
+    shell(
+      el('p', { class: 'name' }, `You're in the queue, ${profile.display}`),
+      el('p', { class: 'muted small' }, 'Huddy has to approve your account before you can get in. This page lets you in by itself once that happens.'),
+      el('div', { class: 'row' }, check, el('button', { type: 'button', class: 'link', onClick: signOut }, 'Sign out')))
+    // Live, plus a slow poll in case the live link drops.
+    watchMe()
+    waitTimer = setInterval(() => route(), POLL_MS)
+  }
+
+  function rejectedScreen() {
+    shell(
+      el('p', { class: 'name' }, 'Not this time'),
+      el('p', { class: 'muted small' }, 'Huddy didn\'t approve this account. If that\'s a mistake, ask them directly.'),
+      el('button', { type: 'button', class: 'link', onClick: signOut }, 'Sign out'))
+  }
+
+  function stopWaiting() {
+    clearInterval(waitTimer)
+    waitTimer = null
+    if (waitChannel) auth.removeChannel(waitChannel)
+    waitChannel = null
+  }
+
+  async function signOut() {
+    ready = false
+    profile = null
+    people = []
+    stopWaiting()
+    if (adminChannel) auth.removeChannel(adminChannel)
+    adminChannel = null
+    if (inRoom) exitRoom()
+    S.tab = 'home'
+    try { await auth.auth.signOut() } catch (e) { /* already gone */ }
+    signInScreen('in')
+  }
+
+  // ── Members tab (admins) ──
+
+  async function loadPeople() {
+    const { data, error } = await auth.from('debrod_profiles')
+      .select('id, username, display, status, is_admin, created_at, decided_at')
+      .order('created_at', { ascending: true })
+    if (error) adminError = error.message
+    else { people = data || []; adminError = null }
+    refresh()
+  }
+
+  function watchPeople() {
+    if (adminChannel) return
+    loadPeople()
+    adminChannel = auth.channel('debrod-members')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'debrod_profiles' }, () => loadPeople())
+      .subscribe()
+  }
+
+  // Re-render only the Members page; elsewhere just the tab's count, so a
+  // sign-up arriving doesn't steal focus from the search box.
+  function refresh() {
+    if (S.tab === 'admin') return render()
+    const n = pendingCount()
+    for (const b of document.querySelectorAll('[data-pending]')) b.textContent = n ? `Members (${n})` : 'Members'
+  }
+
+  const pendingCount = () => people.filter(p => p.status === 'pending').length
+
+  async function act(id, fn) {
+    busy = id
+    adminError = null
+    render()
+    try {
+      await fn()
+    } catch (e) {
+      adminError = e.message
+    }
+    busy = null
+    await loadPeople()
+  }
+
+  const decide = (p, status) => act(p.id, async () => {
+    const { error } = await auth.from('debrod_profiles').update({ status }).eq('id', p.id)
+    if (error) throw new Error(error.message)
+  })
+
+  const remove = p => {
+    if (!confirm(`Remove ${p.display} (@${p.username})? Their account and everything saved with it is deleted.`)) return
+    act(p.id, () => desk({ action: 'remove', user_id: p.id }))
+  }
+
+  const resetPassword = p => {
+    if (resetDraft.length < 8) { adminError = 'Passwords need at least 8 characters.'; return render() }
+    const password = resetDraft
+    act(p.id, async () => {
+      await desk({ action: 'reset', user_id: p.id, password })
+      resetFor = null
+      resetDraft = ''
+      adminError = `New password set for @${p.username}. Tell them what it is.`
+    })
+  }
+
+  const when = t => (t ? new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '')
+
+  function personRow(p, actions) {
+    return el('div', { class: 'stream' },
+      el('div', { class: 'info' },
+        el('p', null, el('strong', null, p.display), ' ', el('span', { class: 'muted' }, `@${p.username}`),
+          p.is_admin && el('span', { class: 'tag good' }, 'admin')),
+        el('p', { class: 'muted small' }, p.status === 'pending' ? `Asked ${when(p.created_at)}` : `Joined ${when(p.created_at)}`)),
+      el('div', { class: 'actions' }, actions))
+  }
+
+  function adminView() {
+    const pending = people.filter(p => p.status === 'pending')
+    const approved = people.filter(p => p.status === 'approved')
+    const rejected = people.filter(p => p.status === 'rejected')
+    const off = id => busy === id
+
+    return el('div', { class: 'stack' },
+      el('p', { class: 'name' }, 'Waiting for you'),
+      adminError && el('p', { class: /^New password/.test(adminError) ? 'muted small' : 'error' }, adminError),
+      pending.length === 0 && el('p', { class: 'muted small' }, 'Nobody is waiting. New sign-ups show up here as they come in.'),
+      el('div', { class: 'stack tight' }, pending.map(p => personRow(p, [
+        el('button', { type: 'button', class: 'together', disabled: off(p.id), onClick: () => decide(p, 'approved') }, 'Approve'),
+        el('button', { type: 'button', disabled: off(p.id), onClick: () => decide(p, 'rejected') }, 'Turn down'),
+        el('button', { type: 'button', disabled: off(p.id), onClick: () => remove(p) }, 'Delete'),
+      ]))),
+
+      el('p', { class: 'name' }, `Members (${approved.length})`),
+      el('div', { class: 'stack tight' }, approved.map(p => personRow(p, resetFor === p.id
+        ? [
+          el('input', { type: 'password', placeholder: 'New password', autofocus: true, value: resetDraft, onInput: e => { resetDraft = e.target.value } }),
+          el('button', { type: 'button', class: 'together', disabled: off(p.id), onClick: () => resetPassword(p) }, 'Save'),
+          el('button', { type: 'button', onClick: () => { resetFor = null; resetDraft = ''; render() } }, 'Cancel'),
+        ]
+        : [
+          el('button', { type: 'button', disabled: off(p.id), onClick: () => { resetFor = p.id; resetDraft = ''; adminError = null; render() } }, 'Reset password'),
+          !p.is_admin && el('button', { type: 'button', disabled: off(p.id), onClick: () => decide(p, 'pending') }, 'Lock out'),
+          !p.is_admin && el('button', { type: 'button', disabled: off(p.id), onClick: () => remove(p) }, 'Delete'),
+        ]))),
+
+      rejected.length > 0 && el('p', { class: 'name' }, 'Turned down'),
+      el('div', { class: 'stack tight' }, rejected.map(p => personRow(p, [
+        el('button', { type: 'button', disabled: off(p.id), onClick: () => decide(p, 'approved') }, 'Approve after all'),
+        el('button', { type: 'button', disabled: off(p.id), onClick: () => remove(p) }, 'Delete'),
+      ]))))
+  }
+
+  return {
+    start,
+    token,
+    signOut,
+    adminView,
+    pendingCount,
+    ready: () => ready,
+    profile: () => profile,
+    isAdmin: () => !!(ready && profile && profile.is_admin),
+  }
+})()
+</script>

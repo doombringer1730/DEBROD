@@ -10,6 +10,7 @@ keys live in the script's properties instead of environment variables.
 | --- | --- |
 | `Code.gs` | Server side: the menu, settings, TMDB lookups, Torrentio URLs and room codes. |
 | `Index.html` | The page shell. |
+| `Account.html` | Sign in, sign up, the approval queue and Huddy's Members tab. |
 | `App.html` | The search, player and watch-together room (from `app/browser.tsx` and `app/watch/[room]/room.tsx`). |
 | `Hub.html` | Home: the hub, styled as a 70s mission-control console. |
 | `Study.html` | The Study tab: assignments with due dates and turn-in, flashcards, coins and the shop (from Hiranda's old Study section). |
@@ -30,7 +31,7 @@ keys live in the script's properties instead of environment variables.
 
 1. Create a Google Doc, then open **Extensions → Apps Script**.
 2. Replace `Code.gs` with the one here. Add the HTML files with **+ → HTML**,
-   named `Index`, `App`, `Hub`, `Study`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
+   named `Index`, `App`, `Account`, `Hub`, `Study`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
    one in. To edit `appsscript.json`, turn on **Project Settings → Show
    "appsscript.json" manifest file in editor**.
 3. Save, reload the doc, and open **DEBROD → Settings**. Approve the
@@ -48,6 +49,35 @@ Or push it with [clasp](https://github.com/google/clasp): run
 **Deploy → New deployment → Web app** gives the same page full screen at its
 own URL. `?page=settings` opens the keys form, and `?room=CODE` is an invite
 link (as are `?scribble=`, `?showdown=`, `?cards=` and `?sea=` for the games).
+
+## Accounts
+
+DEBROD opens on a sign-in screen. **Sign up** asks for a username,
+display name and password and puts the account in Huddy's queue; until
+Huddy approves it, that person only sees "You're in the queue" (it lets
+them in on its own the moment they're approved). Huddy gets a **Members**
+tab, with a count of who's waiting, to approve or turn down sign-ups, lock
+someone out, reset a forgotten password, or delete an account.
+
+It's more than a screen: every search, stream lookup and room in `Code.gs`
+checks the caller's session with Supabase and answers approved members
+only, so a shared web app link gets nobody in on its own. For friends
+without access to the doc, deploy the web app with **Execute as: Me** and
+**Who has access: Anyone**; the sign-in screen is the gate.
+
+Setting it up (already done for DEBROD's own Supabase project):
+
+1. Run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL
+   editor. It also sets up the chats, shared deadlines and Study sync
+   tables for what's coming next.
+2. Deploy [`supabase/functions/debrod-auth`](supabase/functions/debrod-auth/index.ts)
+   as an Edge Function named `debrod-auth`, with **Verify JWT** off.
+3. Sign up as **huddy** right away: while there's no admin, that name is
+   approved and made admin on the spot.
+
+Logins are usernames; behind the scenes each is a Supabase Auth user with a
+made-up `@debrod.example.com` address nobody receives, so there's no email
+reset. Huddy resets passwords from Members instead.
 
 ## Home
 

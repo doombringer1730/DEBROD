@@ -23,6 +23,11 @@ function call(fn, ...args) {
   })
 }
 
+// Server calls that need a signed-in, approved member (Account.html).
+function member(fn, ...args) {
+  return Account.token().then(t => call(fn, t, ...args))
+}
+
 // Builds DOM without innerHTML, so titles from TMDB can't inject markup.
 function el(tag, props, ...kids) {
   const n = document.createElement(tag)
@@ -133,7 +138,7 @@ const S = {
   loading: false,
   error: null,
   roomCode: '',
-  tab: 'home', // or 'search', 'arcade', 'study'
+  tab: 'home', // or 'search', 'arcade', 'study', 'admin' (Huddy's Members)
 }
 let inRoom = false
 
@@ -155,7 +160,7 @@ async function loadStreams(...args) {
   S.error = null
   render()
   try {
-    S.streams = await fetchStreams(await call('getStreamSources', ...args))
+    S.streams = await fetchStreams(await member('getStreamSources', ...args))
   } catch (e) {
     S.streams = []
     S.error = e.message || 'Could not load streams.'
@@ -167,8 +172,8 @@ async function loadStreams(...args) {
 function onSearch(e) {
   e.preventDefault()
   if (!S.query.trim()) return
-  if (S.kind === 'youtube') load(call('searchYouTube', S.query), v => { S.results = v })
-  else load(call('searchTitles', S.kind, S.query), v => { S.results = v })
+  if (S.kind === 'youtube') load(member('searchYouTube', S.query), v => { S.results = v })
+  else load(member('searchTitles', S.kind, S.query), v => { S.results = v })
 }
 
 function pickTitle(t) {
@@ -177,13 +182,13 @@ function pickTitle(t) {
   S.streams = null
   S.playing = null
   if (S.kind === 'movie') loadStreams('movie', t.id)
-  else load(call('getSeasons', t.id), v => { S.seasons = v })
+  else load(member('getSeasons', t.id), v => { S.seasons = v })
 }
 
 function pickSeason(s) {
   S.season = s
   S.episodes = []
-  load(call('getEpisodes', S.title.id, s.number), v => { S.episodes = v })
+  load(member('getEpisodes', S.title.id, s.number), v => { S.episodes = v })
 }
 
 function pickEpisode(ep) {
@@ -235,7 +240,7 @@ async function watchTogether(s, list) {
   S.loading = true
   render()
   try {
-    const id = await call('createRoom', source)
+    const id = await member('createRoom', source)
     S.loading = false
     enterRoom(id, source)
   } catch (e) {
@@ -255,7 +260,7 @@ async function watchYouTube(t) {
   S.loading = true
   render()
   try {
-    const id = await call('createRoom', source)
+    const id = await member('createRoom', source)
     S.loading = false
     enterRoom(id, source)
   } catch (e) {
@@ -276,7 +281,7 @@ async function joinRoom(e) {
   S.error = null
   render()
   try {
-    const room = await call('getRoom', S.roomCode)
+    const room = await member('getRoom', S.roomCode)
     S.loading = false
     S.roomCode = ''
     enterRoom(room.id, room.source)
@@ -309,7 +314,12 @@ function header() {
       tab('search', 'Search'),
       tab('arcade', 'Arcade'),
       tab('study', 'Study'),
-      S.cfg.appUrl && document.body.dataset.web && el('a', { class: 'link', href: `${S.cfg.appUrl}?page=settings`, target: '_top' }, 'Settings')))
+      Account.isAdmin() && el('button', {
+        type: 'button', class: `link ${S.tab === 'admin' ? 'on' : ''}`, 'data-pending': '',
+        onClick: () => { S.tab = 'admin'; render() },
+      }, Account.pendingCount() ? `Members (${Account.pendingCount()})` : 'Members'),
+      S.cfg.appUrl && document.body.dataset.web && el('a', { class: 'link', href: `${S.cfg.appUrl}?page=settings`, target: '_top' }, 'Settings'),
+      Account.profile() && el('button', { type: 'button', class: 'link', title: `Signed in as @${Account.profile().username}`, onClick: Account.signOut }, 'Sign out')))
 }
 
 function tab(id, text) {
@@ -380,6 +390,7 @@ function bootLines(tab, first) {
     home: ['> mission-control --boot', 'checking link ......... OK', 'loading crew roster ... OK', 'reading the board ..... OK', 'ALL SYSTEMS NOMINAL'],
     search: ['$ debrod search --init', 'mount /dev/tmdb ........ ok', 'warm torrentio cache .... ok', `debrid keys ............. ${S.cfg && S.cfg.hasDebrid ? 'ok' : 'MISSING'}`, 'ready.'],
     arcade: ['C:\\> CD ARCADE', 'C:\\ARCADE> ARCADE.EXE', `loading ${games || 'all'} cartridges ...`, 'calibrating joystick ... ok', 'INSERT COIN'],
+    admin: ['$ sudo members --queue', 'reading sign-ups ........ ok', `waiting for you ......... ${typeof Account !== 'undefined' ? Account.pendingCount() : 0}`, 'ready.'],
     study: ['$ study --focus', 'opening notebook ........ ok', sum ? `assignments due ......... ${(sum.open || []).length}${sum.overdue ? ` (${sum.overdue} overdue)` : ''}` : 'loading decks ........... ok', sum && sum.cardsDue ? `cards to review .......... ${sum.cardsDue}` : 'spaced repetition ....... ok', 'focus mode engaged.'],
   }
   return power.concat(by[tab] || by.search)
@@ -416,7 +427,7 @@ function bootScreen(tab, first) {
 }
 
 function render() {
-  if (inRoom || !S.cfg) return
+  if (inRoom || !S.cfg || !Account.ready()) return
   if (S.tab !== bootTab) {
     const first = bootTab === null
     bootTab = S.tab
@@ -446,7 +457,8 @@ function render() {
   if (hasStudy) { if (study) Study.show(); else Study.hide() }
 
   for (const n of [...app.children]) if (n !== arcadePage && n !== studyPage && n !== homePage) n.remove()
-  const search = arcade || study || home ? null : el('main', { class: 'page' }, header(), view())
+  const search = arcade || study || home ? null
+    : el('main', { class: 'page' }, header(), S.tab === 'admin' && Account.isAdmin() ? Account.adminView() : view())
   if (search) app.prepend(search)
   if (homePage && !homePage.isConnected) app.append(homePage)
   if (!arcadePage.isConnected) app.append(arcadePage)
@@ -730,7 +742,8 @@ function youtubeVideo() {
 function enterRoom(room, source) {
   inRoom = true
   if (typeof hubActivity === 'function') hubActivity({ game: 'watch', code: room, label: `watch together: ${source.title}`, joinable: true })
-  const name = storedName()
+  const me = Account.profile()
+  const name = storedName() || (me && me.display)
   if (name) return startPlayer(room, source, name)
 
   backdrop.hidden = false
@@ -1110,6 +1123,9 @@ function boot() {
   call('getConfig')
     .then(cfg => {
       S.cfg = cfg
+      return Account.start(cfg).then(() => cfg)
+    })
+    .then(cfg => {
       if (typeof Hub !== 'undefined') Hub.start()
       if (!cfg.hasTmdb || !cfg.hasDebrid) {
         S.error = `Some keys are missing (${[!cfg.hasTmdb && 'TMDB', !cfg.hasDebrid && 'Real-Debrid or TorBox'].filter(Boolean).join(', ')}). Close this and open DEBROD → Settings.`
