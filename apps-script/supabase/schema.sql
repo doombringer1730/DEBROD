@@ -564,3 +564,103 @@ $$;
 revoke execute on function public.debrod_study_leaderboard() from anon, public;
 grant execute on function public.debrod_study_leaderboard() to authenticated;
 revoke execute on function public.debrod_study_stamp() from anon, authenticated, public;
+
+-- ══ Classes and their assignments (Classes.html) ═════════════════════════
+-- Anyone approved can make a class, browse them all and join or leave;
+-- members post the class's work (assignments, tests, quizzes, projects,
+-- readings) with what each entails, and everyone in the class sees it in
+-- their Study assignments. The poster or an admin edits or takes it down.
+create table if not exists public.debrod_classes (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(name) between 1 and 40),
+  detail text not null default '' check (char_length(detail) <= 60),
+  color text not null default '#2d5fa6' check (color ~ '^#[0-9a-fA-F]{6}$'),
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.debrod_class_members (
+  class_id uuid not null references public.debrod_classes (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  joined_at timestamptz not null default now(),
+  primary key (class_id, user_id)
+);
+create index if not exists debrod_class_members_by_user on public.debrod_class_members (user_id);
+create table if not exists public.debrod_class_work (
+  id uuid primary key default gen_random_uuid(),
+  class_id uuid not null references public.debrod_classes (id) on delete cascade,
+  title text not null check (char_length(title) between 1 and 120),
+  kind text not null default 'assignment' check (kind in ('assignment', 'test', 'quiz', 'project', 'reading')),
+  due date not null,
+  details text not null default '' check (char_length(details) <= 4000),
+  link text check (link is null or (link ~ '^https?://' and char_length(link) <= 500)),
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists debrod_class_work_by_class on public.debrod_class_work (class_id, due);
+alter table public.debrod_classes enable row level security;
+alter table public.debrod_class_members enable row level security;
+alter table public.debrod_class_work enable row level security;
+
+create or replace function public.debrod_in_class(c uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.debrod_class_members where class_id = c and user_id = auth.uid())
+$$;
+
+create policy "approved people see classes" on public.debrod_classes for select to authenticated using (public.debrod_approved());
+create policy "approved people make classes" on public.debrod_classes for insert to authenticated with check (public.debrod_approved() and created_by = auth.uid());
+create policy "makers and admins edit classes" on public.debrod_classes for update to authenticated using (public.debrod_approved() and (created_by = auth.uid() or public.debrod_admin()));
+create policy "makers and admins delete classes" on public.debrod_classes for delete to authenticated using (public.debrod_approved() and (created_by = auth.uid() or public.debrod_admin()));
+create policy "approved people see members" on public.debrod_class_members for select to authenticated using (public.debrod_approved());
+create policy "join a class yourself" on public.debrod_class_members for insert to authenticated with check (public.debrod_approved() and user_id = auth.uid());
+create policy "leave a class yourself" on public.debrod_class_members for delete to authenticated using (user_id = auth.uid() or public.debrod_admin());
+create policy "members see class work" on public.debrod_class_work for select to authenticated using (public.debrod_approved() and (public.debrod_in_class(class_id) or public.debrod_admin()));
+create policy "members post class work" on public.debrod_class_work for insert to authenticated with check (public.debrod_approved() and public.debrod_in_class(class_id) and created_by = auth.uid());
+create policy "posters and admins edit class work" on public.debrod_class_work for update to authenticated using (public.debrod_approved() and (created_by = auth.uid() or public.debrod_admin()));
+create policy "posters and admins remove class work" on public.debrod_class_work for delete to authenticated using (public.debrod_approved() and (created_by = auth.uid() or public.debrod_admin()));
+
+-- The filter, and edits keep their class and poster.
+create or replace function public.debrod_class_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_table_name = 'debrod_classes' then
+    new.name := left(trim(public.debrod_clean(new.name)), 40);
+    new.detail := left(trim(public.debrod_clean(new.detail)), 60);
+    if tg_op = 'UPDATE' then new.created_by := old.created_by; new.created_at := old.created_at; end if;
+  else
+    new.title := left(trim(public.debrod_clean(new.title)), 120);
+    new.details := left(trim(public.debrod_clean(new.details)), 4000);
+    if tg_op = 'UPDATE' then
+      new.class_id := old.class_id; new.created_by := old.created_by; new.created_at := old.created_at;
+    end if;
+    new.updated_at := now();
+  end if;
+  return new;
+end $$;
+create or replace trigger debrod_class_guard before insert or update on public.debrod_classes for each row execute function public.debrod_class_guard();
+create or replace trigger debrod_class_work_guard before insert or update on public.debrod_class_work for each row execute function public.debrod_class_guard();
+
+-- Whoever makes a class is in it.
+create or replace function public.debrod_class_join_maker() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.debrod_class_members (class_id, user_id) values (new.id, new.created_by) on conflict do nothing;
+  return new;
+end $$;
+create or replace trigger debrod_class_join_maker after insert on public.debrod_classes for each row execute function public.debrod_class_join_maker();
+
+grant select, insert, update, delete on public.debrod_classes, public.debrod_class_work to authenticated;
+grant select, insert, delete on public.debrod_class_members to authenticated;
+revoke all on public.debrod_classes, public.debrod_class_members, public.debrod_class_work from anon;
+revoke execute on function public.debrod_in_class(uuid) from anon, public;
+grant execute on function public.debrod_in_class(uuid) to authenticated;
+revoke execute on function public.debrod_class_guard(), public.debrod_class_join_maker() from anon, authenticated, public;
+do $$
+declare t text;
+begin
+  foreach t in array array['debrod_class_work', 'debrod_class_members', 'debrod_classes'] loop
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;

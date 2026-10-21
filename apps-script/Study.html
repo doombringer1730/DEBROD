@@ -389,7 +389,7 @@ const Study = (() => {
   const str = (v, max) => String(v == null ? '' : v).trim().slice(0, max)
 
   // ── Storage ──
-  const blank = () => ({ v: 1, decks: [], progress: {}, attempts: [], assignments: [], coupons: [], goal: DEFAULT_GOAL, status: '' })
+  const blank = () => ({ v: 1, decks: [], progress: {}, attempts: [], assignments: [], coupons: [], goal: DEFAULT_GOAL, status: '', hiddenWork: [] })
   let saveFailed = false
 
   // Keeps only what looks right, so a hand-edited or old backup can't break
@@ -414,7 +414,11 @@ const Study = (() => {
     out.assignments = arr(raw.assignments).filter(a => a && a.id && a.title && isDay(a.due)).map(a => ({
       id: str(a.id, 40), title: str(a.title, 200), due: a.due, turnedIn: !!a.turnedIn, turnedInAt: a.turnedInAt ? str(a.turnedInAt, 40) : null,
       xpAwarded: !!a.xpAwarded, created: str(a.created, 40) || new Date().toISOString(),
+      // Mirrored from a class (Classes.html): which post, and its class.
+      classWorkId: a.classWorkId ? str(a.classWorkId, 40) : null, classId: a.classId ? str(a.classId, 40) : null,
+      className: a.classWorkId ? str(a.className, 40) : '', classColor: /^#[0-9a-f]{6}$/i.test(a.classColor || '') ? a.classColor : '',
     }))
+    out.hiddenWork = arr(raw.hiddenWork).filter(x => typeof x === 'string').map(x => str(x, 40)).slice(-2000)
     out.coupons = arr(raw.coupons).filter(c => c && c.id && c.title).map(c => ({
       id: str(c.id, 40), title: str(c.title, 120), emoji: str(c.emoji, 8) || '🎁', cost: Math.max(0, Math.min(100000, c.cost | 0)),
       at: str(c.at, 40) || new Date().toISOString(), redeemed: !!c.redeemed, redeemedAt: c.redeemedAt ? str(c.redeemedAt, 40) : null,
@@ -550,8 +554,10 @@ const Study = (() => {
     sync.user = who.id
     sync.state = 'saving'
     pull(true)
+    if (typeof Classes !== 'undefined') Classes.start(mirrorClassWork)
   }
   function disconnect() {
+    if (typeof Classes !== 'undefined') Classes.stop()
     clearTimeout(sync.timer)
     sync.user = null
     sync.auth = null
@@ -671,10 +677,64 @@ const Study = (() => {
     render()
   }
   function deleteAssignment(a) {
-    if (!confirm(`Delete “${a.title}”?`)) return
+    if (a.classWorkId) {
+      // A class's assignment: hide it from your list; it stays in the class.
+      if (!confirm(`Hide “${a.title}” from your list? It stays posted in ${a.className || 'the class'}.`)) return
+      D.hiddenWork.push(a.classWorkId)
+    } else if (!confirm(`Delete “${a.title}”?`)) return
     D.assignments = D.assignments.filter(x => x !== a)
     save()
     render()
+  }
+
+  // ── Class assignments (Classes.html) ──
+  // Your classes' posts become assignments here, tagged with the class, so
+  // turn-in, the calendar and Home's "Due soon" treat them like your own.
+  // A post that's taken down, or from a class you left, goes from the list
+  // unless you'd already turned it in.
+  function mirrorClassWork(list, classById) {
+    const ids = new Set(list.map(w => w.id))
+    let changed = false
+    for (const w of list) {
+      if (D.hiddenWork.includes(w.id)) continue
+      const c = classById(w.class_id)
+      const fields = { title: str(w.title, 200), due: w.due, classId: w.class_id, className: c ? str(c.name, 40) : '', classColor: c ? c.color : '' }
+      const a = D.assignments.find(x => x.classWorkId === w.id)
+      if (!a) {
+        D.assignments.push(Object.assign({ id: `cw_${w.id}`.slice(0, 40), classWorkId: w.id, turnedIn: false, turnedInAt: null, xpAwarded: false, created: w.created_at }, fields))
+        changed = true
+      } else if (Object.keys(fields).some(k => a[k] !== fields[k])) {
+        Object.assign(a, fields)
+        changed = true
+      }
+    }
+    const before = D.assignments.length
+    D.assignments = D.assignments.filter(a => !a.classWorkId || ids.has(a.classWorkId) || a.turnedIn)
+    if (D.assignments.length !== before) changed = true
+    if (changed) {
+      save()
+      if (visible) render()
+    }
+  }
+  const classWorkDone = id => !!(D.assignments.find(a => a.classWorkId === id) || {}).turnedIn
+  function toggleClassWork(id) {
+    const a = D.assignments.find(x => x.classWorkId === id)
+    if (a) return toggleTurnIn(a)
+    // Hidden from your list but turned in from the class page: bring it back.
+    const w = typeof Classes !== 'undefined' && Classes.workById(id)
+    if (!w) return
+    D.hiddenWork = D.hiddenWork.filter(x => x !== id)
+    mirrorClassWork([w], cid => Classes.classById(cid))
+    const b = D.assignments.find(x => x.classWorkId === id)
+    if (b) toggleTurnIn(b)
+  }
+  // The title of an assignment row: class ones open their details.
+  function assignmentTitle(a) {
+    if (!a.classWorkId) return el('p', null, a.title)
+    return [
+      el('button', { type: 'button', class: 'cl-open', title: 'See what it entails', onClick: () => go({ name: 'work', id: a.classWorkId }) }, el('p', null, a.title)),
+      a.className && el('span', { class: 'cl-tag', style: `--c: ${a.classColor || '#888888'}` }, a.className),
+    ]
   }
   const openAssignments = () => D.assignments.filter(a => !a.turnedIn).sort((a, b) => a.due.localeCompare(b.due) || a.created.localeCompare(b.created))
 
@@ -713,6 +773,7 @@ const Study = (() => {
       if (!deck) return go({ name: 'home' })
       fill(root, deckView(deck))
     } else if (view.name === 'shop') fill(root, shopView())
+    else if (['classes', 'class', 'work', 'post'].includes(view.name)) fill(root, typeof Classes !== 'undefined' ? Classes.view(view, classUi) : homeView())
     else if (view.name === 'mode') {
       // Modes draw themselves; this is only for a fresh start.
       fill(root, view.node)
@@ -723,6 +784,16 @@ const Study = (() => {
       pendingScroll = null
       if (target) setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
     }
+  }
+  // What Classes.html needs from Study to draw its pages.
+  const classUi = {
+    go: v => go(v),
+    pop: t => pop(t),
+    dueLabel,
+    isDone: classWorkDone,
+    toggle: id => toggleClassWork(id),
+    // Fresh data: redraw, but never under a form someone's typing in.
+    refresh: () => { if (visible && (['classes', 'class', 'work'].includes(view.name) || view.name === 'home')) render() },
   }
   function pop(text) {
     const n = el('div', { class: 'st-pop' }, text)
@@ -775,7 +846,8 @@ const Study = (() => {
             el('div', { class: 'st-stat' }, el('span', { class: 'st-sub' }, 'All-time'), el('b', { class: 'st-xp' }, `${s.xp.toLocaleString()} XP`)))),
         el('div', { class: 'st-w st-span2' }, el('h2', null, '🕘 Activity'), activityLog()),
         el('div', { class: 'st-w st-span2', 'data-section': 'assignments' }, assignmentsPanel()),
-        el('div', { class: 'st-w st-span2', 'data-section': 'calendar' }, calendarWidget())),
+        el('div', { class: 'st-w st-span2', 'data-section': 'calendar' }, calendarWidget()),
+        classesPanel()),
       el('section', { class: 'stack tight', 'data-section': 'decks' },
         el('div', { class: 'st-section-head' },
           el('h2', { class: 'st-label' }, '🗂️ Flashcard sets'),
@@ -884,14 +956,30 @@ const Study = (() => {
           const dl = dueLabel(a.due)
           return el('div', { class: `st-item ${dl.tone === 'over' ? 'over' : ''}` },
             el('button', { type: 'button', class: 'st-check', title: 'Turn in', 'aria-label': `Turn in ${a.title}`, onClick: () => toggleTurnIn(a) }),
-            el('div', { class: 'main' }, el('p', null, a.title), el('p', { class: `st-due ${dl.tone}` }, dl.text)),
+            el('div', { class: 'main' }, assignmentTitle(a), el('p', { class: `st-due ${dl.tone}` }, dl.text)),
             el('button', { type: 'button', class: 'st-icon', title: 'Delete', 'aria-label': `Delete ${a.title}`, onClick: () => deleteAssignment(a) }, '🗑'))
         }),
         done.map(a => el('div', { class: 'st-item done' },
           el('button', { type: 'button', class: 'st-check on', title: 'Undo turn-in', 'aria-label': `Undo turn-in of ${a.title}`, onClick: () => toggleTurnIn(a) }, '✓'),
-          el('div', { class: 'main' }, el('p', null, a.title), el('p', { class: 'st-due st-good' }, `turned in ${a.turnedInAt ? ago(a.turnedInAt) : ''} ago`.replace(' now ago', ' just now'))),
+          el('div', { class: 'main' }, assignmentTitle(a), el('p', { class: 'st-due st-good' }, `turned in ${a.turnedInAt ? ago(a.turnedInAt) : ''} ago`.replace(' now ago', ' just now'))),
           el('button', { type: 'button', class: 'st-icon', title: 'Delete', 'aria-label': `Delete ${a.title}`, onClick: () => deleteAssignment(a) }, '🗑')))),
     ]
+  }
+
+  // ── Classes panel on Study's home ──
+  function classesPanel() {
+    if (typeof Classes === 'undefined') return null
+    const sum = Classes.summary()
+    return el('div', { class: 'st-w st-span4', 'data-section': 'classes' },
+      el('div', { class: 'st-section-head' },
+        el('h2', null, '🏫 Classes', sum && sum.upcoming > 0 && el('span', { class: 'st-badge' }, String(sum.upcoming))),
+        el('button', { type: 'button', class: 'primary', onClick: () => go({ name: 'classes' }) }, sum && sum.classes.length ? 'All classes ›' : 'Find your classes ›')),
+      !sync.user ? el('p', { class: 'st-sub' }, 'Sign in to join classes.')
+        : !sum ? el('p', { class: 'st-sub' }, 'Loading classes…')
+          : sum.classes.length
+            ? el('div', { class: 'row', style: 'flex-wrap: wrap; gap: 8px' }, sum.classes.map(c => el('button', { type: 'button', class: 'chip', onClick: () => go({ name: 'class', id: c.id }) },
+              el('span', { class: 'cl-swatch', style: `--c: ${c.color}; display: inline-block; width: 10px; height: 10px; margin-right: 6px` }), c.name)))
+            : el('p', { class: 'st-sub' }, 'Join your classes and everyone\'s assignments for them land in your list, with what each one entails.'))
   }
 
   // ── Calendar: month view, a dot per day with something due ──
@@ -943,7 +1031,7 @@ const Study = (() => {
         !sel.length && el('p', { class: 'st-sub' }, 'Nothing due.'),
         el('div', { class: 'st-list' }, sel.map(a => el('div', { class: `st-item ${a.turnedIn ? 'done' : ''}` },
           el('button', { type: 'button', class: `st-check ${a.turnedIn ? 'on' : ''}`, title: a.turnedIn ? 'Undo turn-in' : 'Turn in', onClick: () => toggleTurnIn(a) }, a.turnedIn ? '✓' : ''),
-          el('div', { class: 'main' }, el('p', null, a.title), !a.turnedIn && el('p', { class: `st-due ${dueLabel(a.due).tone}` }, dueLabel(a.due).text)),
+          el('div', { class: 'main' }, assignmentTitle(a), !a.turnedIn && el('p', { class: `st-due ${dueLabel(a.due).tone}` }, dueLabel(a.due).text)),
           el('button', { type: 'button', class: 'st-icon', title: 'Delete', onClick: () => deleteAssignment(a) }, '🗑'))))),
     ]
   }
@@ -1555,7 +1643,7 @@ const Study = (() => {
   function summary() {
     const s = stats()
     return {
-      open: openAssignments().map(a => Object.assign({ id: a.id, title: a.title, due: a.due }, (({ text, tone }) => ({ label: text, tone }))(dueLabel(a.due)))),
+      open: openAssignments().map(a => Object.assign({ id: a.id, title: a.className ? `${a.className} · ${a.title}` : a.title, due: a.due }, (({ text, tone }) => ({ label: text, tone }))(dueLabel(a.due)))),
       overdue: openAssignments().filter(a => a.due < dayKey()).length,
       dueToday: openAssignments().filter(a => a.due === dayKey()).length,
       cardsDue: allDue().length,
