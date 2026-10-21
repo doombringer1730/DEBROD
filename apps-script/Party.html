@@ -1,0 +1,85 @@
+<script>
+// Party rooms: the Supabase Realtime plumbing Color Clash and Sea Battle
+// share. A room is one channel; everyone in it shows up in presence (in the
+// order they joined), and every message is one broadcast event, 'm', with
+// its kind in payload.t. Nothing is stored anywhere.
+//
+// Loaded after App.html (randomId, copyText) and before the games.
+
+const PARTY_ABC = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+
+function partyCanOnline() {
+  const cfg = (typeof S !== 'undefined' && S.cfg) || {}
+  return !!(cfg.supabaseUrl && cfg.supabaseKey && window.supabase)
+}
+
+function partyCode() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(5)), b => PARTY_ABC[b % PARTY_ABC.length]).join('')
+}
+
+const partyCleanCode = text => String(text || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
+
+// Copies the invite (the ?game=CODE link in the web app, else the code) and
+// says what happened.
+async function partyInvite(game, code, label) {
+  const cfg = (typeof S !== 'undefined' && S.cfg) || {}
+  const link = cfg.appUrl ? `${cfg.appUrl}?${game}=${code}` : code
+  const ok = await copyText(link)
+  if (ok) return cfg.appUrl ? 'Invite link copied. Friends sign in and land right in the room.' : `Room code ${code} copied. Friends open Arcade → ${label} and enter it.`
+  window.prompt('Send this to your friends:', link)
+  return `Send friends this: ${link}`
+}
+
+// on: { presence(players), message(t, payload), ready(), error(text) }
+// players: [{ id, name, joinedAt, ...extra }], oldest first.
+function partyRoom(game, code, me, info, on) {
+  const cfg = S.cfg
+  const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey)
+  const channel = sb.channel(`ds-${game}:${code}`, { config: { presence: { key: me }, broadcast: { self: false } } })
+  const joinedAt = Date.now()
+  let closed = false
+  let subscribed = false
+  let players = []
+  let extraInfo = info
+  channel.on('broadcast', { event: 'm' }, ({ payload }) => {
+    if (!closed && payload && typeof payload.t === 'string') on.message(payload.t, payload)
+  })
+  channel.on('presence', { event: 'sync' }, () => {
+    if (closed) return
+    players = Object.values(channel.presenceState()).map(m => m[m.length - 1])
+    players.sort((a, b) => a.joinedAt - b.joinedAt || (a.id < b.id ? -1 : 1))
+    on.presence(players)
+  })
+  channel.subscribe(async status => {
+    if (closed) return
+    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      if (!subscribed && on.error) on.error('Can\'t reach Supabase. Check SUPABASE_URL and SUPABASE_ANON_KEY in DEBROD → Settings.')
+      return
+    }
+    if (status !== 'SUBSCRIBED') return
+    // Re-announce on every (re)subscribe: after a reconnect presence starts
+    // empty, and without this we'd vanish from the room while still in it.
+    const first = !subscribed
+    subscribed = true
+    await channel.track(Object.assign({ id: me, joinedAt }, extraInfo))
+    if (first && on.ready) on.ready()
+  })
+  return {
+    code,
+    send(t, payload) {
+      if (closed || !subscribed) return
+      channel.send({ type: 'broadcast', event: 'm', payload: Object.assign({}, payload, { t, from: me }) })
+    },
+    players: () => players,
+    // Updates what everyone sees about us in presence (an icon, a name).
+    track(extra) {
+      extraInfo = Object.assign({}, info, extra)
+      if (!closed && subscribed) channel.track(Object.assign({ id: me, joinedAt }, extraInfo))
+    },
+    close() {
+      closed = true
+      try { channel.untrack(); sb.removeChannel(channel) } catch (e) { /* already gone */ }
+    },
+  }
+}
+</script>

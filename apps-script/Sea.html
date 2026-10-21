@@ -1,0 +1,1007 @@
+<style>
+/* ── Sea Battle ───────────────────────────────────────────────────────── */
+.game-stage:has(.game-sea) { width: 100%; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.sea { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+.sea-menu { width: min(420px, 100%); margin: 0 auto; }
+.sea-menu .wordmark { text-align: center; }
+.sea-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sea-top .grow { flex: 1; }
+.sea-status { font: 700 13px var(--display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.sea-status.mine { color: var(--yellow); text-shadow: 0 0 10px rgba(255, 211, 25, 0.6); }
+.sea-status.bad { color: var(--bad); }
+.sea-status.good { color: var(--good); }
+.sea-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.sea-board { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.sea-caption { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font: 12px var(--mono-font); letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+.sea-caption strong { color: var(--text); letter-spacing: 0.1em; }
+.sea-grid { position: relative; display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 2px; width: 100%; max-width: 420px; aspect-ratio: 1; padding: 3px; border: 1px solid var(--line); border-radius: 6px;
+  background: linear-gradient(160deg, #06336b, #03183d); box-shadow: inset 0 0 30px rgba(0, 240, 255, 0.1); }
+.sea-grid.active { border-color: var(--yellow); box-shadow: 0 0 14px rgba(255, 211, 25, 0.35), inset 0 0 30px rgba(0, 240, 255, 0.08); }
+.sea .sea-cell { position: relative; min-width: 0; padding: 0; border: 0; border-radius: 2px; background: rgba(40, 160, 230, 0.22); box-shadow: none; transform: none; aspect-ratio: 1; cursor: default; overflow: visible; }
+.sea .sea-cell:hover:not(:disabled) { box-shadow: none; }
+.sea .sea-cell.ship { background: linear-gradient(180deg, #8a93b8, #5a6283); }
+.sea .sea-cell.reveal { background: rgba(169, 155, 209, 0.35); outline: 1px dashed rgba(217, 208, 255, 0.6); outline-offset: -2px; }
+.sea .sea-cell.target { cursor: crosshair; }
+.sea .sea-cell.target:hover { background: rgba(255, 211, 25, 0.35); box-shadow: inset 0 0 0 2px var(--yellow); }
+.sea .sea-cell.preview { background: rgba(61, 255, 168, 0.5); }
+.sea .sea-cell.preview.bad { background: rgba(255, 77, 109, 0.5); }
+.sea .sea-cell.pick { cursor: pointer; }
+.sea .sea-cell.miss::after { content: ''; position: absolute; left: 50%; top: 50%; width: 26%; height: 26%; transform: translate(-50%, -50%); border-radius: 50%; background: rgba(246, 237, 255, 0.75); }
+.sea .sea-cell.hit { background: linear-gradient(180deg, #ff7a1a, #c2410c); }
+.sea .sea-cell.hit::after { content: '✕'; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font: 700 clamp(9px, 2.6vw, 16px)/1 var(--mono-font); }
+.sea .sea-cell.sunk { background: linear-gradient(180deg, #ff4d6d, #8f1d33); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.sea .sea-cell.boom { animation: sea-boom 0.6s ease-out; z-index: 1; }
+.sea .sea-cell.splash { animation: sea-splash 0.6s ease-out; z-index: 1; }
+@keyframes sea-boom { 0% { transform: scale(1.35); filter: brightness(2); box-shadow: 0 0 16px 5px rgba(255, 122, 26, 0.9); } 100% { transform: scale(1); filter: none; } }
+@keyframes sea-splash { 0% { transform: scale(1.25); box-shadow: 0 0 0 0 rgba(120, 200, 255, 0.9); } 100% { transform: scale(1); box-shadow: 0 0 0 10px rgba(120, 200, 255, 0); } }
+.sea-fleet { display: flex; flex-wrap: wrap; gap: 4px; }
+.sea-ship { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border: 1px solid var(--line); border-radius: 4px; font: 11px var(--mono-font); color: var(--text); background: rgba(13, 2, 33, 0.6); }
+.sea-ship .pips { display: inline-flex; gap: 2px; }
+.sea-ship .pips i { width: 6px; height: 6px; border-radius: 1px; background: #8a93b8; }
+.sea-ship.sunk { opacity: 0.55; text-decoration: line-through; border-color: rgba(255, 77, 109, 0.5); }
+.sea-ship.sunk .pips i { background: var(--bad); }
+.sea-panel { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.sea-panel .sea-ship { cursor: pointer; padding: 6px 10px; font-size: 12px; }
+.sea-panel .sea-ship.on { border-color: var(--yellow); box-shadow: 0 0 10px rgba(255, 211, 25, 0.5); }
+.sea-panel .sea-ship.done { border-color: rgba(61, 255, 168, 0.5); }
+.sea-stats { font: 12px var(--mono-font); color: var(--muted); }
+.sea-end { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--magenta); border-radius: 8px; background: var(--panel); box-shadow: var(--glow-magenta); }
+.sea-end .wordmark { font-size: 24px; }
+.sea-fair { font: 12px var(--mono-font); }
+.sea-fair.ok { color: var(--good); }
+.sea-fair.bad { color: var(--bad); }
+.sea-code { font: 700 28px var(--display); letter-spacing: 0.3em; text-align: center; color: var(--cyan); text-shadow: 0 0 12px rgba(0, 240, 255, 0.6); }
+.sea-note { font: 12px var(--mono-font); color: var(--muted); }
+@media (max-width: 720px) {
+  .sea-body { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .sea-grid { max-width: 100%; }
+}
+</style>
+<script>
+// Sea Battle: the classic hide-your-fleet grid game. Against the CPU (three
+// levels: random, hunt-and-target, and a probability map of where the
+// remaining ships can still be), or a friend over Supabase.
+//
+// Online it's peer to peer, so neither fleet ever leaves its own page until
+// the end: each player commits to a hash of their fleet, answers the other's
+// shots themselves, and reveals the fleet once the game is over so the other
+// side can check every answer against it. Anyone past the first two in the
+// room watches.
+//
+// Loaded after App.html (el, randomId, storedName, storeName) and Party.html.
+
+function seaBattle(host, ctx, opts) {
+  const N = 10
+  const FLEET = [{ name: 'Carrier', len: 5 }, { name: 'Cruiser', len: 4 }, { name: 'Frigate', len: 3 }, { name: 'Submarine', len: 3 }, { name: 'Patrol boat', len: 2 }]
+  const SHOT_MS = 30000     // to fire online, before a random shot goes for you
+  const RESEND_MS = 3000    // an unanswered shot goes again
+  const READY_MS = 4000     // and so does 'ready', until the other side has it
+  const CPU_MS = 750
+  const GONE_MS = 12000     // how long the other player can drop out before the game ends
+  const REC_KEY = 'ds_sea_record'
+  const LEVEL_KEY = 'ds_sea_level'
+  const me = randomId()
+  const wrap = el('div', { class: 'sea' })
+  host.append(wrap)
+
+  const fill = (node, ...kids) => {
+    node.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false && k !== ''))
+    return node
+  }
+  const pick = list => list[Math.floor(Math.random() * list.length)]
+  let dead = false
+  const timers = new Set()
+  function later(fn, ms) {
+    const t = setTimeout(() => { timers.delete(t); if (!dead) fn() }, ms)
+    timers.add(t)
+    return t
+  }
+  const cancel = t => { if (t) { clearTimeout(t); timers.delete(t) } }
+  let ticker = null
+  const hub = a => { if (typeof hubActivity === 'function') hubActivity(a) }
+
+  // ── Your record ──
+  function record() {
+    try { return Object.assign({ w: 0, l: 0, best: 0 }, JSON.parse(localStorage.getItem(REC_KEY)) || {}) } catch (e) { return { w: 0, l: 0, best: 0 } }
+  }
+  function saveRecord(won, shots) {
+    const r = record()
+    if (won) { r.w++; if (!r.best || shots < r.best) r.best = shots } else r.l++
+    try { localStorage.setItem(REC_KEY, JSON.stringify(r)) } catch (e) { /* private mode */ }
+  }
+  let level = 'normal'
+  try { level = localStorage.getItem(LEVEL_KEY) || 'normal' } catch (e) { /* private mode */ }
+
+  // ── The sea ──
+  // A cell is its index, y * 10 + x; a ship is { name, len, cells }.
+  const xy = i => [i % N, Math.floor(i / N)]
+  const coord = i => `${'ABCDEFGHIJ'[i % N]}${Math.floor(i / N) + 1}`
+  function lay(i, len, dir) {
+    const [x, y] = xy(i)
+    const out = []
+    for (let k = 0; k < len; k++) {
+      const cx = dir === 'h' ? x + k : x
+      const cy = dir === 'h' ? y : y + k
+      if (cx >= N || cy >= N) return null
+      out.push(cy * N + cx)
+    }
+    return out
+  }
+  const overlaps = (ships, cells, skip) => {
+    const taken = new Set(ships.filter(s => s && s !== skip && s.cells).flatMap(s => s.cells))
+    return cells.some(c => taken.has(c))
+  }
+  function randomFleet() {
+    const ships = []
+    for (const f of FLEET) {
+      for (;;) {
+        const cells = lay(Math.floor(Math.random() * N * N), f.len, Math.random() < 0.5 ? 'h' : 'v')
+        if (cells && !overlaps(ships, cells)) { ships.push({ name: f.name, len: f.len, cells }); break }
+      }
+    }
+    return ships
+  }
+  // Takes a shot at a fleet; `got` is every cell shot at it so far.
+  function defend(fleet, got, i) {
+    got.add(i)
+    const ship = fleet.find(s => s.cells.includes(i))
+    if (!ship) return { hit: false, sunk: null, cells: null, over: false }
+    const sunk = ship.cells.every(c => got.has(c))
+    const over = fleet.every(s => s.cells.every(c => got.has(c)))
+    return { hit: true, sunk: sunk ? ship.name : null, cells: sunk ? ship.cells.slice() : null, over }
+  }
+  // A layout as it's committed to and revealed: [[name, [cells]], …].
+  const layoutOf = fleet => fleet.map(s => [s.name, s.cells.slice()])
+  async function sha(text) {
+    if (!(window.crypto && crypto.subtle)) return ''
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
+  }
+  // A revealed layout has to be the real fleet: the right ships, each a
+  // straight line on the board, none overlapping.
+  function validLayout(layout) {
+    if (!Array.isArray(layout) || layout.length !== FLEET.length) return null
+    const ships = []
+    for (let k = 0; k < FLEET.length; k++) {
+      const [nm, cells] = layout[k] || []
+      if (nm !== FLEET[k].name || !Array.isArray(cells) || cells.length !== FLEET[k].len) return null
+      const sorted = cells.map(Number).sort((a, b) => a - b)
+      const step = sorted[1] - sorted[0]
+      if (sorted.some(c => !Number.isInteger(c) || c < 0 || c >= N * N)) return null
+      if (step !== 1 && step !== N) return null
+      for (let j = 1; j < sorted.length; j++) if (sorted[j] - sorted[j - 1] !== step) return null
+      if (step === 1 && Math.floor(sorted[0] / N) !== Math.floor(sorted[sorted.length - 1] / N)) return null
+      if (overlaps(ships, sorted)) return null
+      ships.push({ name: nm, len: sorted.length, cells: sorted })
+    }
+    return ships
+  }
+
+  // ── The CPU's aim ──
+  // shots: Map of cell → 'hit' | 'miss'; sunk: [{ name, cells }].
+  function aim(lvl, shots, sunk) {
+    const untried = []
+    for (let i = 0; i < N * N; i++) if (!shots.has(i)) untried.push(i)
+    if (lvl === 'easy' || !untried.length) return pick(untried)
+    const sunkCells = new Set(sunk.flatMap(s => s.cells))
+    const open = [...shots].filter(([i, r]) => r === 'hit' && !sunkCells.has(i)).map(([i]) => i)
+    const left = FLEET.filter(f => !sunk.some(s => s.name === f.name)).map(f => f.len)
+    const near = i => {
+      const [x, y] = xy(i)
+      return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [x + dx, y + dy, dx, dy]).filter(([a, b]) => a >= 0 && b >= 0 && a < N && b < N)
+    }
+    if (lvl === 'normal') {
+      if (open.length) {
+        // Next to a hit, and better still in line with two.
+        const weight = new Map()
+        const openSet = new Set(open)
+        for (const h of open) {
+          for (const [a, b, dx, dy] of near(h)) {
+            const j = b * N + a
+            if (shots.has(j)) continue
+            const [hx, hy] = xy(h)
+            const behind = (hy - dy) * N + (hx - dx)
+            const inLine = hx - dx >= 0 && hx - dx < N && hy - dy >= 0 && hy - dy < N && openSet.has(behind)
+            weight.set(j, (weight.get(j) || 0) + (inLine ? 4 : 1))
+          }
+        }
+        if (weight.size) {
+          const best = Math.max(...weight.values())
+          return pick([...weight].filter(([, w]) => w === best).map(([j]) => j))
+        }
+      }
+      // Hunting: the smallest ship left can't hide between these.
+      const gap = Math.min(...left)
+      const spread = untried.filter(i => { const [x, y] = xy(i); return (x + y) % gap === 0 })
+      return pick(spread.length ? spread : untried)
+    }
+    // Hard: count every way the remaining ships could still lie, and fire
+    // where the most of them cross. Around a hit, only lies through it count.
+    const score = new Array(N * N).fill(0)
+    const blocked = i => shots.get(i) === 'miss' || sunkCells.has(i)
+    const openSet = new Set(open)
+    for (const len of left) {
+      for (let i = 0; i < N * N; i++) {
+        for (const dir of ['h', 'v']) {
+          const cells = lay(i, len, dir)
+          if (!cells || cells.some(blocked)) continue
+          const through = cells.filter(c => openSet.has(c)).length
+          if (open.length && !through) continue
+          const w = through ? Math.pow(8, through) : 1
+          for (const c of cells) if (!shots.has(c)) score[c] += w
+        }
+      }
+    }
+    let best = 0
+    for (const i of untried) best = Math.max(best, score[i] + ((xy(i)[0] + xy(i)[1]) % 2 === 0 ? 0.5 : 0))
+    if (best <= 0.5) return pick(untried)
+    return pick(untried.filter(i => score[i] + ((xy(i)[0] + xy(i)[1]) % 2 === 0 ? 0.5 : 0) === best))
+  }
+
+  // ── Grids ──
+  function grid(cls, onCell, onHover) {
+    const g = el('div', { class: `sea-grid ${cls || ''}`, role: 'grid' })
+    const cells = []
+    for (let i = 0; i < N * N; i++) {
+      const c = el('button', { type: 'button', class: 'sea-cell', 'data-i': String(i), 'aria-label': coord(i), tabindex: '-1' })
+      cells.push(c)
+      g.append(c)
+    }
+    if (onCell) g.addEventListener('click', e => { const c = e.target.closest('.sea-cell'); if (c) onCell(Number(c.dataset.i)) })
+    if (onHover) {
+      g.addEventListener('pointermove', e => { const c = e.target.closest && e.target.closest('.sea-cell'); onHover(c ? Number(c.dataset.i) : null) })
+      g.addEventListener('pointerleave', () => onHover(null))
+    }
+    return { el: g, cells }
+  }
+  function paint(cells, classOf) {
+    for (let i = 0; i < cells.length; i++) {
+      const fx = cells[i].classList.contains('boom') ? ' boom' : cells[i].classList.contains('splash') ? ' splash' : ''
+      const next = `sea-cell ${classOf(i)}${fx}`
+      if (cells[i].className !== next) cells[i].className = next
+    }
+  }
+  function flash(cell, kind) {
+    if (!cell) return
+    cell.classList.remove('boom', 'splash')
+    void cell.offsetWidth
+    cell.classList.add(kind)
+    later(() => cell.classList.remove(kind), 650)
+  }
+  function fleetChips(fleetDef, isSunk) {
+    return el('div', { class: 'sea-fleet' }, fleetDef.map(f => el('span', { class: `sea-ship ${isSunk(f.name) ? 'sunk' : ''}` },
+      f.name, el('span', { class: 'pips' }, Array.from({ length: f.len }, () => el('i'))))))
+  }
+
+  // ── Menu ──
+  let room = null       // the online room
+  let game = null       // the game on screen
+  let spec = null       // what a spectator follows
+  let screen = 'menu'
+  let name = storedName() || ''
+
+  function menu(err, code) {
+    leaveRoom()
+    game = null
+    screen = 'menu'
+    hub(null)
+    const rec = record()
+    let draftName = name
+    let draftCode = code || ''
+    const online = partyCanOnline()
+    const nameInput = el('input', { value: draftName, maxlength: 18, placeholder: 'Your name', onInput: e => { draftName = e.target.value } })
+    const levelSel = el('select', { onChange: e => { level = e.target.value; try { localStorage.setItem(LEVEL_KEY, level) } catch (er) { /* private mode */ } } },
+      [['easy', 'Easy: fires at random'], ['normal', 'Normal: hunts, then finishes ships off'], ['hard', 'Hard: works out where ships can still be']].map(([v, l]) => el('option', { value: v }, l)))
+    levelSel.value = level
+    const okName = () => {
+      const n = draftName.trim().slice(0, 18)
+      if (!n) { nameInput.focus(); return false }
+      name = n
+      storeName(n)
+      return true
+    }
+    fill(wrap, el('div', { class: 'card stack sea-menu' },
+      el('div', null, el('p', { class: 'wordmark' }, 'Sea Battle'), el('p', { class: 'tagline' }, 'Hide your fleet. Hunt theirs.')),
+      err && el('p', { class: 'error' }, err),
+      el('label', { class: 'field' }, el('span', null, 'CPU'), levelSel),
+      el('button', { type: 'button', class: 'primary', onClick: () => cpuGame() }, 'Play the CPU'),
+      online && el('label', { class: 'field' }, el('span', null, 'Your name (to play a friend)'), nameInput),
+      online && el('button', { type: 'button', onClick: () => { if (okName()) joinRoom(partyCode(), true) } }, 'Make a room'),
+      online && el('form', { class: 'row', onSubmit: e => {
+        e.preventDefault()
+        const c = partyCleanCode(draftCode)
+        if (c && okName()) joinRoom(c, false)
+      } }, el('input', { value: draftCode, maxlength: 8, placeholder: 'Room code', onInput: e => { draftCode = e.target.value } }), el('button', { type: 'submit' }, 'Join')),
+      !online && el('p', { class: 'muted small' }, 'Playing a friend needs Supabase, like watch together (DEBROD → Settings).'),
+      el('p', { class: 'muted small' }, `Won ${rec.w} · Lost ${rec.l}${rec.best ? ` · Best win: ${rec.best} shots` : ''}`)))
+  }
+
+  // ── Placing your fleet ──
+  // done(ships) is called with the fleet once you're ready.
+  function placement(done, info = {}) {
+    screen = 'place'
+    const plan = FLEET.map(f => ({ name: f.name, len: f.len, cells: null }))
+    let sel = 0
+    let dir = 'h'
+    let hover = null
+    const g = grid('place', i => {
+      // A placed ship picks back up when you tap it.
+      const at = plan.find(s => s.cells && s.cells.includes(i))
+      if (at) { sel = plan.indexOf(at); at.cells = null; return redraw() }
+      const cells = lay(i, plan[sel].len, dir)
+      if (!cells || overlaps(plan, cells, plan[sel])) return
+      plan[sel].cells = cells
+      const next = plan.findIndex(s => !s.cells)
+      if (next >= 0) sel = next
+      redraw()
+    }, i => { hover = i; paintPlace() })
+    function paintPlace() {
+      const prev = hover !== null && plan[sel] ? lay(hover, plan[sel].len, dir) : null
+      const bad = !prev || overlaps(plan, prev, plan[sel])
+      const prevSet = new Set(prev || (hover !== null ? [hover] : []))
+      paint(g.cells, i => {
+        if (prevSet.has(i)) return `preview ${bad ? 'bad' : ''}`
+        return plan.some(s => s.cells && s.cells.includes(i)) ? 'ship pick' : 'pick'
+      })
+    }
+    const panel = el('div', { class: 'sea-panel' })
+    function redraw() {
+      const all = plan.every(s => s.cells)
+      fill(panel,
+        el('p', { class: 'sea-note' }, 'Pick a ship, then tap where its front goes. Tap a placed ship to move it.'),
+        el('div', { class: 'sea-fleet' }, plan.map((s, k) => el('button', {
+          type: 'button', class: `sea-ship ${k === sel ? 'on' : ''} ${s.cells ? 'done' : ''}`,
+          onClick: () => { sel = k; redraw() },
+        }, s.cells ? '✓ ' : '', s.name, el('span', { class: 'pips' }, Array.from({ length: s.len }, () => el('i')))))),
+        el('div', { class: 'row' },
+          el('button', { type: 'button', onClick: rotate }, dir === 'h' ? '↔ Across (R)' : '↕ Down (R)'),
+          el('button', { type: 'button', onClick: () => { randomFleet().forEach((s, k) => { plan[k].cells = s.cells }); redraw() } }, '🎲 Random'),
+          el('button', { type: 'button', onClick: () => { plan.forEach(s => { s.cells = null }); sel = 0; redraw() } }, 'Clear')),
+        el('button', { type: 'button', class: 'primary', disabled: !all, onClick: () => { if (plan.every(s => s.cells)) done(plan.map(s => ({ name: s.name, len: s.len, cells: s.cells.slice() }))) } }, all ? 'Ready!' : `Place ${plan.filter(s => !s.cells).length} more`),
+        info.note && el('p', { class: 'sea-note' }, info.note()),
+        el('button', { type: 'button', class: 'link', onClick: () => menu() }, '‹ Back'))
+      paintPlace()
+    }
+    function rotate() { dir = dir === 'h' ? 'v' : 'h'; redraw() }
+    placeKey = rotate
+    const status = el('p', { class: 'sea-status grow' }, info.title || 'Place your fleet')
+    fill(wrap,
+      el('div', { class: 'sea-top' }, status, info.top && info.top()),
+      el('div', { class: 'sea-body' },
+        el('div', { class: 'sea-board' }, el('div', { class: 'sea-caption' }, el('strong', null, 'Your fleet'), el('span', null, 'A–J · 1–10')), g.el),
+        panel))
+    redraw()
+    return { redraw }
+  }
+  let placeKey = null
+
+  // ── A battle on screen ──
+  // game: { mode, mine, got (shots at me), shots (mine: cell → hit/miss),
+  //   theirSunk, turn ('me' | 'them' | 'wait'), over, fired, hits, … }
+  function battleScreen() {
+    screen = 'battle'
+    placeKey = null
+    const theirs = grid('theirs', i => fire(i))
+    const mine = grid('mine')
+    const status = el('p', { class: 'sea-status grow' })
+    const top = el('div', { class: 'sea-top' })
+    const theirCap = el('div', { class: 'sea-caption' })
+    const myCap = el('div', { class: 'sea-caption' })
+    const theirFleet = el('div')
+    const myFleet = el('div')
+    const stats = el('p', { class: 'sea-stats' })
+    const end = el('div')
+    fill(wrap,
+      top,
+      el('div', { class: 'sea-body' },
+        el('div', { class: 'sea-board' }, theirCap, theirs.el, theirFleet, stats),
+        el('div', { class: 'sea-board' }, myCap, mine.el, myFleet, end)))
+    game.view = { theirs, mine, status, top, theirCap, myCap, theirFleet, myFleet, stats, end }
+    drawBattle()
+  }
+
+  function foeName() { return game.mode === 'cpu' ? 'The CPU' : (game.peer && game.peer.name) || 'Them' }
+  function secsLeft(at) { return at ? Math.max(0, Math.ceil((at - Date.now()) / 1000)) : null }
+
+  function drawBattle() {
+    const v = game && game.view
+    if (!v || screen !== 'battle') return
+    const g = game
+    const sunkCells = new Set(g.theirSunk.flatMap(s => s.cells))
+    const myTurn = g.turn === 'me' && !g.over && g.begun
+    const reveal = g.theirFleet ? new Set(g.theirFleet.flatMap(s => s.cells)) : null
+    paint(v.theirs.cells, i => {
+      if (sunkCells.has(i)) return 'sunk'
+      const r = g.shots.get(i)
+      if (r === 'hit') return 'hit'
+      if (r === 'miss') return 'miss'
+      if (reveal && reveal.has(i)) return 'reveal'
+      return myTurn ? 'target' : ''
+    })
+    v.theirs.el.classList.toggle('active', myTurn)
+    const myShips = new Map()
+    for (const s of g.mine) for (const c of s.cells) myShips.set(c, s)
+    paint(v.mine.cells, i => {
+      const s = myShips.get(i)
+      if (s) return s.cells.every(c => g.got.has(c)) ? 'ship sunk' : g.got.has(i) ? 'ship hit' : 'ship'
+      return g.got.has(i) ? 'miss' : ''
+    })
+    v.mine.el.classList.toggle('active', !g.over && g.begun && g.turn === 'them')
+
+    let text = ''
+    let tone = ''
+    if (g.over === 'won') { text = 'You won!'; tone = 'good' } else if (g.over === 'lost') { text = `${foeName()} won`; tone = 'bad' } else if (g.over === 'left') { text = `${foeName()} left`; tone = 'bad' } else if (!g.begun) text = g.ready ? `Waiting for ${foeName()} to place their fleet…` : 'Place your fleet'
+    else if (g.goneTimer) { text = `${foeName()} dropped out. Waiting for them…`; tone = 'bad' } else if (g.turn === 'me') { text = `Your turn: fire at their waters${g.deadline ? ` · ⏱ ${secsLeft(g.deadline)}s` : ''}`; tone = 'mine' } else if (g.turn === 'wait') text = 'Firing…'
+    else text = `${foeName()} is aiming…${g.peerDeadline ? ` · ⏱ ${secsLeft(g.peerDeadline)}s` : ''}`
+    v.status.textContent = text
+    v.status.className = `sea-status grow ${tone}`
+    fill(v.top, v.status,
+      g.mode === 'cpu' && el('span', { class: 'pill' }, `CPU: ${({ easy: 'Easy', normal: 'Normal', hard: 'Hard' })[g.level]}`),
+      g.mode === 'online' && room && el('span', { class: 'pill' }, 'Room ', el('span', { class: 'mono' }, room.code)),
+      g.mode === 'online' && room && el('button', { type: 'button', class: 'chip', onClick: invite }, 'Invite'),
+      el('button', { type: 'button', class: 'link', onClick: () => menu() }, '‹ Leave'))
+    fill(v.theirCap, el('strong', null, `${g.mode === 'cpu' ? 'CPU' : foeName()}'s waters`), el('span', null, myTurn ? 'tap to fire' : ''))
+    fill(v.myCap, el('strong', null, 'Your fleet'), el('span', null, `${g.got.size} shots taken`))
+    fill(v.theirFleet, fleetChips(FLEET, nm => g.theirSunk.some(s => s.name === nm)))
+    fill(v.myFleet, fleetChips(FLEET, nm => { const s = g.mine.find(x => x.name === nm); return s && s.cells.every(c => g.got.has(c)) }))
+    v.stats.textContent = `Shots ${g.fired} · Hits ${g.hits} · Accuracy ${g.fired ? Math.round((g.hits / g.fired) * 100) : 0}%`
+    fill(v.end, g.over && endPanel())
+  }
+
+  function endPanel() {
+    const g = game
+    const won = g.over === 'won'
+    const fair = g.mode === 'online' && g.over !== 'left' && (g.fair === true
+      ? el('p', { class: 'sea-fair ok' }, `✔ Fair game: every answer matched ${foeName()}'s fleet.`)
+      : g.fair === false
+        ? el('p', { class: 'sea-fair bad' }, `⚠ ${foeName()}'s answers didn't match the fleet they revealed.`)
+        : el('p', { class: 'sea-fair' }, `Checking ${foeName()}'s fleet…`))
+    const againLabel = g.mode === 'online' && g.again ? `Waiting for ${foeName()}…` : 'Play again'
+    const peerHere = g.mode !== 'online' || (room && room.list.some(p => p.id === g.peer.id))
+    return el('div', { class: 'sea-end' },
+      el('p', { class: 'wordmark' }, won ? 'You won!' : g.over === 'left' ? `${foeName()} left` : `${foeName()} won`),
+      g.over !== 'left' && el('p', { class: 'muted small' }, won
+        ? `Sunk their whole fleet in ${g.fired} shots (${g.fired ? Math.round((g.hits / g.fired) * 100) : 0}% accuracy).`
+        : `They needed ${g.theirFired} shots. Their ships are shown dashed.`),
+      g.over === 'left' && el('p', { class: 'muted small' }, 'So this game is over. You can play whoever\'s next in the room, or wait for someone to join.'),
+      fair,
+      el('div', { class: 'row' },
+        g.over !== 'left' && peerHere && el('button', { type: 'button', class: 'primary', disabled: g.mode === 'online' && g.again, onClick: playAgain }, againLabel),
+        g.mode === 'online' && !peerHere && el('button', { type: 'button', class: 'primary', onClick: newOpponent }, 'New game'),
+        el('button', { type: 'button', onClick: () => menu() }, 'Menu')))
+  }
+
+  function newGame(mode, extra) {
+    return Object.assign({
+      mode, mine: [], got: new Set(), shots: new Map(), theirSunk: [], turn: 'me', over: null,
+      fired: 0, hits: 0, theirFired: 0, begun: false, ready: false, theirFleet: null,
+    }, extra)
+  }
+
+  function startTicker() {
+    clearInterval(ticker)
+    ticker = setInterval(() => { if (game && screen === 'battle' && (game.deadline || game.peerDeadline) && !game.over) drawBattle() }, 1000)
+  }
+
+  // ── Firing ──
+  function fire(i) {
+    const g = game
+    if (!g || g.turn !== 'me' || g.over || !g.begun || g.shots.has(i)) return
+    cancel(g.shotTimer)
+    g.deadline = null
+    if (g.mode === 'cpu') {
+      const r = defend(g.cpu.fleet, g.cpu.got, i)
+      landed(i, r)
+      if (r.over) return finish('won')
+      g.turn = 'them'
+      drawBattle()
+      later(cpuTurn, CPU_MS)
+      return
+    }
+    g.pending = { n: g.fired, i }
+    g.turn = 'wait'
+    sendShot()
+    drawBattle()
+  }
+
+  // Our shot's answer, from the CPU or the other player.
+  function landed(i, r) {
+    const g = game
+    g.shots.set(i, r.hit ? 'hit' : 'miss')
+    g.fired++
+    if (r.hit) g.hits++
+    if (r.sunk) {
+      g.theirSunk.push({ name: r.sunk, cells: r.cells })
+      ctx.toast(`You sank their ${r.sunk}!`)
+    }
+    drawBattle()
+    if (g.view) flash(g.view.theirs.cells[i], r.hit ? 'boom' : 'splash')
+  }
+
+  // A shot at us.
+  function incoming(i, r) {
+    const g = game
+    g.theirFired++
+    if (r.sunk) ctx.toast(`${foeName()} sank your ${r.sunk}!`)
+    drawBattle()
+    if (g.view) flash(g.view.mine.cells[i], r.hit ? 'boom' : 'splash')
+  }
+
+  function cpuTurn() {
+    const g = game
+    if (!g || g.mode !== 'cpu' || g.over || g.turn !== 'them') return
+    const i = aim(g.level, g.cpu.shots, g.cpu.sunk)
+    const r = defend(g.mine, g.got, i)
+    g.cpu.shots.set(i, r.hit ? 'hit' : 'miss')
+    if (r.sunk) g.cpu.sunk.push({ name: r.sunk, cells: r.cells })
+    incoming(i, r)
+    if (r.over) return finish('lost')
+    g.turn = 'me'
+    drawBattle()
+  }
+
+  function finish(result) {
+    const g = game
+    g.over = result
+    g.turn = null
+    g.deadline = null
+    g.peerDeadline = null
+    cancel(g.shotTimer)
+    if (result !== 'left') saveRecord(result === 'won', g.fired)
+    if (g.mode === 'cpu') g.theirFleet = g.cpu.fleet
+    else if (result !== 'left') reveal()
+    drawBattle()
+  }
+
+  function playAgain() {
+    if (!game) return
+    if (game.mode === 'cpu') return cpuGame()
+    if (game.again) return
+    game.again = true
+    room.send('again', { gid: game.gid })
+    drawBattle()
+    maybeRematch()
+  }
+
+  // ── Against the CPU ──
+  function cpuGame() {
+    leaveRoom()
+    hub({ game: 'sea', label: 'Sea Battle', joinable: false })
+    const lvl = level
+    placement(ships => {
+      game = newGame('cpu', { level: lvl, mine: ships, begun: true, ready: true })
+      game.cpu = { fleet: randomFleet(), got: new Set(), shots: new Map(), sunk: [] }
+      // Who goes first takes turns, game to game.
+      cpuFirst = !cpuFirst
+      game.turn = cpuFirst ? 'them' : 'me'
+      battleScreen()
+      if (game.turn === 'them') later(cpuTurn, CPU_MS)
+    }, { title: `Place your fleet · CPU: ${({ easy: 'Easy', normal: 'Normal', hard: 'Hard' })[lvl]}` })
+  }
+  let cpuFirst = true
+
+  // ── Online ──
+  // The first two people in the room play; the first of them deals each
+  // game ('newgame'). Everyone else watches.
+  function joinRoom(code, creating) {
+    leaveRoom()
+    game = null
+    spec = null
+    screen = 'room'
+    roomCard(creating ? 'Making a room…' : `Joining room ${code}…`)
+    const r = partyRoom('sea', code, me, { name }, {
+      presence: list => { if (room === r) onPresence(list) },
+      message: (t, p) => { if (room === r) onMessage(t, p) },
+      ready: () => { if (room !== r) return; r.send('hello', {}); onPresence(r.players()) },
+      error: text => { if (room === r) menu(text) },
+    })
+    room = r
+    room.games = 0
+    room.list = []
+    hub({ game: 'sea', code, label: 'Sea Battle', joinable: true })
+  }
+
+  function leaveRoom() {
+    if (game) { cancel(game.shotTimer); cancel(game.readyTimer); if (game.pending) cancel(game.pending.timer) }
+    for (const t of timers) clearTimeout(t)
+    timers.clear()
+    clearInterval(ticker)
+    ticker = null
+    if (room) { room.close(); room = null; hub(null) }
+  }
+
+  async function invite() {
+    if (!room) return
+    ctx.toast(await partyInvite('sea', room.code, 'Sea Battle'))
+  }
+
+  // The waiting room, before there's anyone to play.
+  function roomCard(text) {
+    screen = 'room'
+    placeKey = null
+    fill(wrap, el('div', { class: 'card stack sea-menu' },
+      el('p', { class: 'wordmark' }, 'Sea Battle'),
+      el('p', { class: 'muted' }, text),
+      room && el('p', { class: 'sea-code' }, room.code),
+      room && el('button', { type: 'button', class: 'primary', onClick: invite }, 'Invite a friend'),
+      room && el('p', { class: 'muted small' }, 'Send them the link, or have them open Arcade → Sea Battle and enter the code. Anyone after the first two watches.'),
+      el('button', { type: 'button', class: 'link', onClick: () => menu() }, '‹ Leave')))
+  }
+
+  const nameOf = id => { const p = room && room.list.find(x => x.id === id); return p ? p.name : (spec && spec.names && spec.names[id]) || 'Someone' }
+
+  function onPresence(list) {
+    room.list = list
+    // Dropped from the room (a reconnect can do that): say we're here again.
+    if (!list.some(p => p.id === me)) { room.track({}); return }
+    const pair = list.slice(0, 2)
+    const first = pair[0] && pair[0].id === me
+    // Our opponent vanished: give them a moment (a blip in the connection
+    // looks the same), then call the game.
+    const g = game
+    if (g && g.mode === 'online' && !g.over && g.peer) {
+      const here = list.some(p => p.id === g.peer.id)
+      if (!here && !g.goneTimer) {
+        g.goneTimer = later(() => {
+          g.goneTimer = null
+          if (game !== g || g.over || (room && room.list.some(p => p.id === g.peer.id))) return
+          cancel(g.readyTimer)
+          if (g.pending) cancel(g.pending.timer)
+          if (screen !== 'battle') battleScreen()
+          finish('left')
+        }, GONE_MS)
+      } else if (here && g.goneTimer) { cancel(g.goneTimer); g.goneTimer = null }
+      if (screen === 'battle') drawBattle()
+    }
+    const playing = pair.some(p => p.id === me)
+    if (!playing) {
+      if (!spec) { spec = { names: {} }; spectate() }
+      return
+    }
+    if (spec) { spec = null }
+    if (game) return
+    if (pair.length < 2) return roomCard('Waiting for someone to join…')
+    const other = pair[first ? 1 : 0]
+    // The dealer starts a game with whoever's here; after that, a new
+    // opponent waits for someone to press New game.
+    if (first) deal(other)
+    else if (screen !== 'room-wait') { screen = 'room-wait'; roomCard(`Waiting for ${other.name} to start…`) }
+  }
+
+  // After the other player's gone: a game with whoever's next in the room.
+  function newOpponent() {
+    if (!room) return menu()
+    if (game) { cancel(game.shotTimer); cancel(game.readyTimer); cancel(game.goneTimer) }
+    game = null
+    screen = 'room'
+    onPresence(room.list)
+  }
+
+  function deal(other) {
+    room.games++
+    const gid = randomId()
+    const firstShot = room.games % 2 ? me : other.id
+    const msg = { gid, a: me, b: other.id, first: firstShot, names: { [me]: name, [other.id]: other.name } }
+    room.lastDeal = msg
+    room.send('newgame', msg)
+    startOnline(msg)
+  }
+
+  function startOnline(msg) {
+    const peerId = msg.a === me ? msg.b : msg.a
+    if (game && game.gid === msg.gid) return
+    if (game) { cancel(game.shotTimer); cancel(game.readyTimer); if (game.pending) cancel(game.pending.timer) }
+    game = newGame('online', { gid: msg.gid, peer: { id: peerId, name: (msg.names && msg.names[peerId]) || nameOf(peerId) }, first: msg.first, answered: [], results: [] })
+    const g = game
+    const ui = placement(ships => readyUp(g, ships), {
+      title: `Place your fleet · vs ${g.peer.name}`,
+      note: () => (g.peerCommit ? `${g.peer.name} is ready.` : `${g.peer.name} is placing their fleet…`),
+      top: () => [el('span', { class: 'pill' }, 'Room ', el('span', { class: 'mono' }, room.code)), el('button', { type: 'button', class: 'chip', onClick: invite }, 'Invite')],
+    })
+    g.placeUi = ui
+  }
+
+  async function readyUp(g, ships) {
+    if (game !== g) return
+    g.mine = ships
+    g.salt = randomId() + randomId()
+    g.commit = await sha(`${g.salt}|${JSON.stringify(layoutOf(ships))}`)
+    if (game !== g) return
+    g.ready = true
+    battleScreen()
+    sendReady(g)
+    if (g.peerCommit !== undefined) begin(g)
+  }
+
+  // Sent until the other side's 'ready' arrives (each one prompts ours).
+  function sendReady(g) {
+    if (game !== g || !room) return
+    room.send('ready', { gid: g.gid, commit: g.commit })
+    cancel(g.readyTimer)
+    if (g.peerCommit === undefined) g.readyTimer = later(() => sendReady(g), READY_MS)
+  }
+
+  function begin(g) {
+    if (g.begun) return
+    g.begun = true
+    cancel(g.readyTimer)
+    g.turn = g.first === me ? 'me' : 'them'
+    startTicker()
+    armTurn()
+    drawBattle()
+  }
+
+  // The shot clock: run out and a random shot goes for you.
+  function armTurn() {
+    const g = game
+    if (!g || g.mode !== 'online' || g.over) return
+    cancel(g.shotTimer)
+    if (g.turn === 'me') {
+      g.deadline = Date.now() + SHOT_MS
+      g.peerDeadline = null
+      g.shotTimer = later(() => {
+        if (game !== g || g.turn !== 'me' || g.over) return
+        const open = []
+        for (let i = 0; i < N * N; i++) if (!g.shots.has(i)) open.push(i)
+        ctx.toast('Out of time, so a shot went for you.')
+        fire(pick(open))
+      }, SHOT_MS)
+    } else {
+      g.deadline = null
+      g.peerDeadline = Date.now() + SHOT_MS
+    }
+  }
+
+  function sendShot() {
+    const g = game
+    if (!g || !g.pending || !room) return
+    room.send('shot', { gid: g.gid, n: g.pending.n, i: g.pending.i })
+    cancel(g.pending.timer)
+    g.pending.timer = later(sendShot, RESEND_MS)
+  }
+
+  async function reveal() {
+    const g = game
+    if (!room || !g.mine.length) return
+    room.send('reveal', { gid: g.gid, layout: layoutOf(g.mine), salt: g.salt })
+    g.revealed = true
+    if (g.peerReveal) verify(g)
+  }
+
+  // Their revealed fleet against their commitment and every answer they gave.
+  async function verify(g) {
+    const { layout, salt } = g.peerReveal
+    const ships = validLayout(layout)
+    let ok = !!ships
+    if (ok && g.peerCommit) ok = (await sha(`${salt}|${JSON.stringify(layout)}`)) === g.peerCommit
+    if (ok) {
+      const at = new Map()
+      for (const s of ships) for (const c of s.cells) at.set(c, s)
+      for (const r of g.results) {
+        const s = at.get(r.i)
+        if (!!s !== !!r.hit) ok = false
+        if (r.sunk && (!s || s.name !== r.sunk)) ok = false
+      }
+      for (const s of ships) {
+        const allHit = s.cells.every(c => g.shots.get(c) === 'hit')
+        const claimed = g.results.some(r => r.sunk === s.name)
+        if (allHit !== claimed) ok = false
+      }
+      if (g.over === 'won' && !ships.every(s => s.cells.every(c => g.shots.get(c) === 'hit'))) ok = false
+    }
+    if (game !== g) return
+    g.fair = ok
+    if (ships) g.theirFleet = ships
+    drawBattle()
+  }
+
+  function maybeRematch() {
+    const g = game
+    if (!g || !g.again || !g.peerAgain || !room) return
+    const first = room.list[0] && room.list[0].id === me
+    const other = room.list.find(p => p.id === g.peer.id)
+    if (first && other) deal(other)
+  }
+
+  function statusFor(to) {
+    const g = game
+    return {
+      to, gid: g.gid, a: g.first === me ? me : g.peer.id, b: g.first === me ? g.peer.id : me, first: g.first,
+      names: { [me]: name, [g.peer.id]: g.peer.name },
+      begun: g.begun, over: g.over, shots: g.results.map(r => ({ i: r.i, hit: r.hit, sunk: r.sunk, cells: r.cells, over: r.over })),
+    }
+  }
+
+  function onMessage(t, p) {
+    const g = game
+    const fromPeer = g && g.peer && p.from === g.peer.id && p.gid === g.gid
+    if (t === 'hello') {
+      if (g && g.mode === 'online') {
+        room.send('status', statusFor(p.from))
+        // Our opponent may have missed the deal.
+        if (room.lastDeal && room.lastDeal.gid === g.gid && p.from === g.peer.id && !g.begun) room.send('newgame', room.lastDeal)
+      }
+      return
+    }
+    if (spec) return watch(t, p)
+    if (t === 'newgame') {
+      if (p.b === me || p.a === me) startOnline(p)
+      return
+    }
+    if (!fromPeer) return
+    if (t === 'ready') {
+      const fresh = g.peerCommit === undefined
+      g.peerCommit = String(p.commit || '')
+      if (g.placeUi && screen === 'place') g.placeUi.redraw()
+      if (g.ready) {
+        begin(g)
+        // A repeat means ours never reached them.
+        if (!fresh) room.send('ready', { gid: g.gid, commit: g.commit })
+      }
+      return
+    }
+    if (t === 'shot') {
+      const n = p.n | 0
+      if (n < g.answered.length) return room.send('result', g.answered[n])
+      if (n !== g.answered.length || g.turn !== 'them' || g.over || !g.begun) return
+      const i = p.i | 0
+      if (i < 0 || i >= N * N || g.got.has(i)) return
+      const r = defend(g.mine, g.got, i)
+      const res = Object.assign({ gid: g.gid, n, i }, r)
+      g.answered.push(res)
+      room.send('result', res)
+      incoming(i, r)
+      if (r.over) return finish('lost')
+      g.turn = 'me'
+      armTurn()
+      drawBattle()
+      return
+    }
+    if (t === 'result') {
+      if (!g.pending || p.n !== g.pending.n) return
+      const i = g.pending.i
+      cancel(g.pending.timer)
+      g.pending = null
+      const r = { hit: !!p.hit, sunk: p.sunk ? String(p.sunk) : null, cells: Array.isArray(p.cells) ? p.cells.map(Number) : null, over: !!p.over }
+      g.results.push(Object.assign({ i }, r))
+      landed(i, r)
+      if (r.over) return finish('won')
+      g.turn = 'them'
+      armTurn()
+      drawBattle()
+      return
+    }
+    if (t === 'reveal') {
+      g.peerReveal = { layout: p.layout, salt: String(p.salt || '') }
+      if (g.over && g.over !== 'left') verify(g)
+      return
+    }
+    if (t === 'again') {
+      g.peerAgain = true
+      maybeRematch()
+    }
+  }
+
+  // ── Watching ──
+  function spectate() {
+    screen = 'spectate'
+    placeKey = null
+    const a = grid('theirs')
+    const b = grid('theirs')
+    const status = el('p', { class: 'sea-status grow' })
+    const capA = el('div', { class: 'sea-caption' })
+    const capB = el('div', { class: 'sea-caption' })
+    const fleetA = el('div')
+    const fleetB = el('div')
+    fill(wrap,
+      el('div', { class: 'sea-top' }, status,
+        el('span', { class: 'pill' }, '👀 Watching'),
+        el('span', { class: 'pill' }, 'Room ', el('span', { class: 'mono' }, room.code)),
+        el('button', { type: 'button', class: 'link', onClick: () => menu() }, '‹ Leave')),
+      el('div', { class: 'sea-body' },
+        el('div', { class: 'sea-board' }, capA, a.el, fleetA),
+        el('div', { class: 'sea-board' }, capB, b.el, fleetB)))
+    spec.view = { a, b, status, capA, capB, fleetA, fleetB }
+    drawSpec()
+  }
+
+  function specInit(p) {
+    spec.gid = p.gid
+    spec.a = p.a
+    spec.b = p.b
+    spec.first = p.first
+    spec.names = Object.assign(spec.names || {}, p.names || {})
+    spec.logs = { [p.a]: new Map(), [p.b]: new Map() }
+    spec.sunk = { [p.a]: [], [p.b]: [] }
+    spec.fleets = {}
+    spec.winner = null
+    spec.begun = false
+    spec.ready = new Set()
+  }
+
+  function logShot(shooter, r) {
+    if (!spec.logs || !spec.logs[shooter]) return
+    spec.logs[shooter].set(r.i, r.hit ? 'hit' : 'miss')
+    if (r.sunk && !spec.sunk[shooter].some(s => s.name === r.sunk)) spec.sunk[shooter].push({ name: r.sunk, cells: (r.cells || []).map(Number) })
+    if (r.over) spec.winner = shooter
+    spec.begun = true
+  }
+
+  function watch(t, p) {
+    if (t === 'newgame') { specInit(p); return drawSpec() }
+    if (t === 'status') {
+      if (spec.gid !== p.gid) specInit(p)
+      spec.names = Object.assign(spec.names || {}, p.names || {})
+      if (p.begun) spec.begun = true
+      // Each player tells us the shots they've fired.
+      if (spec.logs && spec.logs[p.from]) for (const r of p.shots || []) logShot(p.from, r)
+      return drawSpec()
+    }
+    if (!spec.gid || p.gid !== spec.gid) return
+    if (t === 'ready') {
+      // Both fleets placed: the battle's on.
+      spec.ready.add(p.from)
+      if (spec.ready.has(spec.a) && spec.ready.has(spec.b)) spec.begun = true
+      return drawSpec()
+    }
+    if (t === 'result') {
+      const shooter = p.from === spec.a ? spec.b : spec.a
+      logShot(shooter, p)
+      return drawSpec()
+    }
+    if (t === 'reveal') {
+      const ships = validLayout(p.layout)
+      if (ships) spec.fleets[p.from] = ships
+      return drawSpec()
+    }
+  }
+
+  function drawSpec() {
+    const v = spec && spec.view
+    if (!v || screen !== 'spectate') return
+    if (!spec.gid) {
+      v.status.textContent = 'Waiting for a game to start…'
+      for (const gr of [v.a, v.b]) paint(gr.cells, () => '')
+      return
+    }
+    const nm = id => spec.names[id] || nameOf(id)
+    // Board A shows the shots fired at a's fleet (by b), and the other way round.
+    const board = (gr, owner, shooter) => {
+      const log = spec.logs[shooter]
+      const sunk = new Set(spec.sunk[shooter].flatMap(s => s.cells))
+      const fleet = spec.fleets[owner] ? new Set(spec.fleets[owner].flatMap(s => s.cells)) : null
+      paint(gr.cells, i => (sunk.has(i) ? 'sunk' : log.get(i) === 'hit' ? 'hit' : log.get(i) === 'miss' ? 'miss' : fleet && fleet.has(i) ? 'reveal' : ''))
+    }
+    board(v.a, spec.a, spec.b)
+    board(v.b, spec.b, spec.a)
+    fill(v.capA, el('strong', null, `${nm(spec.a)}'s fleet`), el('span', null, `${spec.logs[spec.b].size} shots at it`))
+    fill(v.capB, el('strong', null, `${nm(spec.b)}'s fleet`), el('span', null, `${spec.logs[spec.a].size} shots at it`))
+    fill(v.fleetA, fleetChips(FLEET, n => spec.sunk[spec.b].some(s => s.name === n)))
+    fill(v.fleetB, fleetChips(FLEET, n => spec.sunk[spec.a].some(s => s.name === n)))
+    const total = spec.logs[spec.a].size + spec.logs[spec.b].size
+    const second = spec.first === spec.a ? spec.b : spec.a
+    const turn = total % 2 === 0 ? spec.first : second
+    v.status.textContent = spec.winner ? `${nm(spec.winner)} won!` : !spec.begun ? `${nm(spec.a)} and ${nm(spec.b)} are placing their fleets…` : `${nm(turn)} is aiming…`
+    v.status.className = `sea-status grow ${spec.winner ? 'good' : ''}`
+  }
+
+  // ── Start ──
+  if (opts && opts.code && partyCanOnline()) {
+    const c = partyCleanCode(opts.code)
+    if (name) joinRoom(c, false)
+    else menu('Pick a name to join the room.', c)
+  } else menu()
+
+  return {
+    key(e, down) {
+      if (down && (e.key === 'r' || e.key === 'R') && screen === 'place' && placeKey) { placeKey(); return true }
+      return false
+    },
+    stop() {
+      dead = true
+      leaveRoom()
+      hub(null)
+    },
+  }
+}
+</script>

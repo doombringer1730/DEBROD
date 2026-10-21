@@ -1,0 +1,388 @@
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Sans+Condensed:wght@500;600;700&display=swap');
+/* ── Mission control: the look Home and Study share ──
+   A 70s mission-control console: warm off-white casing, charcoal panels
+   with labelled plates and corner screws, amber readouts on dark screens,
+   chunky keys, rounded switches and indicator lamps. Pages opt in with
+   class "mc" (App.html gives it to Home and Study); the rest of DEBROD
+   keeps its neon look. */
+.mc {
+  --hub-paper: #ece6d8; --hub-paper-2: #e2dbc9; --hub-ink: #2d2f33; --hub-ink-2: #3a3c41; --hub-screen: #17181b;
+  --hub-amber: #ffb000; --hub-red: #d9482b; --hub-green: #5c8a72; --hub-dim: #8a8578;
+  --hub-sans: 'IBM Plex Sans Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --hub-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  color: var(--hub-ink); font-family: var(--hub-sans);
+}
+.hub { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+/* The page around it: paper instead of the neon sky, no grid, no scanlines. */
+html:has(.page.mc:not([hidden])) { background: #ece6d8 radial-gradient(rgba(45, 47, 51, 0.07) 1px, transparent 1.2px) 0 0 / 5px 5px fixed; }
+body:has(.page.mc:not([hidden])) #backdrop, body:has(.page.mc:not([hidden]))::after { display: none; }
+body:has(.page.mc:not([hidden])) { color: #2d2f33; }
+.page.mc { max-width: 1120px; }
+.page.mc .wordmark { background: none; color: #2d2f33; filter: none; font: 700 28px/1 'IBM Plex Sans Condensed', system-ui, sans-serif; letter-spacing: 0.22em; }
+.page.mc .tagline { color: #6b6457; text-shadow: none; font-family: 'IBM Plex Mono', monospace; }
+.page.mc .tabs { gap: 4px; padding: 4px; background: #2d2f33; border-radius: 999px; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 1px 0 #fff; }
+.page.mc .tabs .link { padding: 6px 12px; border-radius: 999px; color: #ece6d8; font: 600 11px 'IBM Plex Sans Condensed', sans-serif; letter-spacing: 0.16em; }
+.page.mc .tabs .link.on { background: #ffb000; color: #2d2f33; text-shadow: none; box-shadow: 0 0 10px rgba(255, 176, 0, 0.5); }
+.page.mc .tabs .link:hover:not(.on) { color: #ffb000; text-shadow: none; }
+
+/* Panels */
+.hub-panel { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 14px 18px 18px; border-radius: 16px; background: linear-gradient(180deg, var(--hub-ink-2), var(--hub-ink)); color: var(--hub-paper);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), inset 0 -2px 0 rgba(0, 0, 0, 0.35), 0 3px 0 #1d1e21, 0 14px 28px rgba(45, 47, 51, 0.22); }
+.hub-panel::before, .hub-panel::after { content: ''; position: absolute; top: 9px; width: 9px; height: 9px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #b9b3a5, #6f6a60 60%, #4a4740); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4); }
+.hub-panel::before { left: 9px; }
+.hub-panel::after { right: 9px; }
+.hub-plate { display: flex; align-items: center; gap: 10px; padding: 0 14px; }
+.hub-plate h3 { margin: 0; font: 700 13px var(--hub-sans); letter-spacing: 0.2em; text-transform: uppercase; color: var(--hub-paper); }
+.hub-id { font: 600 10px var(--hub-mono); color: var(--hub-ink); background: var(--hub-amber); border-radius: 4px; padding: 1px 6px; letter-spacing: 0.08em; }
+.hub-plate .grow { flex: 1; }
+.hub-screen { background: var(--hub-screen); border-radius: 10px; padding: 10px 12px; color: var(--hub-amber); font: 13px/1.45 var(--hub-mono);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.07); text-shadow: 0 0 6px rgba(255, 176, 0, 0.35); }
+.hub-screen .dim { color: #9b7a37; text-shadow: none; }
+.hub-paper { background: var(--hub-paper); color: var(--hub-ink); border-radius: 16px; padding: 18px 22px; box-shadow: inset 0 1px 0 #fff, 0 3px 0 #c9c1ad, 0 14px 28px rgba(45, 47, 51, 0.16); border: 1px solid #d6cfbd; }
+
+/* Layout */
+.hub-strip { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 14px 18px; padding: 10px 18px; border-radius: 14px; background: var(--hub-ink); color: var(--hub-paper);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 3px 0 #1d1e21; }
+.hub-strip .label { font: 700 12px var(--hub-sans); letter-spacing: 0.24em; text-transform: uppercase; }
+.hub-strip .grow { flex: 1; }
+.hub-clock { font: 600 22px/1 var(--hub-mono); color: var(--hub-amber); text-shadow: 0 0 10px rgba(255, 176, 0, 0.5); background: var(--hub-screen); padding: 6px 10px; border-radius: 8px; box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8); letter-spacing: 0.06em; }
+.hub-lamp { display: inline-flex; align-items: center; gap: 6px; font: 600 11px var(--hub-mono); letter-spacing: 0.1em; text-transform: uppercase; color: #cfc8b8; }
+.hub-led { width: 10px; height: 10px; border-radius: 50%; background: #4a4c50; box-shadow: inset 0 -1px 2px rgba(0, 0, 0, 0.5); flex: none; }
+.hub-led.green { background: #7fc29c; box-shadow: 0 0 8px #5c8a72, inset 0 -1px 2px rgba(0, 0, 0, 0.3); }
+.hub-led.amber { background: var(--hub-amber); box-shadow: 0 0 8px var(--hub-amber); }
+.hub-led.red { background: #ff6a4a; box-shadow: 0 0 8px var(--hub-red); animation: hub-blink 1.2s steps(2, start) infinite; }
+@keyframes hub-blink { to { opacity: 0.35; } }
+.hub-log { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.hub-log h2 { margin: 0; font: 700 26px/1.15 var(--hub-sans); letter-spacing: 0.01em; }
+.hub-log p { font: italic 14px var(--hub-mono); color: #5d574b; margin-top: 4px; }
+.hub-wide { grid-column: span 7; }
+.hub-narrow { grid-column: span 5; }
+.hub-half { grid-column: span 6; }
+
+/* Controls inside the hub: keys, screens and switches */
+.mc button { font: 600 12px var(--hub-sans); letter-spacing: 0.1em; text-transform: uppercase; color: var(--hub-ink); background: linear-gradient(180deg, #f6f1e5, #ddd5c2);
+  border: none; border-radius: 10px; padding: 9px 14px; box-shadow: 0 3px 0 #9f9886, inset 0 1px 0 #fff; transition: transform 0.08s, box-shadow 0.08s, background 0.15s; }
+.mc button:hover:not(:disabled) { background: linear-gradient(180deg, #fffaf0, #e8e0cc); color: var(--hub-ink); box-shadow: 0 3px 0 #9f9886, inset 0 1px 0 #fff; border: none; }
+.mc button:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #9f9886, inset 0 1px 0 #fff; }
+.mc button.primary { background: linear-gradient(180deg, #ffc23d, #f0a000); box-shadow: 0 3px 0 #a86f00, inset 0 1px 0 #ffe0a0; color: var(--hub-ink); }
+.mc button.primary:hover:not(:disabled) { background: linear-gradient(180deg, #ffcf5e, #ffb000); box-shadow: 0 3px 0 #a86f00, inset 0 1px 0 #ffe0a0; }
+.mc button.go { background: linear-gradient(180deg, #7aa58e, #5c8a72); color: #fff; box-shadow: 0 3px 0 #3c5c4b, inset 0 1px 0 #a6c9b5; }
+.mc button.go:hover:not(:disabled) { background: linear-gradient(180deg, #86b29a, #66957c); color: #fff; box-shadow: 0 3px 0 #3c5c4b, inset 0 1px 0 #a6c9b5; }
+.mc button.link { background: none; box-shadow: none; padding: 2px 4px; color: var(--hub-amber); font: 600 11px var(--hub-mono); letter-spacing: 0.12em; }
+.mc button.link:hover:not(:disabled) { background: none; box-shadow: none; color: #ffd06b; text-shadow: none; }
+.mc .hub-paper button.link { color: #8a5a00; }
+.mc input { background: var(--hub-screen); color: var(--hub-amber); border: 1px solid #45474c; border-radius: 10px; font: 15px var(--hub-mono); caret-color: var(--hub-amber); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.7); }
+.mc input::placeholder { color: #8a6f3a; }
+.mc input:focus { border-color: var(--hub-amber); box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.7), 0 0 0 3px rgba(255, 176, 0, 0.25); }
+.mc .hub-paper input { background: #fffaf0; color: var(--hub-ink); border-color: #c9c1ad; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15); caret-color: var(--hub-ink); }
+.hub-rocker { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--hub-screen); box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.8); }
+.hub .hub-rocker button { border-radius: 999px; padding: 5px 12px; background: none; box-shadow: none; color: #b8b1a1; }
+.hub .hub-rocker button:hover:not(:disabled) { background: none; box-shadow: none; color: var(--hub-amber); }
+.hub .hub-rocker button.on { background: linear-gradient(180deg, #ffc23d, #f0a000); color: var(--hub-ink); box-shadow: 0 0 10px rgba(255, 176, 0, 0.4); }
+.hub-switch { display: inline-flex; align-items: center; gap: 8px; font: 600 11px var(--hub-mono); letter-spacing: 0.1em; text-transform: uppercase; color: #cfc8b8; cursor: pointer; }
+.hub-switch input { appearance: none; -webkit-appearance: none; width: 38px; height: 20px; padding: 0; border-radius: 999px; background: #4a4c50; border: none; position: relative; cursor: pointer; box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6); transition: background 0.2s; }
+.hub-switch input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: linear-gradient(180deg, #f6f1e5, #cfc7b3); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); transition: left 0.2s; }
+.hub-switch input:checked { background: var(--hub-green); }
+.hub-switch input:checked::after { left: 20px; }
+.hub-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.hub-row input { flex: 1 1 180px; min-width: 0; width: auto; }
+
+/* Readouts */
+.hub-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.hub-list li { display: flex; align-items: center; gap: 10px; padding: 4px 0; border-bottom: 1px dashed rgba(255, 176, 0, 0.18); }
+.hub-list li:last-child { border-bottom: none; }
+.hub-list .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub-list .sub { display: block; font-size: 11px; color: #9b7a37; text-shadow: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub-tone { white-space: nowrap; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+.hub-tone.over { color: #ff7a5c; text-shadow: 0 0 6px rgba(217, 72, 43, 0.7); }
+.hub-tone.today { animation: hub-blink 1.2s steps(2, start) infinite; }
+.hub-tone.far { color: #9b7a37; text-shadow: none; }
+.hub-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.hub-chip { font: 600 11px var(--hub-mono); letter-spacing: 0.06em; padding: 3px 8px; border-radius: 6px; background: var(--hub-screen); color: var(--hub-amber); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8); }
+.hub-chip.red { color: #ff7a5c; }
+.hub-keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+.hub .hub-key { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 11px; text-align: left; min-height: 78px; text-transform: none; letter-spacing: 0.02em; }
+.hub-key .icon { font-size: 22px; line-height: 1; }
+.hub-key .name { font: 700 13px var(--hub-sans); }
+.hub-key .sub { font: 10px var(--hub-mono); color: #6b6457; text-transform: uppercase; letter-spacing: 0.06em; }
+.hub-note { font: 12px var(--hub-mono); color: #b8b1a1; }
+@media (max-width: 860px) {
+  .hub-wide, .hub-narrow, .hub-half { grid-column: 1 / -1; }
+  .hub-clock { font-size: 18px; }
+  .hub-log h2 { font-size: 22px; }
+}
+</style>
+<script>
+// Home: the hub. One page that pulls DEBROD together: what's due in Study,
+// games to jump back into, quick search and watch-party join, and who else
+// is on this DEBROD right now (over Supabase presence, with one-click join
+// into their room). Nothing is stored on a server; "online now" is live
+// presence only, and you can hide yourself from it. It's dressed as a 70s
+// mission-control console; the rest of DEBROD keeps its neon look.
+//
+// Loaded after App.html (el, S, render, storedName, joinRoom) and before
+// the games, which report what they're doing with hubActivity().
+
+const HUB_SHOW_KEY = 'ds_hub_visible'
+
+// What this page is doing right now: { game, code, label, joinable } or null.
+// Games and watch together call it; the hub shares it in presence.
+let hubActivityNow = null
+function hubActivity(a) {
+  hubActivityNow = a ? { game: a.game, code: a.code || '', label: a.label || a.game, joinable: !!(a.joinable && a.code) } : null
+  if (typeof Hub !== 'undefined') Hub.track()
+}
+// Something the hub shows changed (Study calls this).
+function hubRefresh() {
+  if (typeof Hub !== 'undefined') Hub.refresh()
+}
+
+const Hub = (() => {
+  const root = el('div', { class: 'hub' })
+  const me = randomId()
+  const joinedAt = Date.now()
+  let visible = false
+  let channel = null
+  let sb = null
+  let others = []
+  let subscribed = false
+  let tick = null
+  let clockTick = null
+  let query = ''
+  let kind = 'movie'
+  let watchCode = ''
+
+  const read = (key, fallback) => { try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v) } catch (e) { return fallback } }
+  const write = (key, v) => { try { localStorage.setItem(key, JSON.stringify(v)) } catch (e) { /* private mode */ } }
+  let shown = read(HUB_SHOW_KEY, true)
+
+  function fill(node, ...kids) {
+    node.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false && k !== ''))
+    return node
+  }
+
+  // ── Online now ──
+  function connect() {
+    if (channel || !partyReady() || !shown) return
+    const cfg = S.cfg
+    sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey)
+    channel = sb.channel('ds-hub', { config: { presence: { key: me } } })
+    channel.on('presence', { event: 'sync' }, () => {
+      others = Object.values(channel.presenceState()).map(m => m[m.length - 1]).filter(p => p.id !== me)
+      others.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      if (visible) draw()
+    })
+    channel.subscribe(status => {
+      if (status !== 'SUBSCRIBED' || subscribed) return
+      subscribed = true
+      track()
+      if (visible) draw()
+    })
+  }
+  function disconnect() {
+    if (!channel) return
+    try { channel.untrack(); sb.removeChannel(channel) } catch (e) { /* gone */ }
+    channel = null
+    subscribed = false
+    others = []
+  }
+  const partyReady = () => !!(S.cfg && S.cfg.supabaseUrl && S.cfg.supabaseKey && window.supabase)
+  function track() {
+    if (!channel || !subscribed) return
+    channel.track({ id: me, joinedAt, name: storedName() || 'Someone', act: hubActivityNow })
+  }
+
+  function join(p) {
+    const a = p.act
+    if (!a || !a.joinable || !a.code) return
+    if (a.game === 'watch') {
+      S.roomCode = a.code
+      joinRoom({ preventDefault() {} })
+      return
+    }
+    S.tab = 'arcade'
+    render()
+    Arcade.open(a.game, { code: a.code })
+  }
+  const toArcade = id => { S.tab = 'arcade'; render(); if (id) Arcade.open(id) }
+
+  function study() {
+    if (typeof Study === 'undefined' || typeof Study.summary !== 'function') return null
+    try { return Study.summary() || null } catch (e) { return null }
+  }
+
+  // ── Pieces ──
+  const clockText = () => new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+
+  function panel(cls, id, title, right, ...body) {
+    return el('section', { class: `hub-panel ${cls}` },
+      el('div', { class: 'hub-plate' }, el('span', { class: 'hub-id' }, id), el('h3', null, title), el('span', { class: 'grow' }), right),
+      ...body)
+  }
+
+  function strip(sum) {
+    const online = partyReady() && shown
+    const overdue = sum ? sum.overdue || 0 : 0
+    const due = sum ? (sum.open || []).length : 0
+    return el('div', { class: 'hub-strip' },
+      el('span', { class: 'label' }, '▣ DEBROD · Mission control'),
+      el('span', { class: 'hub-lamp' }, el('span', { class: `hub-led ${online && subscribed ? 'green' : online ? 'amber' : ''}` }), online && subscribed ? 'Link' : online ? 'Linking' : 'Offline'),
+      online && el('span', { class: 'hub-lamp' }, el('span', { class: `hub-led ${others.length ? 'green' : ''}` }), `Crew ${others.length}`),
+      sum && el('span', { class: 'hub-lamp' }, el('span', { class: `hub-led ${overdue ? 'red' : due ? 'amber' : 'green'}` }), overdue ? `${overdue} overdue` : due ? `${due} due` : 'All clear'),
+      el('span', { class: 'grow' }),
+      el('span', { class: 'hub-clock', 'aria-label': 'Time' }, clockText()))
+  }
+
+  function greeting() {
+    const h = new Date().getHours()
+    return h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
+  }
+
+  function log(sum) {
+    const nm = storedName()
+    const now = new Date()
+    const overdue = sum ? sum.overdue || 0 : 0
+    const today = sum ? sum.dueToday || 0 : 0
+    const line = overdue ? `${overdue} assignment${overdue === 1 ? ' is' : 's are'} overdue. Panel B has the details.`
+      : today ? `${today} thing${today === 1 ? '' : 's'} due today. You've got this.`
+        : sum && sum.cardsDue ? `${sum.cardsDue} flashcard${sum.cardsDue === 1 ? '' : 's'} ready for review. Or, you know, the arcade.`
+          : 'All systems nominal. Nothing urgent on the board.'
+    return el('div', { class: 'hub-paper hub-log' },
+      el('div', null,
+        el('h2', null, `${greeting()}${nm ? `, ${nm}` : ''}.`),
+        el('p', null, `${now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}. ${line}`)),
+      !nm && el('form', { class: 'hub-row', onSubmit: e => {
+        e.preventDefault()
+        const v = e.target.querySelector('input').value.trim().slice(0, 18)
+        if (!v) return
+        storeName(v)
+        track()
+        draw()
+      } }, el('input', { placeholder: 'Your name', maxlength: 18 }), el('button', { type: 'submit', class: 'primary' }, 'Sign in')))
+  }
+
+  function watchPanel() {
+    const go = e => {
+      e.preventDefault()
+      if (!query.trim()) return
+      S.kind = kind
+      S.query = query
+      S.results = []
+      S.title = null
+      S.tab = 'search'
+      render()
+      onSearch({ preventDefault() {} })
+    }
+    return panel('hub-wide', 'A1', 'Watch something',
+      el('div', { class: 'hub-rocker' }, [['movie', 'Movies'], ['tv', 'TV']].map(([k, t]) =>
+        el('button', { type: 'button', class: kind === k ? 'on' : '', onClick: () => { kind = k; draw() } }, t))),
+      el('form', { class: 'hub-row', onSubmit: go },
+        el('input', { type: 'search', value: query, placeholder: kind === 'movie' ? 'Search movies…' : 'Search TV shows…', onInput: e => { query = e.target.value } }),
+        el('button', { type: 'submit', class: 'primary' }, 'Search')),
+      el('form', { class: 'hub-row', onSubmit: e => {
+        e.preventDefault()
+        if (!watchCode.trim()) return
+        S.roomCode = watchCode
+        watchCode = ''
+        joinRoom({ preventDefault() {} })
+      } },
+        el('input', { value: watchCode, maxlength: 32, placeholder: 'Watch-party code', onInput: e => { watchCode = e.target.value } }),
+        el('button', { type: 'submit', class: 'go' }, 'Join')))
+  }
+
+  function studyPanel(sum) {
+    if (!sum) return null
+    const open = (sum.open || []).slice(0, 5)
+    const goStudy = section => { S.tab = 'study'; render(); if (Study.open) Study.open(section) }
+    return panel('hub-narrow', 'B1', 'Due soon', el('button', { type: 'button', class: 'link', onClick: () => goStudy('assignments') }, 'Study ›'),
+      el('div', { class: 'hub-screen' },
+        open.length
+          ? el('ul', { class: 'hub-list' }, open.map(a => el('li', null,
+            el('span', { class: 'what' }, `▸ ${a.title}`),
+            el('span', { class: `hub-tone ${a.tone || 'far'}` }, a.label || a.due))))
+          : el('p', { class: 'dim' }, 'NO ASSIGNMENTS ON THE BOARD.')),
+      el('div', { class: 'hub-chips' },
+        sum.overdue ? el('span', { class: 'hub-chip red' }, `⚠ ${sum.overdue} overdue`) : null,
+        sum.dueToday ? el('span', { class: 'hub-chip' }, `${sum.dueToday} due today`) : null,
+        typeof sum.coins === 'number' ? el('span', { class: 'hub-chip' }, `🪙 ${sum.coins}`) : null,
+        sum.streak ? el('span', { class: 'hub-chip' }, `🔥 ${sum.streak}`) : null,
+        sum.goal ? el('span', { class: 'hub-chip' }, `🎯 ${sum.goal.text}${sum.goal.target ? ` ${sum.goal.done}/${sum.goal.target}` : ''}`) : null),
+      sum.cardsDue ? el('button', { type: 'button', class: 'primary', onClick: () => goStudy('review') }, `Review ${sum.cardsDue} card${sum.cardsDue === 1 ? '' : 's'}`) : null)
+  }
+
+  function gamesPanel() {
+    const list = typeof Arcade !== 'undefined' && Arcade.list ? Arcade.list() : []
+    if (!list.length) return null
+    const recent = read('ds_arcade_recent', []).map(id => list.find(g => g.id === id)).filter(Boolean)
+    const picks = recent.length ? recent.slice(0, 6) : list.slice(0, 6)
+    const sling = read('ds_sling_endless', null)
+    return panel('hub-half', 'C1', recent.length ? 'Jump back in' : 'Play something', el('button', { type: 'button', class: 'link', onClick: () => toArcade() }, 'Arcade ›'),
+      el('div', { class: 'hub-keys' }, picks.map(g => el('button', { type: 'button', class: 'hub-key', onClick: () => toArcade(g.id) },
+        el('span', { class: 'icon' }, g.icon), el('span', { class: 'name' }, g.name),
+        el('span', { class: 'sub' }, g.id === 'sling' && sling ? `Endless lvl ${sling.level + 1}` : g.best || 'Ready')))))
+  }
+
+  function crewPanel() {
+    const list = typeof Arcade !== 'undefined' && Arcade.list ? Arcade.list() : []
+    const party = ['scribble', 'punch', 'cards', 'sea', 'showdown'].map(id => list.find(g => g.id === id)).filter(Boolean)
+    const online = partyReady()
+    return panel('hub-half', 'C2', 'Online now',
+      online && el('label', { class: 'hub-switch' }, el('input', { type: 'checkbox', checked: shown, onChange: e => {
+        shown = e.target.checked
+        write(HUB_SHOW_KEY, shown)
+        if (shown) connect()
+        else disconnect()
+        draw()
+      } }), 'Show me'),
+      el('div', { class: 'hub-screen' },
+        !online
+          ? el('p', { class: 'dim' }, 'NO LINK. SEEING WHO\'S ON NEEDS SUPABASE (DEBROD → SETTINGS).')
+          : !shown
+            ? el('p', { class: 'dim' }, 'YOU\'RE HIDDEN, SO YOU SEE NOBODY EITHER. FLIP "SHOW ME" TO JOIN IN.')
+            : others.length
+              ? el('ul', { class: 'hub-list hub-crew' }, others.map(p => el('li', null,
+                el('span', { class: `hub-led ${p.act ? 'green' : 'amber'}` }),
+                el('span', { class: 'what' }, p.name || 'Someone',
+                  el('span', { class: 'sub' }, p.act ? `${p.act.joinable ? 'In' : 'Playing'} ${p.act.label}${p.act.code ? ` · ${p.act.code}` : ''}` : 'Standing by')),
+                p.act && p.act.joinable && el('button', { type: 'button', class: 'go', onClick: () => join(p) }, 'Join'))))
+              : el('p', { class: 'dim' }, 'NOBODY ELSE ON THE LINE RIGHT NOW.')),
+      party.length && el('p', { class: 'hub-note' }, 'Start something with friends:'),
+      party.length && el('div', { class: 'hub-chips' }, party.map(g => el('button', { type: 'button', onClick: () => toArcade(g.id) }, `${g.icon} ${g.name}`))),
+      S.cfg && S.cfg.appUrl && el('button', { type: 'button', class: 'link', onClick: async () => {
+        const ok = await copyText(S.cfg.appUrl)
+        if (!ok) window.prompt('Your DEBROD link:', S.cfg.appUrl)
+      } }, 'Copy DEBROD link for friends'))
+  }
+
+  function draw() {
+    // Keep a half-typed search across redraws (presence can redraw at any time).
+    const active = document.activeElement
+    const typing = active && root.contains(active) && active.tagName === 'INPUT' && active.type !== 'checkbox' ? active.placeholder : null
+    const sum = study()
+    fill(root, strip(sum), log(sum), watchPanel(), studyPanel(sum), gamesPanel(), crewPanel())
+    if (typing) {
+      const back = [...root.querySelectorAll('input')].find(i => i.placeholder === typing)
+      if (back) { back.focus(); const n = back.value.length; try { back.setSelectionRange(n, n) } catch (e) { /* not a text input */ } }
+    }
+  }
+
+  return {
+    root,
+    start() { connect() },
+    show() {
+      visible = true
+      connect()
+      draw()
+      clearInterval(tick)
+      clearInterval(clockTick)
+      tick = setInterval(() => { if (visible && !root.contains(document.activeElement)) draw() }, 30000)
+      clockTick = setInterval(() => { const c = root.querySelector('.hub-clock'); if (c) c.textContent = clockText() }, 1000)
+    },
+    hide() { visible = false; clearInterval(tick); clearInterval(clockTick) },
+    refresh() { if (visible) draw() },
+    track,
+  }
+})()
+</script>

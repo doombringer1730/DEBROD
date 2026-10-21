@@ -1,0 +1,2522 @@
+<script>
+// Pokémon Showdown in the arcade: Showdown's own battle simulator (MIT,
+// bundled from the @pkmn packages in showdown/) running in the page, since
+// play.pokemonshowdown.com won't load inside other sites.
+//
+// - Formats: Random Battles for every generation, Random Doubles, and
+//   bring-your-own-team formats (OU, Ubers, Doubles OU, VGC and more),
+//   checked by Showdown's own team validator.
+// - Four-player Free-for-all and Multi battles, against CPUs or friends
+//   (the host's page runs those too, with the CPU in any empty seat).
+// - A team builder with Showdown's import/export text, saved in this
+//   browser.
+// - Battles against the CPU, or against a friend over Supabase Realtime:
+//   the host's page runs the battle, forwards the guest their side (and
+//   spectators the public view), and runs the optional turn timer.
+//
+// Loaded before Games.html (which lists it) and after App.html, whose el(),
+// S, randomId(), storedName(), storeName() and copyText() it uses.
+
+const SHOWDOWN_BASE = 'https://cdn.jsdelivr.net/gh/doombringer1730/DEBROD@85b6adb30c49bd1c0e526114038fba7a6850349b/apps-script/showdown/'
+const SHOWDOWN_SITE = 'https://play.pokemonshowdown.com/'
+const SHOWDOWN_SPRITES = `${SHOWDOWN_SITE}sprites/`
+const SHOWDOWN_FORMATS = [
+  ['DEBROD exclusives', [
+    ['debrod-draft', 'Draft Battle (snake draft, then battle)'],
+    ['debrod-draftdoubles', 'Draft Doubles'],
+    ['debrod-draftfreeforall', 'Draft Free-for-all (4 players)'],
+    ['debrod-tower', 'Battle Tower (a streak against the CPU)'],
+  ]],
+  ['4 players', [
+    ['gen9freeforallrandombattle', 'Free-for-all Random Battle (4 players, last one standing)'],
+    ['gen9multirandombattle', 'Multi Random Battle (2 vs 2, one Pokémon each)'],
+  ]],
+  ['Random battles', [
+    ['gen9randombattle', 'Gen 9 Random Battle'],
+    ['gen9randomdoublesbattle', 'Gen 9 Random Doubles'],
+    ['gen9babyrandombattle', 'Gen 9 Baby Random Battle'],
+    ['gen9challengecup1v1', 'Gen 9 Challenge Cup 1v1'],
+    ['gen9hackmonscup', 'Gen 9 Hackmons Cup'],
+    ['gen8randombattle', 'Gen 8 Random Battle'],
+    ['gen7randombattle', 'Gen 7 Random Battle'],
+    ['gen6randombattle', 'Gen 6 Random Battle'],
+    ['gen5randombattle', 'Gen 5 Random Battle'],
+    ['gen4randombattle', 'Gen 4 Random Battle'],
+    ['gen3randombattle', 'Gen 3 Random Battle'],
+    ['gen2randombattle', 'Gen 2 Random Battle'],
+    ['gen1randombattle', 'Gen 1 Random Battle'],
+  ]],
+  ['Bring your own team', [
+    ['gen9ou', 'Gen 9 OU'],
+    ['gen9ubers', 'Gen 9 Ubers'],
+    ['gen9uu', 'Gen 9 UU'],
+    ['gen9ru', 'Gen 9 RU'],
+    ['gen9nu', 'Gen 9 NU'],
+    ['gen9lc', 'Gen 9 LC'],
+    ['gen9monotype', 'Gen 9 Monotype'],
+    ['gen9nationaldex', 'Gen 9 National Dex'],
+    ['gen91v1', 'Gen 9 1v1'],
+    ['gen9anythinggoes', 'Gen 9 Anything Goes'],
+    ['gen9doublesou', 'Gen 9 Doubles OU'],
+    ['gen9vgc2025regi', 'Gen 9 VGC 2025 Reg I'],
+    ['gen9bssregi', 'Gen 9 Battle Stadium Singles Reg I'],
+    ['gen9customgame', 'Gen 9 Custom Game'],
+    ['gen9doublescustomgame', 'Gen 9 Doubles Custom Game'],
+  ]],
+]
+const SHOWDOWN_TEAM_FORMATS = SHOWDOWN_FORMATS.find(([group]) => group === 'Bring your own team')[1]
+// DEBROD's own modes run on Showdown's custom-game rules, plus the usual
+// clauses.
+const SHOWDOWN_CLAUSES = 'Sleep Clause Mod,Species Clause,OHKO Clause,Evasion Moves Clause'
+const SHOWDOWN_SIM_FORMATS = {
+  'debrod-draft': `gen9customgame@@@${SHOWDOWN_CLAUSES}`,
+  'debrod-draftdoubles': 'gen9doublescustomgame@@@Species Clause,OHKO Clause,Evasion Moves Clause',
+  'debrod-tower': `gen9customgame@@@${SHOWDOWN_CLAUSES}`,
+  'debrod-draftfreeforall': 'gen9freeforallrandombattle',
+}
+const SHOWDOWN_TOWER_TRAINERS = ['Ace Trainer Nova', 'Rocker Vex', 'Psychic Luna', 'Black Belt Kenji', 'Ace Trainer Iris', 'Dragon Tamer Ryu', 'Tower Tycoon Orion']
+const SHOWDOWN_EMOTES = ['🔥', '😂', '😱', '👏', '💀', '🎉', '🤔', '😤']
+const SHOWDOWN_DRAFT_POOL = 16
+const SHOWDOWN_DRAFT_PICKS = 6
+const SHOWDOWN_DRAFT_MS = 45000
+// Four drafting take four each from a bigger pool.
+const SHOWDOWN_DRAFT_FOUR = { pool: 24, picks: 4 }
+const SHOWDOWN_MUSIC = ['bw-trainer', 'bw-rival', 'bw2-rival', 'dpp-trainer', 'hgss-johto-trainer', 'xy-trainer', 'xy-rival', 'oras-trainer', 'sm-trainer', 'sm-rival']
+const TYPE_COLORS = {
+  Normal: '#a8a77a', Fire: '#ee8130', Water: '#6390f0', Electric: '#f7d02c', Grass: '#7ac74c', Ice: '#96d9d6',
+  Fighting: '#c22e28', Poison: '#a33ea1', Ground: '#e2bf65', Flying: '#a98ff3', Psychic: '#f95587', Bug: '#a6b91a',
+  Rock: '#b6a136', Ghost: '#735797', Dragon: '#6f35fc', Dark: '#705746', Steel: '#b7b7ce', Fairy: '#d685ad', Stellar: '#40b5a5',
+  '???': '#68a090',
+}
+const STAT_NAMES = { hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe' }
+const SHOWDOWN_TIMER_MS = 150000
+// Four-player battles: p1 and p3 share one half of the field, p2 and p4 the
+// other (in Multi they're the teams). A seat nobody takes is the CPU's, and
+// the CPU takes over for anyone who's gone this long mid-battle.
+const SHOWDOWN_FOUR = ['p1', 'p2', 'p3', 'p4']
+const SHOWDOWN_CPU_NAMES = { p2: 'CPU Kai', p3: 'CPU Mae', p4: 'CPU Zed' }
+const SHOWDOWN_TAKEOVER_MS = 20000
+let showdownEngine = null
+
+// The engine is about 1 MB over the wire, so it loads the first time.
+function loadShowdown() {
+  if (!showdownEngine) {
+    showdownEngine = new Promise((resolve, reject) => {
+      const s = document.createElement('script')
+      s.src = `${SHOWDOWN_BASE}showdown.js`
+      s.onload = () => (window.PkmnShowdown ? resolve(window.PkmnShowdown) : reject(new Error('The battle engine didn\'t start.')))
+      s.onerror = () => { showdownEngine = null; s.remove(); reject(new Error('Could not load the battle engine.')) }
+      document.head.append(s)
+    })
+  }
+  return showdownEngine
+}
+
+// Settings, teams and your record stay in this browser.
+const pkStore = {
+  get(key, fallback) {
+    try { const v = localStorage.getItem(`ds_pk_${key}`); return v === null ? fallback : JSON.parse(v) } catch (e) { return fallback }
+  },
+  set(key, value) {
+    try { localStorage.setItem(`ds_pk_${key}`, JSON.stringify(value)) } catch (e) { /* private mode */ }
+  },
+}
+
+// Like replaceChildren, but skips the false/null/undefined that conditional
+// pieces leave behind (replaceChildren would print them as text).
+function pkFill(node, ...kids) {
+  node.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false && k !== ''))
+  return node
+}
+
+function showdownFormatName(id) {
+  for (const [, list] of SHOWDOWN_FORMATS) for (const [fid, label] of list) if (fid === id) return label
+  return id
+}
+
+function showdown(host, ctx, opts) {
+  const cfg = (typeof S !== 'undefined' && S.cfg) || {}
+  const canOnline = !!(cfg.supabaseUrl && cfg.supabaseKey && window.supabase)
+  const me = randomId()
+  const wrap = el('div', { class: 'pk' })
+  host.append(wrap)
+
+  let PS = null
+  let name = storedName() || ''
+  let format = pkStore.get('format', 'gen9randombattle')
+  let teamId = pkStore.get('team', '')
+  let dead = false
+  let match = null      // the battle on screen
+  let net = null        // the online room, if any
+  const sound = { on: pkStore.get('sound', false), music: null }
+
+  const needsTeam = id => SHOWDOWN_TEAM_FORMATS.some(([f]) => f === id)
+  const isDoubles = id => /doubles|vgc/.test(id)
+  const isDraft = id => id.startsWith('debrod-draft')
+  const isFour = id => /freeforall|multi/.test(id)
+  const isMulti = id => /multi/.test(id)
+  const simFormat = id => SHOWDOWN_SIM_FORMATS[id] || id
+  let tower = null      // the Battle Tower run in progress
+  const pick = list => list[Math.floor(Math.random() * list.length)]
+
+  // ── Teams ──
+  const loadTeams = () => pkStore.get('teams', [])
+  const saveTeams = list => pkStore.set('teams', list)
+  const teamById = id => loadTeams().find(t => t.id === id)
+
+  function validate(fid, packed) {
+    const sets = PS.Teams.unpack(packed || '') || []
+    if (!sets.length) return ['The team is empty.']
+    try { return PS.TeamValidator.get(fid).validateTeam(sets) } catch (e) { return [e.message] }
+  }
+
+  // The CPU's team for build-your-own formats: a random-battle team at
+  // level 100, not checked against the format.
+  function cpuTeam(fid) {
+    const sets = PS.Teams.generate(isDoubles(fid) ? 'gen9randomdoublesbattle' : 'gen9randombattle')
+    for (const s of sets) s.level = fid === 'gen9lc' ? 5 : fid.includes('vgc') || fid.includes('bss') ? 50 : 100
+    return PS.Teams.pack(sets)
+  }
+
+  // The engine can't make Free-for-all teams itself, so every format here
+  // gets ordinary random-battle sets: six singles sets each for
+  // Free-for-all, three doubles sets each for Multi.
+  function fourTeam(fid) {
+    return isMulti(fid)
+      ? PS.Teams.pack(PS.Teams.generate('gen9randomdoublesbattle').slice(0, 3))
+      : PS.Teams.pack(PS.Teams.generate('gen9randombattle'))
+  }
+
+  // ── Sound ──
+  function cry(speciesForme) {
+    if (!sound.on || !PS) return
+    const sp = PS.Dex.species.get(speciesForme)
+    const a = new Audio(`${SHOWDOWN_SITE}audio/cries/${PS.toID(sp.baseSpecies || speciesForme)}.mp3`)
+    a.volume = 0.45
+    a.play().catch(() => {})
+  }
+  function music(play) {
+    if (sound.music) { sound.music.pause(); sound.music = null }
+    if (!play || !sound.on) return
+    sound.music = new Audio(`${SHOWDOWN_SITE}audio/${pick(SHOWDOWN_MUSIC)}.mp3`)
+    sound.music.loop = true
+    sound.music.volume = 0.22
+    sound.music.play().catch(() => {})
+  }
+  function setSound(on) {
+    sound.on = on
+    pkStore.set('sound', on)
+    music(on && match && !match.view.over())
+  }
+
+  // ── Menu ──
+  function menu(err) {
+    music(false)
+    let draftName = name
+    let draftCode = (opts && opts.code) || ''
+    // Kept as you type, so a trip to the team builder doesn't lose it.
+    const nameInput = el('input', { value: draftName, maxlength: 18, placeholder: 'Trainer name', autofocus: true, onInput: e => { draftName = e.target.value; name = draftName.trim().slice(0, 18) || name } })
+    const formatSelect = el('select', { onChange: e => { format = e.target.value; pkStore.set('format', format); menu() } },
+      SHOWDOWN_FORMATS.map(([group, list]) => el('optgroup', { label: group }, list.map(([id, label]) => el('option', { value: id }, label)))))
+    formatSelect.value = format
+    const teams = loadTeams()
+    const teamSelect = el('select', { onChange: e => { teamId = e.target.value; pkStore.set('team', teamId) } },
+      el('option', { value: '' }, teams.length ? 'Choose a team…' : 'No teams yet'),
+      teams.map(t => el('option', { value: t.id }, `${t.name}${t.format && t.format !== format ? ` (${showdownFormatName(t.format)})` : ''}`)))
+    teamSelect.value = teams.some(t => t.id === teamId) ? teamId : ''
+    const okName = () => {
+      const n = draftName.trim().slice(0, 18)
+      if (!n) { nameInput.focus(); return false }
+      name = n
+      storeName(n)
+      return true
+    }
+    const record = pkStore.get('record', {})[format]
+    pkFill(wrap, el('div', { class: 'card stack pk-menu' },
+      el('div', null,
+        el('p', { class: 'wordmark' }, 'Showdown'),
+        el('p', { class: 'tagline' }, 'Pokémon battles on Showdown\'s engine')),
+      err && el('p', { class: 'error' }, err),
+      el('label', { class: 'field' }, el('span', null, 'Trainer name'), nameInput),
+      el('label', { class: 'field' }, el('span', null, 'Format'), formatSelect),
+      needsTeam(format) && el('div', { class: 'field' }, el('span', null, 'Your team'),
+        el('div', { class: 'row' }, teamSelect, el('button', { type: 'button', onClick: () => builder(teamSelect.value) }, 'Edit'))),
+      record && el('p', { class: 'muted small' }, `Your record here: ${record.w} won · ${record.l} lost${record.t ? ` · ${record.t} tied` : ''}`),
+      format === 'debrod-tower' && el('p', { class: 'muted small' }, `Climb floor by floor with a rental team; the CPU gets tougher, and after each win you can swap in one of theirs. Best: floor ${pkStore.get('tower', { best: 0 }).best || 0}.`),
+      isFour(format) && !isDraft(format) && el('p', { class: 'muted small' }, isMulti(format)
+        ? 'You and a partner against two others, one Pokémon out each. Play with up to three friends; the CPU takes any empty seat.'
+        : 'Four trainers, one Pokémon out each, everyone against everyone. Play with up to three friends; the CPU takes any empty seat.'),
+      isDraft(format) && el('p', { class: 'muted small' }, isFour(format)
+        ? `Four trainers take turns picking from ${SHOWDOWN_DRAFT_FOUR.pool} random Pokémon (snake order) until each has ${SHOWDOWN_DRAFT_FOUR.picks}, then it's everyone against everyone. Draft with up to three friends; the CPU takes any empty seat.`
+        : `Take turns picking from ${SHOWDOWN_DRAFT_POOL} random Pokémon (snake order) until you each have ${SHOWDOWN_DRAFT_PICKS}, then battle with what you drafted.`),
+      el('div', { class: 'row pk-menu-buttons' },
+        el('button', { type: 'button', class: 'primary grow', onClick: () => { if (okName()) startCpu() } }, isFour(format) ? 'Play 3 CPUs' : 'Battle the CPU'),
+        canOnline && format !== 'debrod-tower' && el('button', { type: 'button', class: 'grow', onClick: () => { if (okName()) online(newCode(), 'host') } }, isFour(format) ? 'Play with friends' : 'Battle a friend')),
+      canOnline
+        ? el('form', { class: 'row', onSubmit: e => {
+          e.preventDefault()
+          const c = draftCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+          if (c && okName()) online(c, 'guest')
+        } },
+          el('input', { value: draftCode, maxlength: 8, placeholder: 'Room code to join or watch', onInput: e => { draftCode = e.target.value } }),
+          el('button', { type: 'submit' }, 'Join'))
+        : el('p', { class: 'muted small' }, 'Battling a friend needs Supabase, like watch together (DEBROD → Settings).'),
+      el('div', { class: 'row pk-menu-links' },
+        el('button', { type: 'button', class: 'link', onClick: () => builder(teamSelect.value || '') }, 'Team builder'),
+        el('label', { class: 'pk-check' }, el('input', { type: 'checkbox', checked: sound.on, onChange: e => setSound(e.target.checked) }), ' Sound'),
+        el('a', { class: 'link', href: SHOWDOWN_SITE, target: '_blank', rel: 'noreferrer' }, 'Real Showdown ↗'))))
+    const f = wrap.querySelector('[autofocus]')
+    if (f) f.focus()
+  }
+
+  function newCode() {
+    const abc = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+    return Array.from(crypto.getRandomValues(new Uint8Array(5)), b => abc[b % abc.length]).join('')
+  }
+
+  function loading(text) {
+    pkFill(wrap, el('div', { class: 'card stack pk-menu' }, el('p', { class: 'muted' }, text)))
+  }
+
+  async function engine() {
+    if (PS) return PS
+    loading('Loading the battle engine… (about 1 MB the first time)')
+    PS = await loadShowdown()
+    return PS
+  }
+
+  // The team chosen in the menu, checked against the format. Null if fine.
+  function myTeamProblem() {
+    if (!needsTeam(format)) return null
+    const t = teamById(teamId)
+    if (!t) return `${showdownFormatName(format)} needs a team. Build one in the team builder.`
+    const problems = validate(format, t.packed)
+    return problems && problems.length ? `Your team isn't legal in ${showdownFormatName(format)}: ${problems.join(' ')}` : null
+  }
+
+  // ── Team builder ──
+  async function builder(openId) {
+    try { await engine() } catch (e) { return menu(e.message) }
+    if (dead) return
+    const dex = PS.Dex
+    let teams = loadTeams()
+    let current = teams.find(t => t.id === openId) || teams[0] || null
+    let sets = current ? PS.Teams.unpack(current.packed) || [] : []
+    let problems = null
+
+    const ensureList = (id, values) => {
+      let dl = document.getElementById(id)
+      if (dl) return id
+      dl = el('datalist', { id }, values.map(v => el('option', { value: v })))
+      document.body.append(dl)
+      return id
+    }
+    const speciesList = ensureList('pk-dl-species', dex.species.all().filter(s => s.num > 0 && (!s.isNonstandard || s.isNonstandard === 'Past')).map(s => s.name).sort())
+    const itemList = ensureList('pk-dl-items', dex.items.all().filter(i => !i.isNonstandard || i.isNonstandard === 'Past').map(i => i.name).sort())
+    const natures = dex.natures.all().map(n => n.name).sort()
+    const types = dex.types.names().filter(t => t !== '???')
+
+    let saving = null
+    function persist() {
+      if (!current) return
+      current.packed = PS.Teams.pack(sets)
+      clearTimeout(saving)
+      saving = setTimeout(() => {
+        teams = loadTeams().map(t => (t.id === current.id ? current : t))
+        if (!teams.some(t => t.id === current.id)) teams.push(current)
+        saveTeams(teams)
+      }, 250)
+    }
+    function flushSave() {
+      if (!current) return
+      clearTimeout(saving)
+      current.packed = PS.Teams.pack(sets)
+      teams = loadTeams().filter(t => t.id !== current.id).concat(current)
+      saveTeams(teams)
+    }
+
+    function newTeam(fromSets, label) {
+      flushSave()
+      current = { id: randomId(), name: label || `Team ${loadTeams().length + 1}`, format: needsTeam(format) ? format : 'gen9ou', packed: '' }
+      sets = fromSets || []
+      problems = null
+      persist()
+      flushSave()
+      render()
+    }
+
+    function moveList(slot, species) {
+      const id = `pk-dl-moves-${slot}`
+      const old = document.getElementById(id)
+      if (old) old.remove()
+      let pool = []
+      try { pool = [...dex.species.getMovePool(dex.species.get(species).id)].map(m => dex.moves.get(m).name) } catch (e) { /* unknown species */ }
+      if (!pool.length) pool = dex.moves.all().filter(m => !m.isNonstandard).map(m => m.name)
+      document.body.append(el('datalist', { id }, pool.sort().map(v => el('option', { value: v }))))
+      return id
+    }
+
+    function sel(options, value, onChange) {
+      const s = el('select', { onChange: e => onChange(e.target.value) }, options.map(o => (Array.isArray(o) ? el('option', { value: o[0] }, o[1]) : el('option', { value: o }, o || '—'))))
+      s.value = value || ''
+      return s
+    }
+
+    function slotCard(set, i) {
+      const sp = dex.species.get(set.species)
+      const known = sp.exists
+      const evs = Object.assign({ hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 }, set.evs)
+      const ivs = Object.assign({ hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31 }, set.ivs)
+      const evTotal = Object.values(evs).reduce((a, b) => a + (Number(b) || 0), 0)
+      const change = (key, value) => { set[key] = value; persist() }
+      const redraw = () => { persist(); render() }
+      const abilities = known ? Object.values(sp.abilities) : []
+      return el('div', { class: 'pk-slot' },
+        el('div', { class: 'pk-slot-head' },
+          known && el('img', { src: `${SHOWDOWN_SPRITES}gen5/${sp.spriteid}.png`, alt: '' }),
+          el('input', { class: 'pk-species', list: speciesList, value: set.species || '', placeholder: 'Pokémon',
+            onChange: e => {
+              const next = dex.species.get(e.target.value)
+              set.species = next.exists ? next.name : e.target.value
+              if (next.exists) {
+                const abil = Object.values(next.abilities)
+                if (!abil.includes(set.ability)) set.ability = abil[0]
+                if (!set.teraType) set.teraType = next.types[0]
+              }
+              redraw()
+            } }),
+          el('button', { type: 'button', class: 'link', title: 'Remove', onClick: () => { sets.splice(i, 1); redraw() } }, '✕')),
+        known && el('div', { class: 'pk-slot-types' }, sp.types.map(t => el('span', { class: 'pk-type', style: `background: ${TYPE_COLORS[t]}` }, t)),
+          el('span', { class: 'muted small' }, ` ${Object.entries(sp.baseStats).map(([k, v]) => `${STAT_NAMES[k]} ${v}`).join(' · ')}`)),
+        el('div', { class: 'pk-slot-grid' },
+          el('label', { class: 'field' }, el('span', null, 'Item'), el('input', { list: itemList, value: set.item || '', onChange: e => change('item', e.target.value) })),
+          el('label', { class: 'field' }, el('span', null, 'Ability'), abilities.length
+            ? sel(abilities, set.ability, v => change('ability', v))
+            : el('input', { value: set.ability || '', onChange: e => change('ability', e.target.value) })),
+          el('label', { class: 'field' }, el('span', null, 'Tera type'), sel(types, set.teraType || (known ? sp.types[0] : ''), v => change('teraType', v))),
+          el('label', { class: 'field' }, el('span', null, 'Nature'), sel(natures, set.nature || 'Serious', v => change('nature', v))),
+          el('label', { class: 'field' }, el('span', null, 'Level'), el('input', { type: 'number', min: 1, max: 100, value: set.level || 100, onChange: e => change('level', Math.max(1, Math.min(100, Number(e.target.value) || 100))) })),
+          el('label', { class: 'pk-check' }, el('input', { type: 'checkbox', checked: !!set.shiny, onChange: e => change('shiny', e.target.checked) }), ' Shiny')),
+        el('div', { class: 'pk-slot-moves' }, [0, 1, 2, 3].map(m => el('input', {
+          list: known ? moveList(i, set.species) : null, value: (set.moves || [])[m] || '', placeholder: `Move ${m + 1}`,
+          onChange: e => { set.moves = (set.moves || []).slice(); set.moves[m] = e.target.value; set.moves = set.moves.filter((x, j) => x || j < 4); persist() },
+        }))),
+        el('div', { class: 'pk-evs' },
+          el('span', { class: `muted small ${evTotal > 510 ? 'bad' : ''}` }, `EVs ${evTotal}/510`),
+          Object.keys(STAT_NAMES).map(k => el('label', null, STAT_NAMES[k],
+            el('input', { type: 'number', min: 0, max: 252, step: 4, value: evs[k], onChange: e => { evs[k] = Math.max(0, Math.min(252, Number(e.target.value) || 0)); set.evs = evs; redraw() } })))),
+        el('details', { class: 'pk-ivs' }, el('summary', { class: 'muted small' }, 'IVs'),
+          el('div', { class: 'pk-evs' }, Object.keys(STAT_NAMES).map(k => el('label', null, STAT_NAMES[k],
+            el('input', { type: 'number', min: 0, max: 31, value: ivs[k], onChange: e => { ivs[k] = Math.max(0, Math.min(31, Number(e.target.value) || 0)); set.ivs = ivs; persist() } }))))))
+    }
+
+    function exportText() {
+      const copy = PS.Teams.unpack(PS.Teams.pack(sets)) || []
+      for (const s of copy) delete s.hpType
+      return PS.Teams.export(copy)
+    }
+
+    function pasteDialog(title, text, onOk, okLabel) {
+      const area = el('textarea', { class: 'pk-paste', rows: 14, spellcheck: false }, text || '')
+      area.value = text || ''
+      const box = el('div', { class: 'pk-modal' }, el('div', { class: 'card stack' },
+        el('p', { class: 'name' }, title),
+        area,
+        el('div', { class: 'row' },
+          onOk && el('button', { type: 'button', class: 'primary', onClick: () => { onOk(area.value); box.remove() } }, okLabel || 'OK'),
+          !onOk && el('button', { type: 'button', class: 'primary', onClick: async () => { if (!(await copyText(area.value))) area.select() } }, 'Copy'),
+          el('button', { type: 'button', onClick: () => box.remove() }, 'Close'))))
+      wrap.append(box)
+      area.focus()
+    }
+
+    function render() {
+      teams = loadTeams()
+      if (current && !teams.some(t => t.id === current.id)) teams.push(current)
+      pkFill(wrap, el('div', { class: 'pk-builder' },
+        el('div', { class: 'row pk-builder-top' },
+          el('button', { type: 'button', class: 'link back', onClick: () => { flushSave(); if (current) { teamId = current.id; pkStore.set('team', teamId) } menu() } }, '‹ Done'),
+          el('p', { class: 'name grow' }, 'Team builder'),
+          el('button', { type: 'button', onClick: () => newTeam() }, '+ New team'),
+          el('button', { type: 'button', onClick: () => pasteDialog('Import a team (Showdown text)', '', text => {
+            const imported = PS.Teams.import(text)
+            if (!imported || !imported.length) return alert('That doesn\'t look like a Showdown team.')
+            newTeam(imported.slice(0, 6), 'Imported team')
+          }, 'Import') }, 'Import')),
+        el('div', { class: 'pk-builder-body' },
+          el('div', { class: 'pk-team-list' }, teams.length
+            ? teams.map(t => el('button', { type: 'button', class: `pk-team-item ${current && t.id === current.id ? 'on' : ''}`,
+              onClick: () => { flushSave(); current = loadTeams().find(x => x.id === t.id) || t; sets = PS.Teams.unpack(current.packed) || []; problems = null; render() } },
+              el('span', { class: 'truncate' }, t.name),
+              el('span', { class: 'pk-team-icons' }, (PS.Teams.unpack(t.packed) || []).map(s => el('img', { src: `${SHOWDOWN_SPRITES}gen5/${dex.species.get(s.species).spriteid}.png`, alt: '' })))))
+            : el('p', { class: 'muted small' }, 'No teams yet. Make one, or import one from Showdown.')),
+          current
+            ? el('div', { class: 'pk-team-edit stack' },
+              el('div', { class: 'row pk-team-meta' },
+                el('input', { value: current.name, maxlength: 40, onChange: e => { current.name = e.target.value.trim() || current.name; flushSave(); render() } }),
+                sel(SHOWDOWN_TEAM_FORMATS.map(([id, label]) => [id, label]), current.format, v => { current.format = v; problems = null; flushSave(); render() })),
+              el('div', { class: 'row pk-team-actions' },
+                el('button', { type: 'button', class: 'primary', onClick: () => { flushSave(); problems = validate(current.format, current.packed) || []; render() } }, 'Check team'),
+                el('button', { type: 'button', onClick: () => pasteDialog('Export (Showdown text)', exportText()) }, 'Export'),
+                el('button', { type: 'button', onClick: () => pasteDialog('Replace this team with Showdown text', exportText(), text => {
+                  const imported = PS.Teams.import(text)
+                  if (imported && imported.length) { sets = imported.slice(0, 6); problems = null; flushSave(); render() }
+                }, 'Replace') }, 'Edit as text'),
+                el('button', { type: 'button', onClick: () => {
+                  const rnd = PS.Teams.generate(isDoubles(current.format) ? 'gen9randomdoublesbattle' : 'gen9randombattle')
+                  for (const s of rnd) s.level = 100
+                  sets = rnd
+                  problems = null
+                  flushSave()
+                  render()
+                } }, 'Random team'),
+                el('button', { type: 'button', onClick: () => { flushSave(); const copy = Object.assign({}, current, { id: randomId(), name: `${current.name} (copy)` }); saveTeams(loadTeams().concat(copy)); current = copy; render() } }, 'Copy'),
+                el('button', { type: 'button', class: 'link', onClick: () => {
+                  if (!confirm(`Delete ${current.name}?`)) return
+                  saveTeams(loadTeams().filter(t => t.id !== current.id))
+                  current = loadTeams()[0] || null
+                  sets = current ? PS.Teams.unpack(current.packed) || [] : []
+                  render()
+                } }, 'Delete')),
+              problems && (problems.length
+                ? el('div', { class: 'pk-problems' }, problems.map(p => el('p', { class: 'error' }, p)))
+                : el('p', { class: 'pk-ok' }, `✓ Legal in ${showdownFormatName(current.format)}`)),
+              el('div', { class: 'pk-slots' }, sets.map(slotCard),
+                sets.length < 6 && el('button', { type: 'button', class: 'pk-slot pk-add', onClick: () => { sets.push({ species: '', moves: [], evs: {}, ivs: {} }); persist(); render() } }, '+ Add a Pokémon')))
+            : el('div', { class: 'pk-team-edit' }))))
+    }
+    render()
+  }
+
+  // ── Running a battle (CPU, or the host's side of an online one) ──
+  function runSim(fid, p1, p2, handlers, more = []) {
+    const stream = new PS.BattleStreams.BattleStream()
+    const streams = PS.BattleStreams.getPlayerStreams(stream)
+    let over = false
+    const pump = async (s, fn) => {
+      if (!fn) return
+      try {
+        for await (const chunk of s) {
+          if (over || dead) break
+          try { fn(chunk) } catch (e) { console.error('Showdown:', e) }
+        }
+      } catch (e) { /* stream closed */ }
+    }
+    pump(streams.p1, handlers.p1)
+    pump(streams.p2, handlers.p2)
+    more.forEach((p, i) => pump(streams[`p${i + 3}`], handlers[`p${i + 3}`]))
+    pump(streams.spectator, handlers.spectator)
+    const player = p => JSON.stringify(Object.assign({ name: p.name }, p.team ? { team: p.team } : {}))
+    const extra = more.map((p, i) => `\n>player p${i + 3} ${player(p)}`).join('')
+    streams.omniscient.write(`>start ${JSON.stringify({ formatid: fid })}\n>player p1 ${player(p1)}\n>player p2 ${player(p2)}${extra}`)
+    return {
+      stream,
+      choose: (side, choice) => { if (!over) streams[side].write(choice) },
+      forfeit: side => { if (!over) streams.omniscient.write(`>forcelose ${side}`) },
+      end() {
+        over = true
+        try { streams.omniscient.writeEnd() } catch (e) { /* already closed */ }
+      },
+    }
+  }
+
+  const requestsIn = chunk => chunk.split('\n').filter(l => l.startsWith('|request|') && l.length > 9).map(l => JSON.parse(l.slice(9)))
+
+  async function startCpu() {
+    try { await engine() } catch (e) { return menu(e.message) }
+    if (dead) return
+    if (format === 'debrod-tower') return towerStart()
+    if (isDraft(format)) return draftVsCpu()
+    if (isFour(format)) return cpuFour()
+    const problem = myTeamProblem()
+    if (problem) return menu(problem)
+    cpuBattle(format, needsTeam(format) ? teamById(teamId).packed : null, needsTeam(format) ? cpuTeam(format) : null)
+  }
+
+  function cpuBattle(fid, myTeam, theirTeam, extra = {}) {
+    endMatch()
+    const foe = extra.foe || 'CPU'
+    const view = viewer('p1', { format: fid, me: name, foe, vsCpu: true, banner: extra.banner }, {
+      choose: choice => sim.choose('p1', choice),
+      forfeit: () => sim.forfeit('p1'),
+      again: extra.again || (() => startCpu()),
+      againLabel: extra.againLabel,
+      onFinish: extra.onFinish,
+      back: () => { endMatch(); menu() },
+    })
+    const sim = runSim(simFormat(fid), { name, team: myTeam }, { name: foe, team: theirTeam }, {
+      p1: chunk => view.feed(chunk),
+      p2: chunk => {
+        for (const req of requestsIn(chunk)) {
+          // A beat before the CPU answers, so it doesn't feel instant.
+          setTimeout(() => { const c = cpuChoice(req, sim.stream.battle, 'p2', extra.skill); if (c) sim.choose('p2', c) }, 400 + Math.random() * 600)
+        }
+      },
+    })
+    match = { sim, view }
+    music(true)
+  }
+
+  // A CPU in one seat: answers each request after a beat, and falls back on
+  // the default choice if the battle turns its pick down.
+  function cpuSeat(getSim, sideId, skill) {
+    let retried = false
+    return chunk => {
+      if (/(^|\n)\|error\|/.test(chunk)) {
+        if (!retried) { retried = true; setTimeout(() => getSim().choose(sideId, 'default'), 50) }
+        return
+      }
+      for (const req of requestsIn(chunk)) {
+        if (req.wait) continue
+        retried = false
+        setTimeout(() => { const sim = getSim(); const c = cpuChoice(req, sim.stream.battle, sideId, skill); if (c) sim.choose(sideId, c) }, 400 + Math.random() * 600)
+      }
+    }
+  }
+
+  // You and three CPUs, with random teams or the ones drafted.
+  function cpuFour(teams, extra = {}) {
+    endMatch()
+    const names = Object.assign({ p1: name }, SHOWDOWN_CPU_NAMES, isMulti(format) ? { p3: 'Partner Mae' } : {})
+    const fid = format
+    const T = teams || Object.fromEntries(SHOWDOWN_FOUR.map(x => [x, fourTeam(fid)]))
+    const view = viewer('p1', { format: fid, me: name, foe: 'the CPUs', names, vsCpu: true }, {
+      choose: choice => sim.choose('p1', choice),
+      forfeit: () => sim.forfeit('p1'),
+      again: extra.again || (() => startCpu()),
+      againLabel: extra.againLabel,
+      back: () => { endMatch(); menu() },
+    })
+    const get = () => sim
+    const sim = runSim(simFormat(fid), { name, team: T.p1 }, { name: names.p2, team: T.p2 }, {
+      p1: chunk => view.feed(chunk),
+      p2: cpuSeat(get, 'p2'),
+      p3: cpuSeat(get, 'p3'),
+      p4: cpuSeat(get, 'p4'),
+    }, [{ name: names.p3, team: T.p3 }, { name: names.p4, team: T.p4 }])
+    match = { sim, view }
+    music(true)
+  }
+
+  // ── Draft (a DEBROD extra) ──
+  // A shared pool of random-battle sets, picked in snake order (A, B, B, A,
+  // A, B…), then battled with as drafted.
+  function draftPool(doubles, size = SHOWDOWN_DRAFT_POOL) {
+    const out = []
+    const seen = new Set()
+    for (let tries = 0; out.length < size && tries < 16; tries++) {
+      for (const set of PS.Teams.generate(doubles ? 'gen9randomdoublesbattle' : 'gen9randombattle')) {
+        const base = PS.Dex.species.get(set.species).baseSpecies
+        if (seen.has(base)) continue
+        seen.add(base)
+        out.push(set)
+        if (out.length >= size) break
+      }
+    }
+    return out
+  }
+  // Two drafting (p1, p2, p2, p1…) or four (p1–p4, then back).
+  function newDraft(fid, names) {
+    const sides = isFour(fid) ? SHOWDOWN_FOUR : ['p1', 'p2']
+    const each = isFour(fid) ? SHOWDOWN_DRAFT_FOUR.picks : SHOWDOWN_DRAFT_PICKS
+    const order = []
+    for (let r = 0; order.length < each * sides.length; r++) order.push(...(r % 2 ? sides.slice().reverse() : sides))
+    const pool = draftPool(isDoubles(fid), isFour(fid) ? SHOWDOWN_DRAFT_FOUR.pool : SHOWDOWN_DRAFT_POOL)
+    return { id: randomId(), fid, pool, picks: Object.fromEntries(sides.map(x => [x, []])), order, at: 0, names, sides, each }
+  }
+  const draftSides = D => D.sides || ['p1', 'p2']
+  const draftDone = D => D.at >= D.order.length
+  const draftTaken = D => new Set(draftSides(D).flatMap(x => D.picks[x] || []))
+  function draftPick(D, side, idx) {
+    if (draftDone(D) || D.order[D.at] !== side || !D.pool[idx] || draftTaken(D).has(idx)) return false
+    D.picks[side].push(idx)
+    D.at++
+    return true
+  }
+  const draftTeam = (D, side) => PS.Teams.pack(D.picks[side].map(i => D.pool[i]))
+  const bst = set => Object.values(PS.Dex.species.get(set.species).baseStats).reduce((a, b) => a + b, 0)
+  // The CPU likes strong Pokémon and types it doesn't have yet.
+  function draftCpuPick(D, side) {
+    const taken = draftTaken(D)
+    const have = new Set(D.picks[side].flatMap(i => PS.Dex.species.get(D.pool[i].species).types))
+    let best = -1
+    let bestScore = -Infinity
+    D.pool.forEach((set, i) => {
+      if (taken.has(i)) return
+      const types = PS.Dex.species.get(set.species).types
+      const score = bst(set) * ((set.level || 100) / 100) + types.filter(t => !have.has(t)).length * 40 + Math.random() * 90
+      if (score > bestScore) { bestScore = score; best = i }
+    })
+    return best
+  }
+
+  function draftScreen(D, mySide, onPick, opts = {}) {
+    const turn = draftDone(D) ? null : D.order[D.at]
+    const locked = opts.locked && opts.locked()
+    const myTurn = !opts.spectator && turn === mySide && !locked
+    const taken = draftTaken(D)
+    const sides = draftSides(D)
+    const each = D.each || SHOWDOWN_DRAFT_PICKS
+    const left = opts.deadline ? Math.max(0, opts.deadline - Date.now()) : null
+    const owner = i => sides.find(x => (D.picks[x] || []).includes(i)) || ''
+    // Ours first, then everyone else in seat order.
+    const shown = opts.spectator ? sides : [mySide, ...sides.filter(x => x !== mySide)]
+    const column = side => el('div', { class: `pk-draft-col ${side === mySide ? 'mine' : ''} ${turn === side ? 'turn' : ''}` },
+      el('p', { class: 'name' }, side === mySide && !opts.spectator ? `You (${D.names[side]})` : D.names[side]),
+      el('div', { class: 'pk-draft-picks', style: `grid-template-columns: repeat(${each}, minmax(0, 1fr))` }, Array.from({ length: each }, (_, k) => {
+        const i = D.picks[side][k]
+        const set = D.pool[i]
+        return set
+          ? el('div', { class: 'pk-draft-picked', title: `${set.species} · ${set.moves.join(', ')}` },
+            el('img', { src: `${SHOWDOWN_SPRITES}gen5/${PS.Dex.species.get(set.species).spriteid}.png`, alt: '' }),
+            el('span', null, set.species))
+          : el('div', { class: 'pk-draft-picked empty' }, '?')
+      })))
+    pkFill(wrap, el('div', { class: 'pk-draft' },
+      el('div', { class: 'row pk-draft-top' },
+        el('button', { type: 'button', class: 'link back', onClick: opts.back }, '‹ Leave'),
+        el('p', { class: 'pk-format grow' }, showdownFormatName(D.fid)),
+        el('p', { class: `pk-draft-turn ${myTurn ? 'mine' : ''}` }, !turn ? 'Draft done. To battle!' : locked ? 'Picked!' : myTurn ? 'Your pick!' : `${D.names[turn]} is picking…`),
+        left !== null && turn && el('span', { class: 'pill' }, `⏱ ${Math.ceil(left / 1000)}s`)),
+      el('div', { class: `pk-draft-teams ${sides.length > 2 ? 'four' : ''}` }, shown.map(column)),
+      el('div', { class: 'pk-draft-pool' }, D.pool.map((set, i) => {
+        const sp = PS.Dex.species.get(set.species)
+        const who = owner(i)
+        return el('button', {
+          type: 'button', class: `pk-draft-card ${who ? `taken ${who === mySide && !opts.spectator ? 'mine' : 'theirs'}` : ''}`,
+          disabled: !myTurn || taken.has(i),
+          title: `${set.species} @ ${set.item || 'no item'}\n${set.ability}\n${set.moves.map(m => PS.Dex.moves.get(m).name).join(', ')}`,
+          onClick: () => onPick(i),
+        },
+          el('img', { src: `${SHOWDOWN_SPRITES}ani/${sp.spriteid}.gif`, alt: '', onError: e => { e.target.onerror = null; e.target.src = `${SHOWDOWN_SPRITES}gen5/${sp.spriteid}.png` } }),
+          el('span', { class: 'pk-draft-name' }, set.species),
+          el('span', { class: 'pk-types' }, sp.types.map(t => el('span', { class: 'pk-type', style: `background: ${TYPE_COLORS[t]}` }, t))),
+          el('span', { class: 'muted small' }, `L${set.level || 100} · BST ${bst(set)}`),
+          el('span', { class: 'muted small pk-draft-moves' }, set.moves.map(m => PS.Dex.moves.get(m).name).join(' · ')),
+          who && el('span', { class: 'pk-draft-owner' }, who === mySide && !opts.spectator ? 'Yours' : D.names[who]))
+      }))))
+  }
+
+  function draftVsCpu() {
+    const fid = format
+    const D = newDraft(fid, isFour(fid) ? Object.assign({ p1: name }, SHOWDOWN_CPU_NAMES) : { p1: name, p2: 'CPU' })
+    D.live = true
+    const render = () => draftScreen(D, 'p1', i => { if (draftPick(D, 'p1', i)) step() }, { back: () => { D.live = false; menu() } })
+    const step = () => {
+      render()
+      if (draftDone(D)) {
+        return setTimeout(() => {
+          if (!D.live || dead) return
+          const again = { again: () => draftVsCpu(), againLabel: () => 'Draft again' }
+          if (isFour(fid)) cpuFour(Object.fromEntries(SHOWDOWN_FOUR.map(x => [x, draftTeam(D, x)])), again)
+          else cpuBattle(fid, draftTeam(D, 'p1'), draftTeam(D, 'p2'), again)
+        }, 1000)
+      }
+      const cpu = D.order[D.at]
+      if (cpu !== 'p1') setTimeout(() => { if (D.live && !dead && draftPick(D, cpu, draftCpuPick(D, cpu))) step() }, 650)
+    }
+    step()
+  }
+
+  // ── Battle Tower (a DEBROD extra) ──
+  // A rental team climbs floor by floor. The CPU gets stronger and
+  // smarter; a boss waits every 7th floor; after a win you may swap one of
+  // your Pokémon for one of theirs.
+  function towerStart() {
+    tower = { floor: 1, team: PS.Teams.generate('gen9randombattle') }
+    towerIntro()
+  }
+  const towerBest = () => pkStore.get('tower', { best: 0 }).best || 0
+  function towerTeamRow(sets, onPick, picked) {
+    return el('div', { class: 'pk-tower-team' }, sets.map((set, i) => {
+      const sp = PS.Dex.species.get(set.species)
+      return el(onPick ? 'button' : 'div', {
+        type: onPick ? 'button' : null, class: `pk-tower-mon ${picked === i ? 'picked' : ''}`,
+        title: `${set.species} @ ${set.item || 'no item'} · ${set.ability}\n${set.moves.map(m => PS.Dex.moves.get(m).name).join(', ')}`,
+        onClick: onPick ? () => onPick(i) : null,
+      },
+        el('img', { src: `${SHOWDOWN_SPRITES}gen5/${sp.spriteid}.png`, alt: '' }),
+        el('span', { class: 'pk-mon-name' }, set.species),
+        el('span', { class: 'muted small' }, `L${set.level || 100}`))
+    }))
+  }
+  function towerIntro() {
+    const floor = tower.floor
+    const boss = floor % 7 === 0
+    pkFill(wrap, el('div', { class: 'card stack pk-menu pk-tower-card' },
+      el('p', { class: 'wordmark' }, `Floor ${floor}`),
+      el('p', { class: 'tagline' }, boss ? `Boss: ${SHOWDOWN_TOWER_TRAINERS[6]}` : `Next: ${SHOWDOWN_TOWER_TRAINERS[(floor - 1) % 6]}`),
+      el('p', { class: 'muted small' }, `Best run: floor ${towerBest()}. Your team heals between floors.`),
+      towerTeamRow(tower.team),
+      el('div', { class: 'row' },
+        el('button', { type: 'button', class: 'primary grow', onClick: towerFloor }, `Battle floor ${floor}`),
+        floor === 1 && el('button', { type: 'button', onClick: () => { tower.team = PS.Teams.generate('gen9randombattle'); towerIntro() } }, 'New rental team')),
+      el('button', { type: 'button', class: 'link', onClick: () => { tower = null; menu() } }, '‹ Leave the tower')))
+  }
+  function towerFloor() {
+    const floor = tower.floor
+    const boss = floor % 7 === 0
+    const cpuSets = PS.Teams.generate('gen9randombattle')
+    const bonus = Math.min(12, Math.floor((floor - 1) / 2) * 2) + (boss ? 4 : 0)
+    for (const set of cpuSets) set.level = Math.min(100, (set.level || 80) + bonus)
+    const foe = boss ? SHOWDOWN_TOWER_TRAINERS[6] : SHOWDOWN_TOWER_TRAINERS[(floor - 1) % 6]
+    let outcome = null
+    cpuBattle('debrod-tower', PS.Teams.pack(tower.team), PS.Teams.pack(cpuSets), {
+      foe,
+      skill: boss ? 0.97 : Math.min(0.95, 0.62 + floor * 0.04),
+      banner: `Floor ${floor} · Best ${towerBest()}`,
+      onFinish: result => {
+        outcome = result
+        if (result === 'win') pkStore.set('tower', { best: Math.max(towerBest(), floor) })
+      },
+      againLabel: r => (r === 'win' ? `On to floor ${floor + 1} ›` : 'Start a new run'),
+      again: () => (outcome === 'win' ? towerSwap(cpuSets) : towerStart()),
+    })
+  }
+  function towerSwap(theirs, takeIdx) {
+    endMatch()
+    pkFill(wrap, el('div', { class: 'card stack pk-menu pk-tower-card' },
+      el('p', { class: 'wordmark' }, `Floor ${tower.floor} cleared!`),
+      el('p', { class: 'muted small' }, takeIdx === undefined
+        ? 'Want one of theirs? Pick it, then pick who it replaces. Or keep your team.'
+        : `Who makes room for ${theirs[takeIdx].species}?`),
+      el('p', { class: 'muted small' }, 'Their team'),
+      towerTeamRow(theirs, i => towerSwap(theirs, i), takeIdx),
+      el('p', { class: 'muted small' }, 'Your team'),
+      towerTeamRow(tower.team, takeIdx === undefined ? null : i => {
+        tower.team[i] = Object.assign({}, theirs[takeIdx], { level: Math.min(theirs[takeIdx].level || 80, 90) })
+        tower.floor++
+        towerIntro()
+      }),
+      el('button', { type: 'button', class: 'primary', onClick: () => { tower.floor++; towerIntro() } }, 'Keep my team ›')))
+  }
+
+  function endMatch() {
+    if (match && match.sim) match.sim.end()
+    if (match && match.view) match.view.destroy()
+    if (net && net.timerTick) { clearInterval(net.timerTick); net.timerTick = null }
+    match = null
+    music(false)
+  }
+
+  // A CPU that mostly picks its hardest-hitting move (and target), now and
+  // then something else, and switches out when nothing it has will land.
+  function cpuChoice(req, battle, sideId, skill = 0.8) {
+    if (!req || req.wait || !battle) return null
+    if (req.teamPreview) return 'default'
+    const sideObj = battle[sideId]
+    const four = battle.sides.length > 2
+    // In four-player battles everyone but your partner is a foe.
+    const foeSides = four ? battle.sides.filter(x => x !== sideObj && x !== sideObj.allySide) : [battle[sideId === 'p1' ? 'p2' : 'p1']]
+    const team = req.side.pokemon
+    const doubles = battle.gameType !== 'singles'
+    const taken = new Set()
+    const healthy = () => team.map((p, i) => ({ p, i })).filter(({ p, i }) => !p.active && !p.condition.endsWith(' fnt') && !taken.has(i))
+    if (req.forceSwitch) {
+      return req.forceSwitch.map(f => {
+        const h = healthy()
+        if (!f || !h.length) return 'pass'
+        const c = pick(h)
+        taken.add(c.i)
+        return `switch ${c.i + 1}`
+      }).join(', ')
+    }
+    const dex = battle.dex
+    let mechUsed = false
+    return (req.active || []).map((active, slot) => {
+      const mon = team[slot]
+      if (!active || !mon || mon.condition.endsWith(' fnt') || mon.commanding) return 'pass'
+      const mine = sideObj.active[slot]
+      const foes = foeSides.flatMap(x => x.active.map((f, i) => ({ f, i }))).filter(({ f }) => f && !f.fainted)
+      const ally = four && sideObj.allySide ? sideObj.allySide.active.find(a => a && !a.fainted) : null
+      // A target's number from where we stand: positive across the field,
+      // negative on our own half.
+      const loc = t => {
+        if (mine.getLocOf) return mine.getLocOf(t)
+        const position = t.position + Math.floor(t.side.n / 2) * t.side.active.length + 1
+        return mine.side.n % 2 === t.side.n % 2 ? -position : position
+      }
+      const score = (id, foe) => {
+        const move = dex.moves.get(id)
+        if (move.category === 'Status') return 35 * (0.6 + Math.random() * 0.8)
+        let s = move.basePower || 70
+        if (foe) {
+          const types = foe.getTypes()
+          if (!dex.getImmunity(move.type, types)) return 0
+          s *= Math.pow(2, dex.getEffectiveness(move.type, types))
+        }
+        if (mine && mine.hasType(move.type)) s *= 1.5
+        if (move.accuracy !== true) s *= move.accuracy / 100
+        return s * (0.85 + Math.random() * 0.3)
+      }
+      const options = []
+      active.moves.forEach((m, j) => {
+        if (m.disabled) return
+        if (!foes.length) return options.push({ j, s: 1, t: null })
+        if (four && m.target === 'adjacentAlly' && !ally) return
+        for (const { f, i } of foes) options.push({ j, s: score(m.id, f), t: i, foe: f, target: m.target })
+      })
+      options.sort((a, b) => b.s - a.s)
+      const trapped = active.trapped || active.maybeTrapped
+      const h = healthy()
+      if ((!options.length || options[0].s < 30) && h.length && !trapped && Math.random() < 0.6) {
+        const c = pick(h)
+        taken.add(c.i)
+        return `switch ${c.i + 1}`
+      }
+      if (!options.length) return 'move 1'
+      const c = Math.random() < skill ? options[0] : pick(options)
+      let target = ''
+      if (four && mine) {
+        if (['normal', 'any', 'adjacentFoe'].includes(c.target) && c.foe) target = ` ${loc(c.foe)}`
+        if (c.target === 'adjacentAlly' && ally) target = ` ${loc(ally)}`
+        if (c.target === 'adjacentAllyOrSelf') target = ` ${loc(mine)}`
+      } else if (doubles) {
+        if (['normal', 'any', 'adjacentFoe'].includes(c.target) && c.t !== null) target = ` ${c.t + 1}`
+        if (c.target === 'adjacentAlly') target = ` -${(slot ^ 1) + 1}`
+        if (c.target === 'adjacentAllyOrSelf') target = ` -${slot + 1}`
+      }
+      let mech = ''
+      if (!mechUsed) {
+        if (active.canMegaEvo) mech = ' mega'
+        else if (active.canTerastallize && Math.random() < 0.3) mech = ' terastallize'
+        else if (active.canDynamax && Math.random() < 0.3) mech = ' dynamax'
+        else if (active.canZMove && active.canZMove[c.j] && Math.random() < 0.3) mech = ' zmove'
+        if (mech) mechUsed = true
+      }
+      return `move ${c.j + 1}${target}${mech}`
+    }).join(', ')
+  }
+
+  // ── Online: the host runs the battle; the guest and spectators follow ──
+  function online(code, role) {
+    if (role === 'host') {
+      const problem = PS ? myTeamProblem() : null
+      if (problem) return menu(problem)
+    }
+    leaveNet()
+    endMatch()
+    loading(role === 'host' ? 'Making a room…' : `Joining room ${code}…`)
+    const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey)
+    const channel = sb.channel(`ds-showdown:${code}`, { config: { presence: { key: me }, broadcast: { self: false } } })
+    const n = {
+      sb, channel, code, role, players: [], joinedAt: Date.now(), timers: [],
+      // host
+      format, guestId: null, guestName: '', guestTeam: null, battle: null, chunks: [], spec: [], timerOn: false, deadline: { p1: null, p2: null },
+      four: role === 'host' && isFour(format), seats: { p2: null, p3: null, p4: null }, names: null,
+      // guest / spectator
+      hostId: null, mode: null, expect: 0, buffer: {}, teamSent: false, seat: null,
+    }
+    net = n
+    if (typeof hubActivity === 'function') hubActivity({ game: 'showdown', code, label: role === 'host' ? `Pokémon Showdown (${showdownFormatName(n.format)})` : 'Pokémon Showdown', joinable: true })
+    n.send = (event, payload) => channel.send({ type: 'broadcast', event, payload: Object.assign({ from: me }, payload) })
+
+    channel.on('presence', { event: 'sync' }, () => {
+      n.players = Object.values(channel.presenceState()).map(m => m[m.length - 1]).sort((a, b) => a.joinedAt - b.joinedAt)
+      if (role === 'host') hostPresence()
+      else followerPresence()
+    })
+    for (const ev of ['room', 'chunk', 'schunk', 'reset', 'choice', 'resend', 'hello', 'team', 'teamerror', 'chat', 'forfeit', 'timer', 'draft', 'draftpick', 'emote']) {
+      channel.on('broadcast', { event: ev }, ({ payload }) => (role === 'host' ? hostEvent : followerEvent)(ev, payload || {}))
+    }
+    channel.subscribe(async status => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        if (!n.subscribed) menu('Can\'t reach Supabase. Check SUPABASE_URL and SUPABASE_ANON_KEY in DEBROD → Settings.')
+        return
+      }
+      if (status !== 'SUBSCRIBED') return
+      n.subscribed = true
+      await channel.track({ id: me, name, role, joinedAt: n.joinedAt })
+      if (role === 'host') {
+        try { await engine() } catch (e) { return menu(e.message) }
+        const problem = myTeamProblem()
+        if (problem) { leaveNet(); return menu(problem) }
+        n.hostTeam = needsTeam(n.format) ? teamById(teamId).packed : null
+        n.ready = true
+        waitingRoom()
+        hostPresence()
+      } else {
+        n.send('hello', {})
+        n.timers.push(setTimeout(() => { if (net === n && !n.hostId) { leaveNet(); menu(`Nobody is hosting room ${code}.`) } }, 7000))
+      }
+    })
+  }
+
+  function leaveNet() {
+    if (!net) return
+    if (typeof hubActivity === 'function') hubActivity({ game: 'showdown', label: 'Pokémon Showdown', joinable: false })
+    for (const t of net.timers) clearTimeout(t)
+    if (net.timerTick) clearInterval(net.timerTick)
+    if (net.draftTick) clearInterval(net.draftTick)
+    try { net.channel.untrack(); net.sb.removeChannel(net.channel) } catch (e) { /* gone */ }
+    net = null
+  }
+
+  function inviteLink(n) {
+    return cfg.appUrl ? `${cfg.appUrl}?showdown=${n.code}` : ''
+  }
+
+  function waitingRoom(note) {
+    const n = net
+    if (n.four) return fourLobby()
+    const link = inviteLink(n)
+    pkFill(wrap, el('div', { class: 'card stack pk-menu' },
+      el('p', { class: 'wordmark' }, 'Showdown'),
+      el('p', { class: 'tagline' }, showdownFormatName(n.format)),
+      note && el('p', { class: 'muted small' }, note),
+      el('p', null, n.guestId ? `${n.guestName} is picking a team…` : 'Waiting for your opponent…'),
+      el('p', { class: 'pk-code' }, n.code),
+      el('p', { class: 'muted small' }, `${link ? 'Send the link, or have' : 'Have'} them open Arcade → Pokémon Showdown and enter the code. Anyone else who joins can watch.`),
+      el('button', { type: 'button', class: 'primary', onClick: async () => {
+        const ok = await copyText(link || n.code)
+        if (!ok) window.prompt('Send this:', link || n.code)
+      } }, link ? 'Copy invite link' : 'Copy code'),
+      el('button', { type: 'button', class: 'link', onClick: () => { leaveNet(); menu() } }, '‹ Cancel')))
+  }
+
+  // Host side
+  function hostRoom() {
+    const n = net
+    if (!n) return
+    if (n.four) return fourRoom()
+    n.send('room', {
+      format: n.format, hostName: name, guestId: n.guestId, guestName: n.guestName,
+      needsTeam: needsTeam(n.format), battle: n.battle, timer: n.timerOn, draft: n.draft && !n.battle ? n.draft.id : null,
+    })
+  }
+
+  function hostPresence() {
+    const n = net
+    // Presence can arrive before the engine has loaded; we run again then.
+    if (!n || !n.ready) return
+    if (n.four) return fourPresence()
+    const others = n.players.filter(p => p.id !== me)
+    if (n.guestId && !others.some(p => p.id === n.guestId)) {
+      n.guestId = null
+      if (match) match.view.notice(`${n.guestName} left. If they come back, the battle carries on.`)
+    }
+    if (!n.guestId) {
+      // Mid-battle only the same trainer can take the seat back; otherwise
+      // the first to arrive gets it.
+      const next = n.battle ? others.find(p => p.name === n.guestName) : others[0]
+      if (next) {
+        n.guestId = next.id
+        if (!n.battle) { n.guestName = next.name; n.guestTeam = null }
+        if (n.battle) { if (match) match.view.notice(`${n.guestName} is back.`); hostReplay() }
+        else if (isDraft(n.format)) hostDraft()
+        else if (!needsTeam(n.format)) hostStart()
+        else { hostRoom(); if (!match) waitingRoom() }
+      }
+    }
+    hostRoom()
+  }
+
+  // ── Four players online ──
+  // The host is p1; friends take p2, p3 and p4 in the order they arrive,
+  // and anyone past that watches. Seats nobody takes go to the CPU.
+  const SEATS = ['p2', 'p3', 'p4']
+  const seatOf = (n, id) => SEATS.find(x => n.seats[x] && n.seats[x].id && n.seats[x].id === id) || null
+
+  function fourRoom() {
+    const n = net
+    const seats = {}
+    for (const x of SEATS) seats[x] = n.seats[x] && { id: n.seats[x].id, name: n.seats[x].name, cpu: !!n.seats[x].cpu }
+    n.send('room', { four: true, format: n.format, hostName: name, seats, names: n.names, battle: n.battle, timer: n.timerOn, draft: n.draft && !n.battle ? n.draft.id : null })
+  }
+
+  function fourName(n, wanted) {
+    const taken = new Set([name, ...SEATS.map(x => n.seats[x] && n.seats[x].name)].filter(Boolean))
+    let out = wanted || 'Trainer'
+    for (let k = 2; taken.has(out); k++) out = `${wanted} ${k}`
+    return out
+  }
+
+  function fourPresence() {
+    const n = net
+    const others = n.players.filter(p => p.id !== me)
+    const here = id => others.some(p => p.id === id)
+    for (const x of SEATS) {
+      const seat = n.seats[x]
+      if (!seat || !seat.id || here(seat.id)) continue
+      if (n.battle) {
+        // Their seat waits for them; the CPU steps in if they stay away.
+        seat.id = null
+        seat.goneAt = Date.now()
+        if (match) match.view.notice(`${seat.name} left. If they're not back in ${SHOWDOWN_TAKEOVER_MS / 1000} seconds, the CPU plays for them.`)
+      } else if (n.draft) {
+        // Mid-draft the CPU picks for them straight away.
+        seat.id = null
+        seat.goneAt = Date.now()
+        seat.cpu = true
+        fourDraftNext(true)
+      } else n.seats[x] = null
+    }
+    for (const p of others) {
+      if (seatOf(n, p.id)) continue
+      if (n.battle || n.draft) {
+        const x = SEATS.find(k => n.seats[k] && !n.seats[k].id && !n.seats[k].bot && n.seats[k].name === p.name)
+        if (!x) continue
+        Object.assign(n.seats[x], { id: p.id, cpu: false, goneAt: null })
+        if (match) match.view.notice(`${p.name} is back.`)
+        if (n.battle) fourReplay(x)
+        else { fourRoom(); n.send('draft', draftPayload(n.draft)) }
+      } else {
+        const x = SEATS.find(k => !n.seats[k])
+        if (x) n.seats[x] = { id: p.id, name: fourName(n, p.name) }
+      }
+    }
+    fourRoom()
+    if (!match) fourLobby()
+  }
+
+  // Multi: change who's your partner by moving everyone round a seat.
+  function fourRotate() {
+    const n = net
+    const [a, b, c] = SEATS.map(x => n.seats[x])
+    n.seats = { p2: c, p3: a, p4: b }
+    fourRoom()
+    fourLobby()
+  }
+
+  function fourLobby() {
+    const n = net
+    if (!n || match || n.draft) return
+    const link = inviteLink(n)
+    const multi = isMulti(n.format)
+    const who = x => (x === 'p1' ? `${name} (you)` : n.seats[x] ? n.seats[x].name : 'CPU')
+    const filled = SEATS.filter(x => n.seats[x]).length
+    pkFill(wrap, el('div', { class: 'card stack pk-menu' },
+      el('p', { class: 'wordmark' }, 'Showdown'),
+      el('p', { class: 'tagline' }, showdownFormatName(n.format)),
+      multi
+        ? el('div', { class: 'pk-seats' },
+          el('p', null, el('strong', null, 'Your team: '), `${who('p1')} & ${who('p3')}`),
+          el('p', null, el('strong', null, 'Against: '), `${who('p2')} & ${who('p4')}`))
+        : el('div', { class: 'pk-seats' }, SHOWDOWN_FOUR.map(x => el('p', null, `${x.toUpperCase()} · ${who(x)}`))),
+      el('p', { class: 'pk-code' }, n.code),
+      el('p', { class: 'muted small' }, `${link ? 'Send the link, or have' : 'Have'} friends open Arcade → Pokémon Showdown and enter the code. Up to three can play; the CPU takes any empty seat, and anyone after that watches.`),
+      el('button', { type: 'button', onClick: async () => {
+        const ok = await copyText(link || n.code)
+        if (!ok) window.prompt('Send this:', link || n.code)
+      } }, link ? 'Copy invite link' : 'Copy code'),
+      multi && filled > 0 && el('button', { type: 'button', onClick: fourRotate }, 'Change partners'),
+      el('button', { type: 'button', class: 'primary', onClick: () => (isDraft(n.format) ? fourDraft() : fourStart()) },
+        `${filled === 3 ? (isDraft(n.format) ? 'Start the draft' : 'Start the battle') : `Start (${3 - filled} CPU${3 - filled === 1 ? '' : 's'})`}`),
+      el('button', { type: 'button', class: 'link', onClick: () => { leaveNet(); menu() } }, '‹ Cancel')))
+  }
+
+  // Empty seats go to the CPU, and everyone's name is fixed for the battle.
+  function fourSeats() {
+    const n = net
+    for (const x of SEATS) if (!n.seats[x]) n.seats[x] = { id: null, name: fourName(n, SHOWDOWN_CPU_NAMES[x]), cpu: true, bot: true }
+    n.names = { p1: name }
+    for (const x of SEATS) n.names[x] = n.seats[x].name
+  }
+
+  // A four-way draft: the host keeps the board and the clock, and picks for
+  // the CPU's seats.
+  function fourDraft() {
+    const n = net
+    if (!n) return
+    if (match) endMatch()
+    fourSeats()
+    n.battle = null
+    const D = n.draft = newDraft(n.format, n.names)
+    D.deadline = Date.now() + SHOWDOWN_DRAFT_MS
+    if (n.draftTick) clearInterval(n.draftTick)
+    n.draftTick = setInterval(() => {
+      if (net !== n || n.draft !== D || draftDone(D) || n.battle) return
+      if (Date.now() > D.deadline) {
+        const x = D.order[D.at]
+        if (draftPick(D, x, draftCpuPick(D, x))) fourDraftNext()
+      } else fourDraftShow()
+    }, 1000)
+    fourRoom()
+    fourDraftNext(true)
+  }
+  function fourDraftShow() {
+    const n = net
+    const D = n.draft
+    draftScreen(D, 'p1', i => { if (draftPick(D, 'p1', i)) fourDraftNext() }, { back: () => { endMatch(); leaveNet(); menu() }, deadline: D.deadline })
+  }
+  // After each pick (or a seat changing hands): tell everyone, and let the
+  // CPU pick if it's its turn.
+  function fourDraftNext(keepClock) {
+    const n = net
+    const D = n && n.draft
+    if (!D || n.battle) return
+    if (!keepClock) D.deadline = Date.now() + SHOWDOWN_DRAFT_MS
+    n.send('draft', draftPayload(D))
+    fourDraftShow()
+    if (draftDone(D)) {
+      clearInterval(n.draftTick)
+      const teams = Object.fromEntries(SHOWDOWN_FOUR.map(x => [x, draftTeam(D, x)]))
+      setTimeout(() => { if (net === n && n.draft === D && !n.battle) fourStart(teams) }, 1200)
+      return
+    }
+    const x = D.order[D.at]
+    if (x !== 'p1' && n.seats[x] && n.seats[x].cpu) {
+      setTimeout(() => { if (net === n && n.draft === D && D.order[D.at] === x && draftPick(D, x, draftCpuPick(D, x))) fourDraftNext() }, 650)
+    }
+  }
+
+  function fourStart(teams) {
+    const n = net
+    if (!n) return
+    if (match) endMatch()
+    fourSeats()
+    n.chunks = { p2: [], p3: [], p4: [] }
+    n.spec = []
+    n.battle = randomId()
+    n.deadline = { p1: null, p2: null, p3: null, p4: null }
+    n.awaiting = { p1: false, p2: false, p3: false, p4: false }
+    n.lastReq = {}
+    n.retried = {}
+    const fid = n.format
+    const view = viewer('p1', { format: fid, me: name, foe: 'the others', names: n.names, online: true, host: true }, {
+      choose: choice => { hostChoice('p1', choice) },
+      forfeit: () => sim.forfeit('p1'),
+      again: () => {
+        // The CPU's seats open up again for anyone who's arrived since.
+        endMatch()
+        n.battle = null
+        n.draft = null
+        for (const x of SEATS) if (n.seats[x] && (n.seats[x].bot || !n.seats[x].id)) n.seats[x] = null
+        fourPresence()
+        if (isDraft(n.format)) fourDraft()
+        else fourStart()
+      },
+      emote: e => n.send('emote', { e }),
+      back: () => { endMatch(); leaveNet(); menu() },
+      chat: text => { n.send('chat', { name, text }); view.chat(name, text) },
+      timer: on => {
+        n.timerOn = on
+        for (const x of SHOWDOWN_FOUR) n.deadline[x] = on && n.awaiting[x] && !(n.seats[x] && n.seats[x].cpu) ? Date.now() + SHOWDOWN_TIMER_MS : null
+        hostTimer()
+        fourRoom()
+      },
+    })
+    const seatHandler = x => chunk => {
+      const seq = n.chunks[x].push(chunk) - 1
+      n.send('chunk', { battle: n.battle, seq, data: chunk, side: x })
+      const seat = n.seats[x]
+      // Once per request, the CPU falls back on the default if its pick
+      // was turned down.
+      if (/(^|\n)\|error\|/.test(chunk) && seat.cpu) {
+        if (!n.retried[x]) { n.retried[x] = true; hostChoice(x, 'default') }
+        return
+      }
+      const reqs = requestsIn(chunk).filter(r => !r.wait)
+      if (!reqs.length) return
+      n.retried[x] = false
+      n.lastReq[x] = reqs[reqs.length - 1]
+      hostArm(x)
+      if (seat.cpu) fourCpu(x)
+    }
+    const T = teams || Object.fromEntries(SHOWDOWN_FOUR.map(x => [x, fourTeam(fid)]))
+    const sim = runSim(simFormat(fid), { name, team: T.p1 }, { name: n.names.p2, team: T.p2 }, {
+      p1: chunk => { view.feed(chunk); if (requestsIn(chunk).some(r => !r.wait)) hostArm('p1') },
+      p2: seatHandler('p2'),
+      p3: seatHandler('p3'),
+      p4: seatHandler('p4'),
+      spectator: chunk => {
+        const seq = n.spec.push(chunk) - 1
+        n.send('schunk', { battle: n.battle, seq, data: chunk })
+      },
+    }, [{ name: n.names.p3, team: T.p3 }, { name: n.names.p4, team: T.p4 }])
+    match = { sim, view }
+    if (n.timerTick) clearInterval(n.timerTick)
+    n.timerTick = setInterval(hostTimerCheck, 1000)
+    fourRoom()
+    music(true)
+  }
+
+  // The CPU answers for a seat it holds (or has taken over).
+  function fourCpu(x) {
+    const n = net
+    const battleId = n.battle
+    setTimeout(() => {
+      if (net !== n || !match || n.battle !== battleId || !n.awaiting[x] || !n.seats[x].cpu) return
+      const c = cpuChoice(n.lastReq[x], match.sim.stream.battle, x)
+      hostChoice(x, c || 'default')
+    }, 400 + Math.random() * 600)
+  }
+
+  function fourReplay(x) {
+    const n = net
+    const seat = n.seats[x]
+    fourRoom()
+    if (!seat || !seat.id || !n.battle) return
+    n.send('reset', { battle: n.battle, to: seat.id })
+    n.chunks[x].forEach((data, seq) => n.send('chunk', { battle: n.battle, seq, data, side: x }))
+    hostTimer()
+  }
+
+  const draftPayload = D => ({ id: D.id, fid: D.fid, pool: PS.Teams.pack(D.pool), picks: D.picks, order: D.order, at: D.at, names: D.names, sides: D.sides, each: D.each, left: Math.max(0, D.deadline - Date.now()) })
+
+  // An online draft: the host keeps the board and the pick clock.
+  function hostDraft() {
+    const n = net
+    if (!n || !n.guestId) return
+    if (match) endMatch()
+    n.battle = null
+    n.draft = newDraft(n.format, { p1: name, p2: n.guestName })
+    n.draft.deadline = Date.now() + SHOWDOWN_DRAFT_MS
+    if (n.draftTick) clearInterval(n.draftTick)
+    n.draftTick = setInterval(() => {
+      const D = n.draft
+      if (net !== n || !D || draftDone(D)) return
+      if (Date.now() > D.deadline) {
+        const side = D.order[D.at]
+        if (draftPick(D, side, draftCpuPick(D, side))) hostDraftNext()
+      } else if (!n.battle) hostDraftShow()
+    }, 1000)
+    hostRoom()
+    hostDraftSync()
+  }
+  function hostDraftShow() {
+    const n = net
+    const D = n.draft
+    draftScreen(D, 'p1', i => { if (draftPick(D, 'p1', i)) hostDraftNext() }, { back: () => { endMatch(); leaveNet(); menu() }, deadline: D.deadline })
+  }
+  function hostDraftSync() {
+    const n = net
+    const D = n.draft
+    if (!D) return
+    n.send('draft', draftPayload(D))
+    if (!n.battle) hostDraftShow()
+  }
+  function hostDraftNext() {
+    const n = net
+    const D = n.draft
+    D.deadline = Date.now() + SHOWDOWN_DRAFT_MS
+    hostDraftSync()
+    if (!draftDone(D)) return
+    clearInterval(n.draftTick)
+    n.hostTeam = draftTeam(D, 'p1')
+    n.guestTeam = draftTeam(D, 'p2')
+    setTimeout(() => { if (net === n && n.draft === D) hostStart() }, 1200)
+  }
+
+  function hostStart() {
+    const n = net
+    if (!n || !n.guestId) return
+    if (match) endMatch()
+    n.chunks = []
+    n.spec = []
+    n.battle = randomId()
+    n.deadline = { p1: null, p2: null }
+    n.awaiting = { p1: false, p2: false }
+    const view = viewer('p1', { format: n.format, me: name, foe: n.guestName, online: true, host: true }, {
+      choose: choice => { hostChoice('p1', choice) },
+      forfeit: () => sim.forfeit('p1'),
+      again: () => { if (n.guestId) (isDraft(n.format) ? hostDraft() : hostStart()) },
+      emote: e => n.send('emote', { e }),
+      back: () => { endMatch(); leaveNet(); menu() },
+      chat: text => { n.send('chat', { name, text }); view.chat(name, text) },
+      // Turning the timer on starts the clock for anyone already deciding.
+      timer: on => {
+        n.timerOn = on
+        for (const side of ['p1', 'p2']) n.deadline[side] = on && n.awaiting[side] ? Date.now() + SHOWDOWN_TIMER_MS : null
+        hostTimer()
+        hostRoom()
+      },
+    })
+    const sim = runSim(simFormat(n.format), { name, team: n.hostTeam }, { name: n.guestName, team: n.guestTeam }, {
+      p1: chunk => { view.feed(chunk); if (requestsIn(chunk).some(r => !r.wait)) hostArm('p1') },
+      p2: chunk => {
+        const seq = n.chunks.push(chunk) - 1
+        n.send('chunk', { battle: n.battle, seq, data: chunk })
+        if (requestsIn(chunk).some(r => !r.wait)) hostArm('p2')
+      },
+      spectator: chunk => {
+        const seq = n.spec.push(chunk) - 1
+        n.send('schunk', { battle: n.battle, seq, data: chunk })
+      },
+    })
+    match = { sim, view }
+    if (n.timerTick) clearInterval(n.timerTick)
+    n.timerTick = setInterval(hostTimerCheck, 1000)
+    hostRoom()
+    music(true)
+  }
+
+  function hostChoice(side, choice) {
+    const n = net
+    if (!match || !n) return
+    match.sim.choose(side, choice)
+    if (choice === 'undo') hostArm(side)
+    else { n.deadline[side] = null; n.awaiting[side] = false }
+    hostTimer()
+  }
+
+  // The turn timer: each side gets SHOWDOWN_TIMER_MS per decision once the
+  // host turns it on; running out picks the default move for you.
+  function hostArm(side) {
+    const n = net
+    if (!n) return
+    n.awaiting[side] = true
+    n.deadline[side] = n.timerOn && !(n.four && n.seats[side] && n.seats[side].cpu) ? Date.now() + SHOWDOWN_TIMER_MS : null
+    hostTimer()
+  }
+  function hostTimer() {
+    const n = net
+    if (!n || !match) return
+    const left = side => (n.deadline[side] ? Math.max(0, n.deadline[side] - Date.now()) : null)
+    const state = { on: n.timerOn }
+    for (const x of n.four ? SHOWDOWN_FOUR : ['p1', 'p2']) state[x] = left(x)
+    match.view.timer(state)
+    n.send('timer', Object.assign({ battle: n.battle }, state))
+  }
+  function hostTimerCheck() {
+    const n = net
+    if (!n || !match) return
+    // Four players: the CPU takes the seat of anyone who's been gone a while.
+    if (n.four) {
+      for (const x of SEATS) {
+        const seat = n.seats[x]
+        if (!seat || seat.cpu || seat.id || !seat.goneAt || Date.now() - seat.goneAt < SHOWDOWN_TAKEOVER_MS) continue
+        seat.cpu = true
+        n.deadline[x] = null
+        match.view.notice(`The CPU is playing for ${seat.name} now.`)
+        n.send('chat', { name: '🤖', text: `The CPU is playing for ${seat.name} now.` })
+        if (n.awaiting[x]) fourCpu(x)
+        hostTimer()
+      }
+    }
+    if (!n.timerOn) return
+    for (const side of n.four ? SHOWDOWN_FOUR : ['p1', 'p2']) {
+      if (n.deadline[side] && Date.now() > n.deadline[side]) {
+        n.deadline[side] = null
+        const who = side === 'p1' ? name : n.four ? n.names[side] : n.guestName
+        match.view.notice(`${who} ran out of time, so the battle chose for them.`)
+        n.send('chat', { name: '⏱', text: `${who} ran out of time, so the battle chose for them.` })
+        match.sim.choose(side, 'default')
+        hostTimer()
+      }
+    }
+  }
+
+  function hostReplay() {
+    const n = net
+    hostRoom()
+    n.send('reset', { battle: n.battle, to: n.guestId })
+    n.chunks.forEach((data, seq) => n.send('chunk', { battle: n.battle, seq, data }))
+    hostTimer()
+  }
+
+  function hostEvent(ev, p) {
+    const n = net
+    if (!n) return
+    if (ev === 'hello' && n.four) {
+      const x = seatOf(n, p.from)
+      if (n.battle && x) fourReplay(x)
+      else { fourRoom(); if (n.draft && !n.battle) n.send('draft', draftPayload(n.draft)) }
+      return
+    }
+    if (ev === 'hello') { hostRoom(); if (n.battle && p.from === n.guestId) hostReplay(); else if (n.draft && !n.battle) hostDraftSync(); return }
+    if (ev === 'emote') { if (match) match.view.emote(String(p.e || '').slice(0, 4)); return }
+    if (ev === 'chat') { if (match) match.view.chat(String(p.name || '?').slice(0, 18), String(p.text || '').slice(0, 200)); return }
+    if (ev === 'resend' && n.four) {
+      if (p.battle !== n.battle) return
+      const x = p.spectator ? null : seatOf(n, p.from)
+      if (!p.spectator && !x) return
+      const list = x ? n.chunks[x] : n.spec
+      for (let seq = Math.max(0, p.from_seq | 0); seq < list.length; seq++) n.send(x ? 'chunk' : 'schunk', Object.assign({ battle: n.battle, seq, data: list[seq] }, x ? { side: x } : {}))
+      return
+    }
+    if (n.four) {
+      const x = seatOf(n, p.from)
+      if (!x) return
+      if (ev === 'draftpick' && n.draft && !n.battle && p.id === n.draft.id) {
+        if (draftPick(n.draft, x, p.idx | 0)) fourDraftNext()
+        return
+      }
+      if (!match || p.battle !== n.battle) return
+      if (ev === 'choice') hostChoice(x, String(p.data || '').slice(0, 120))
+      if (ev === 'forfeit') { match.view.notice(`${n.seats[x].name} forfeited.`); match.sim.forfeit(x) }
+      return
+    }
+    if (ev === 'resend') {
+      if (p.battle !== n.battle) return
+      const list = p.spectator ? n.spec : n.chunks
+      if (!p.spectator && p.from !== n.guestId) return
+      for (let seq = Math.max(0, p.from_seq | 0); seq < list.length; seq++) n.send(p.spectator ? 'schunk' : 'chunk', { battle: n.battle, seq, data: list[seq] })
+      return
+    }
+    if (p.from !== n.guestId) return
+    if (ev === 'team' && !n.battle) {
+      const problems = validate(n.format, String(p.packed || ''))
+      if (problems && problems.length) return n.send('teamerror', { to: p.from, problems })
+      n.guestTeam = String(p.packed)
+      hostStart()
+      return
+    }
+    if (ev === 'draftpick' && n.draft && !n.battle && p.id === n.draft.id) {
+      if (draftPick(n.draft, 'p2', p.idx | 0)) hostDraftNext()
+      return
+    }
+    if (!match || p.battle !== n.battle) return
+    if (ev === 'choice') hostChoice('p2', String(p.data || '').slice(0, 120))
+    if (ev === 'forfeit') { match.view.notice(`${n.guestName} forfeited.`); match.sim.forfeit('p2') }
+  }
+
+  // Guest and spectator side
+  function followerPresence() {
+    const n = net
+    const hostP = n.players.find(p => p.role === 'host')
+    if (hostP) n.hostId = hostP.id
+    if (n.mode && !hostP && match) {
+      match.view.notice('The host left, so the battle is over.')
+      n.mode = null
+    }
+  }
+
+  async function followerEvent(ev, p) {
+    const n = net
+    if (!n) return
+    if (ev === 'room' && p.four) {
+      n.hostId = p.from
+      n.hostName = p.hostName
+      n.format = p.format
+      n.four = true
+      const seat = SEATS.find(x => p.seats && p.seats[x] && p.seats[x].id === me) || null
+      if (!p.battle) {
+        n.battle = null
+        n.seat = seat
+        if (match || p.draft) return
+        const who = x => (x === 'p1' ? p.hostName : p.seats[x] ? `${p.seats[x].name}${x === seat ? ' (you)' : ''}` : 'CPU')
+        pkFill(wrap, el('div', { class: 'card stack pk-menu' },
+          el('p', { class: 'wordmark' }, 'Showdown'),
+          el('p', { class: 'tagline' }, showdownFormatName(p.format)),
+          isMulti(p.format)
+            ? el('div', { class: 'pk-seats' },
+              el('p', null, el('strong', null, 'Team 1: '), `${who('p1')} & ${who('p3')}`),
+              el('p', null, el('strong', null, 'Team 2: '), `${who('p2')} & ${who('p4')}`))
+            : el('div', { class: 'pk-seats' }, SHOWDOWN_FOUR.map(x => el('p', null, `${x.toUpperCase()} · ${who(x)}`))),
+          el('p', { class: 'muted' }, seat ? `Waiting for ${p.hostName} to start…` : 'The seats are full, so you\'ll watch.'),
+          el('button', { type: 'button', class: 'link', onClick: () => { leaveNet(); menu() } }, '‹ Leave')))
+        return
+      }
+      const mode = seat ? 'guest' : 'spectator'
+      if (n.battle === p.battle && n.mode === mode && n.seat === seat && match) return
+      n.battle = p.battle
+      n.mode = mode
+      n.seat = seat
+      n.names = p.names || {}
+      n.expect = 0
+      n.buffer = {}
+      try { await engine() } catch (e) { return menu(e.message) }
+      if (dead || net !== n || n.battle !== p.battle) return
+      followerView()
+      n.send('resend', { battle: n.battle, from_seq: n.expect, spectator: mode === 'spectator' })
+      return
+    }
+    if (ev === 'room') {
+      n.hostId = p.from
+      n.hostName = p.hostName
+      n.format = p.format
+      const mine = p.guestId === me
+      n.amGuest = mine
+      if (!p.battle && p.draft) return
+      if (!p.battle) {
+        if (mine && p.needsTeam && !n.teamSent) return guestPickTeam()
+        if (!match) loading(mine ? `Waiting for ${p.hostName} to start…` : p.guestId ? `${p.guestName} is getting ready. You'll watch.` : 'Waiting for the host…')
+        return
+      }
+      const mode = mine ? 'guest' : 'spectator'
+      if (n.battle === p.battle && n.mode === mode && match) return
+      // A new battle (or our first): keep what arrives while the engine
+      // loads, then ask for anything we missed.
+      n.battle = p.battle
+      n.mode = mode
+      n.expect = 0
+      n.buffer = {}
+      n.guestName = p.guestName
+      try { await engine() } catch (e) { return menu(e.message) }
+      if (dead || net !== n || n.battle !== p.battle) return
+      followerView()
+      n.send('resend', { battle: n.battle, from_seq: n.expect, spectator: mode === 'spectator' })
+      return
+    }
+    if (p.from !== n.hostId) return
+    if (ev === 'teamerror' && p.to === me) {
+      n.teamSent = false
+      return guestPickTeam(`Your team isn't legal in ${showdownFormatName(n.format)}: ${(p.problems || []).join(' ')}`)
+    }
+    if (ev === 'chat') { if (match) match.view.chat(String(p.name || '?').slice(0, 18), String(p.text || '').slice(0, 200)); return }
+    if (ev === 'emote') { if (match) match.view.emote(String(p.e || '').slice(0, 4)); return }
+    if (ev === 'draft') {
+      try { await engine() } catch (e) { return menu(e.message) }
+      if (net !== n) return
+      if (match) endMatch()
+      n.battle = null
+      const D = { id: p.id, fid: p.fid, pool: PS.Teams.unpack(p.pool) || [], picks: p.picks, order: p.order, at: p.at, names: p.names, sides: p.sides, each: p.each }
+      const deadline = Date.now() + (p.left || 0)
+      const mine = n.four ? n.seat : n.amGuest ? 'p2' : null
+      // Once we've picked, the board stays locked until the host confirms.
+      n.draftRender = () => draftScreen(D, mine || 'p1', i => {
+        if (!mine || D.order[D.at] !== mine || D.sent) return
+        D.sent = true
+        n.send('draftpick', { id: D.id, idx: i })
+        n.draftRender()
+      }, { back: () => { leaveNet(); menu() }, spectator: !mine, deadline, locked: () => !!D.sent })
+      n.draftRender()
+      if (!n.draftRefresh) {
+        n.draftRefresh = setInterval(() => { if (net === n && !match && !n.battle && n.draftRender) n.draftRender() }, 1000)
+        n.timers.push(n.draftRefresh)
+      }
+      return
+    }
+    if (p.battle !== n.battle) return
+    if (ev === 'timer' && match) {
+      // The timer is the host's p1 / guest's p2; spectators see both. With
+      // four players everyone sees every seat as it is.
+      if (n.four) match.view.timer({ on: p.on, p1: p.p1, p2: p.p2, p3: p.p3, p4: p.p4 })
+      else match.view.timer(n.mode === 'guest' ? { on: p.on, p1: p.p2, p2: p.p1 } : { on: p.on, p1: p.p1, p2: p.p2 })
+      return
+    }
+    if (ev === 'reset' && n.mode === 'guest' && p.to === me) {
+      n.expect = 0
+      n.buffer = {}
+      if (match) followerView()
+      return
+    }
+    const wanted = n.mode === 'guest' ? 'chunk' : 'schunk'
+    // Four players: only our own seat's view.
+    if (ev === 'chunk' && n.four && p.side !== n.seat) return
+    if (ev === wanted && Number.isInteger(p.seq) && p.seq >= n.expect) {
+      n.buffer[p.seq] = String(p.data || '')
+      followerFlush()
+    }
+  }
+
+  async function guestPickTeam(err) {
+    const n = net
+    try { await engine() } catch (e) { return menu(e.message) }
+    if (net !== n) return
+    const teams = loadTeams()
+    const sel = el('select', null, teams.map(t => el('option', { value: t.id }, t.name)))
+    sel.value = teams.some(t => t.id === teamId) ? teamId : (teams[0] && teams[0].id) || ''
+    pkFill(wrap, el('div', { class: 'card stack pk-menu' },
+      el('p', { class: 'wordmark' }, 'Showdown'),
+      el('p', null, `${n.hostName} wants to battle in ${showdownFormatName(n.format)}. Pick your team.`),
+      err && el('p', { class: 'error' }, err),
+      teams.length ? sel : el('p', { class: 'muted small' }, 'You don\'t have a team yet.'),
+      el('div', { class: 'row' },
+        teams.length && el('button', { type: 'button', class: 'primary', onClick: () => {
+          const t = teamById(sel.value)
+          if (!t) return
+          const problems = validate(n.format, t.packed)
+          if (problems && problems.length) return guestPickTeam(`That team isn't legal in ${showdownFormatName(n.format)}: ${problems.join(' ')}`)
+          teamId = t.id
+          pkStore.set('team', teamId)
+          n.teamSent = true
+          n.send('team', { packed: t.packed })
+          loading(`Sent. Waiting for ${n.hostName}…`)
+        } }, 'Use this team'),
+        el('button', { type: 'button', onClick: () => { const code = n.code; leaveNet(); builderThen(code) } }, 'Team builder')),
+      el('button', { type: 'button', class: 'link', onClick: () => { leaveNet(); menu() } }, '‹ Leave')))
+  }
+
+  // Build a team, then come back to the room.
+  function builderThen(code) {
+    opts = Object.assign({}, opts, { code })
+    builder(teamId)
+  }
+
+  function followerFlush() {
+    const n = net
+    if (!n || !match) return
+    while (n.buffer[n.expect] !== undefined) {
+      match.view.feed(n.buffer[n.expect])
+      delete n.buffer[n.expect]
+      n.expect++
+    }
+    // Something got lost on the way: ask for it again.
+    if (Object.keys(n.buffer).length && !n.asked) {
+      n.asked = true
+      n.timers.push(setTimeout(() => {
+        n.asked = false
+        if (net === n && Object.keys(n.buffer).length) n.send('resend', { battle: n.battle, from_seq: n.expect, spectator: n.mode === 'spectator' })
+      }, 1500))
+    }
+  }
+
+  function followerView() {
+    const n = net
+    if (match) match.view.destroy()
+    const spectator = n.mode === 'spectator'
+    const view = viewer(spectator ? 'p1' : n.four ? n.seat : 'p2', {
+      format: n.format, me: spectator ? n.hostName : name, foe: n.four ? 'the others' : spectator ? n.guestName : n.hostName, online: true, spectator, names: n.names,
+    }, {
+      choose: choice => n.send('choice', { battle: n.battle, data: choice }),
+      forfeit: () => n.send('forfeit', { battle: n.battle }),
+      back: () => { endMatch(); leaveNet(); menu() },
+      chat: text => { n.send('chat', { name, text }); view.chat(name, text) },
+      emote: e => n.send('emote', { e }),
+    })
+    match = { view }
+    followerFlush()
+    if (!spectator) music(true)
+  }
+
+  // ── The battle screen ──
+  // Follows one side's view of the battle (or a spectator's) and offers
+  // that player's choices. Lines play out with a little pacing so a turn
+  // reads like it does on Showdown.
+  function viewer(player, info, io) {
+    // Four-player battles are drawn as doubles: each half of the field holds
+    // two trainers' Pokémon (p1 and p3, p2 and p4), and side is the half
+    // nearest us. Otherwise side is simply who we're playing as.
+    const four = isFour(info.format)
+    const multi = four && isMulti(info.format)
+    const halfOf = s => (s === 'p1' || s === 'p3' ? 'p1' : 'p2')
+    const posOf = s => (s === 'p1' || s === 'p2' ? 0 : 1)
+    const side = four ? halfOf(player) : player
+    const battle = new PS.Battle(new PS.Generations(PS.Dex))
+    const fmt = new PS.LogFormatter(player, battle)
+    const foeSide = side === 'p1' ? 'p2' : 'p1'
+    const spectator = !!info.spectator
+    const doubles = isDoubles(info.format) || four
+    const slots = doubles ? [0, 1] : [0]
+    const decide = four ? [0] : slots   // the slots we choose for
+    const names = info.names || {}
+    const nameOf = s => (battle[s] && battle[s].name) || names[s] || s
+    const onField = {}                  // four players: the ident each has out
+    const fieldMon = s => (onField[s] && battle.getPokemon(onField[s])) || null
+    const others = () => SHOWDOWN_FOUR.filter(s => s !== player)
+    const allyOf = () => (multi ? others().find(s => halfOf(s) === halfOf(player)) : null)
+    const opponents = () => others().filter(s => s !== allyOf())
+    const targetLoc = s => (halfOf(s) === halfOf(player) ? -(posOf(s) + 1) : posOf(s) + 1)
+    const myLive = slot => (four ? fieldMon(player) : battle[side].active[slot])
+    // Where an ident like p3b: Name is drawn.
+    function placeOf(ident) {
+      const m = /^(p[1-4])([ab])?/.exec(ident || '')
+      if (!m) return null
+      if (four) return { s: halfOf(m[1]), i: posOf(m[1]) }
+      return { s: m[1], i: m[2] === 'b' && doubles ? 1 : 0 }
+    }
+    let request = null
+    let nextRequest = null
+    let waiting = false
+    let result = null
+    let destroyed = false
+    let turn = 0
+    let pending = []            // this turn's choice per slot, in doubles
+    let mech = ''               // '', 'terastallize', 'mega', 'zmove', 'dynamax', 'ultra'
+    let targeting = null        // { slot, move, mech } while picking a target
+    let preview = []            // team preview picks
+    const rawLog = []
+    const queue = []
+    let pumping = false
+    let speed = pkStore.get('speed', 'normal')
+    let timer = null
+    let timerTick = null
+    let coach = pkStore.get('coach', true)
+    let lastMover = null        // who used the last move, to credit damage and KOs
+    const credits = {}          // per Pokémon: damage dealt (in % of HP) and KOs
+    const lastShown = { p1: [null, null], p2: [null, null] }
+    const teraUsed = {}         // per trainer: the type they Terastallized into
+    const teraColor = t => TYPE_COLORS[t] || '#fff'
+    // Which Pokémon have Terastallized, from the log: the battle model loses
+    // it for our own side each time it reads a request.
+    const teraMons = {}
+    const monKey = ident => String(ident || '').replace(/^(p\d)[a-d]?: /, '$1: ')
+    const teraOf = poke => (!poke ? '' : poke.isTerastallized ? poke.teraType : teraMons[monKey(poke.originalIdent || poke.ident)] || '')
+
+    // Field: up to two Pokémon a side.
+    const sprites = { p1: [], p2: [] }
+    const boxes = { p1: [], p2: [] }
+    for (const s of ['p1', 'p2']) {
+      for (const i of slots) {
+        const near = s === side
+        sprites[s][i] = el('img', { class: `pk-sprite ${near ? 'me' : 'foe'} slot${i}`, alt: '', hidden: true })
+        boxes[s][i] = el('div', { class: `pk-box ${near ? 'me' : 'foe'} slot${i}`, hidden: true })
+      }
+    }
+    const conditions = el('div', { class: 'pk-conditions' })
+    const balls = { p1: el('div', { class: `pk-balls ${side === 'p1' ? 'me' : 'foe'}` }), p2: el('div', { class: `pk-balls ${side === 'p2' ? 'me' : 'foe'}` }) }
+    const sideConds = { p1: el('div', { class: `pk-side-conds ${side === 'p1' ? 'me' : 'foe'}` }), p2: el('div', { class: `pk-side-conds ${side === 'p2' ? 'me' : 'foe'}` }) }
+    const banner = el('div', { class: 'pk-banner', hidden: true })
+    const fx = el('div', { class: 'pk-fx', 'aria-hidden': 'true' })
+    const field = el('div', { class: `pk-field ${doubles ? 'doubles' : ''} ${four ? 'four' : ''}` },
+      conditions, balls.p1, balls.p2, sideConds.p1, sideConds.p2,
+      ...['p1', 'p2'].flatMap(s => slots.map(i => sprites[s][i])),
+      fx,
+      ...['p1', 'p2'].flatMap(s => slots.map(i => boxes[s][i])),
+      banner)
+    const tip = el('div', { class: 'pk-tip', hidden: true })
+    const bar = el('div', { class: 'pk-bar' })
+    const controls = el('div', { class: 'pk-controls' })
+    const log = el('div', { class: 'pk-log', 'aria-live': 'polite' })
+    const chatInput = el('input', { placeholder: spectator ? 'Say something…' : 'Chat', maxlength: 200 })
+    const chatForm = io.chat && el('form', { class: 'row pk-chat', onSubmit: e => {
+      e.preventDefault()
+      const text = chatInput.value.trim()
+      if (!text) return
+      chatInput.value = ''
+      io.chat(text)
+    } }, chatInput, el('button', { type: 'submit' }, 'Send'))
+    const emoteRow = el('div', { class: 'pk-emotes' }, SHOWDOWN_EMOTES.map(e => el('button', { type: 'button', title: 'React', onClick: () => { floatEmote(e); if (io.emote) io.emote(e) } }, e)))
+    pkFill(wrap, el('div', { class: 'pk-main' }, bar, field, controls), el('div', { class: 'pk-side' }, log, emoteRow, chatForm), tip)
+
+    // ── Effects (a DEBROD extra) ──
+    // Type-coloured beams and bursts, damage numbers, and a shake for the
+    // big hits. Skipped at Instant speed.
+    const fxOn = () => speed !== 'instant' && !destroyed
+    function spot(ident) {
+      const at = placeOf(ident)
+      const f = field.getBoundingClientRect()
+      if (!at || !f.width) return null
+      const img = sprites[at.s][at.i]
+      const r = img && !img.hidden ? img.getBoundingClientRect() : null
+      if (r && r.width) return { x: r.left - f.left + r.width / 2, y: r.top - f.top + r.height / 2, h: r.height }
+      const near = at.s === side
+      return { x: f.width * (near ? 0.25 : 0.72), y: f.height * (near ? 0.72 : 0.36), h: f.height * 0.3 }
+    }
+    function spawn(node, ms) {
+      fx.append(node)
+      setTimeout(() => node.remove(), ms)
+    }
+    function burst(ident, color, size = 120) {
+      const p = spot(ident)
+      if (!p || !fxOn()) return
+      spawn(el('div', { class: 'pk-burst', style: `left: ${p.x}px; top: ${p.y}px; --c: ${color}; --s: ${size}px` }), 700)
+    }
+    function beam(from, to, color) {
+      const a = spot(from)
+      const b = spot(to)
+      if (!a || !b || !fxOn()) return
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      spawn(el('div', { class: 'pk-beam', style: `left: ${a.x}px; top: ${a.y}px; width: ${Math.hypot(dx, dy)}px; transform: rotate(${Math.atan2(dy, dx)}rad); --c: ${color}` }), 600)
+    }
+    function floatText(ident, text, cls) {
+      const p = spot(ident)
+      if (!p || !fxOn()) return
+      spawn(el('div', { class: `pk-float ${cls || ''}`, style: `left: ${p.x}px; top: ${p.y - p.h / 2}px` }, text), 1300)
+    }
+    function bigText(text, cls) {
+      if (!fxOn()) return
+      spawn(el('div', { class: `pk-big ${cls || ''}` }, text), 1300)
+    }
+    function shake() {
+      if (!fxOn()) return
+      field.classList.remove('shake')
+      void field.offsetWidth
+      field.classList.add('shake')
+    }
+    function floatEmote(e) {
+      if (destroyed) return
+      spawn(el('div', { class: 'pk-emote', style: `left: ${10 + Math.random() * 80}%` }, e), 2600)
+    }
+    const sideOf = ident => String(ident || '').slice(0, 2)
+    function credit(ident) {
+      const key = `${sideOf(ident)}: ${String(ident).split(': ').slice(1).join(': ')}`
+      if (!credits[key]) credits[key] = { name: String(ident).split(': ').slice(1).join(': '), side: sideOf(ident), dealt: 0, kos: 0 }
+      return credits[key]
+    }
+
+    function effects(kind, args, kwArgs, before) {
+      if (kind === 'move') {
+        lastMover = args[1]
+        const move = PS.Dex.moves.get(args[2])
+        const color = TYPE_COLORS[move.type] || '#fff'
+        const target = args[3] && args[3] !== args[1] && !kwArgs.still && !kwArgs.miss ? args[3] : null
+        if (move.category === 'Status' || !target) burst(target || args[1], color, 90)
+        else { beam(args[1], target, color); setTimeout(() => burst(target, color), 220) }
+      } else if (kind === '-damage' || kind === '-heal') {
+        const pk = battle.getPokemon(args[1])
+        if (!pk || before === null || !pk.maxhp) return
+        const pct = Math.round((pk.hp / pk.maxhp - before) * 100)
+        if (pct) floatText(args[1], `${pct > 0 ? '+' : ''}${pct}%`, pct < 0 ? 'dmg' : 'heal')
+        if (kind === '-damage' && pct < 0 && !kwArgs.from && lastMover && sideOf(lastMover) !== sideOf(args[1])) credit(lastMover).dealt -= pct
+      } else if (kind === '-crit') { bigText('Critical hit!', 'crit'); shake() }
+      else if (kind === '-supereffective') { bigText('Super effective!', 'se'); shake() }
+      else if (kind === '-immune') floatText(args[1], 'Immune', 'imm')
+      else if (kind === '-miss') floatText(args[2] || args[1], 'Missed', 'imm')
+      else if (kind === 'faint') {
+        animate(args[1], 'faint')
+        if (lastMover && sideOf(lastMover) !== sideOf(args[1])) credit(lastMover).kos++
+        // The CPU has feelings too.
+        if (info.vsCpu && Math.random() < 0.35) setTimeout(() => floatEmote(sideOf(args[1]) === player ? pick(['😂', '🔥', '😎']) : pick(['😤', '💀', '😱'])), 500)
+      } else if (kind === '-terastallize') { burst(args[1], TYPE_COLORS[args[2]] || '#fff', 260); bigText(`Tera ${args[2]}!`, 'tera') }
+      else if (kind === '-mega') { burst(args[1], '#ff7a1a', 260); bigText('Mega Evolution!', 'tera') }
+      else if (kind === '-zpower') bigText('Z-Power!', 'tera')
+      else if (kind === '-start' && /dynamax/i.test(String(args[2]))) { burst(args[1], '#ff2bd6', 280); bigText('Dynamax!', 'tera') }
+    }
+
+    // ── Tooltips ──
+    function showTip(target, content) {
+      pkFill(tip, ...[].concat(content))
+      tip.hidden = false
+      const r = target.getBoundingClientRect()
+      const w = wrap.getBoundingClientRect()
+      const left = Math.min(Math.max(0, r.left - w.left), Math.max(0, w.width - 280))
+      tip.style.left = `${left}px`
+      tip.style.top = `${r.bottom - w.top + 6}px`
+    }
+    function hideTip() { tip.hidden = true }
+    // Hover shows a tooltip; on things that aren't buttons, a tap does too.
+    function tippable(node, content) {
+      node.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') showTip(node, content()) })
+      node.addEventListener('pointerleave', hideTip)
+      if (node.tagName !== 'BUTTON') node.addEventListener('click', () => { if (tip.hidden) showTip(node, content()); else hideTip() })
+      return node
+    }
+    const typeChips = list => el('span', { class: 'pk-types' }, list.map(t => el('span', { class: 'pk-type', style: `background: ${TYPE_COLORS[t] || '#888'}` }, t)))
+
+    // Our own Pokémon: everything the request tells us.
+    function myTip(p) {
+      const sp = PS.Dex.species.get(p.speciesForme)
+      const live = battle[player].team.find(x => x.originalIdent === p.ident) || null
+      const types = p.terastallized ? [p.terastallized] : live && teraOf(live) ? [teraOf(live)] : sp.types
+      return [
+        el('p', { class: 'name' }, `${p.name}${p.name !== sp.name ? ` (${sp.name})` : ''} `, el('span', { class: 'muted' }, `L${p.level}`)),
+        typeChips(types),
+        el('p', null, `HP ${Math.max(0, Math.round(p.hp))}/${p.maxhp}${p.status ? ` · ${p.status.toUpperCase()}` : ''}`),
+        el('p', null, `Ability: ${PS.Dex.abilities.get(p.ability || p.baseAbility).name || '—'}`),
+        el('p', null, `Item: ${p.item ? PS.Dex.items.get(p.item).name : 'none'}`),
+        p.teraType && el('p', null, `Tera type: ${p.teraType}`),
+        p.stats && el('p', { class: 'muted small' }, Object.entries(p.stats).map(([k, v]) => `${STAT_NAMES[k]} ${v}`).join(' · ')),
+        el('p', { class: 'muted small' }, (p.moves || []).map(m => PS.Dex.moves.get(m).name).join(' · ')),
+      ]
+    }
+    // Their Pokémon: what's been seen, and the possibilities for the rest.
+    function foeTip(poke) {
+      const sp = PS.Dex.species.get(poke.speciesForme)
+      const abilities = poke.ability ? [PS.Dex.abilities.get(poke.ability).name] : Object.values(sp.abilities)
+      const pct = poke.maxhp ? Math.round((poke.hp / poke.maxhp) * 100) : 0
+      return [
+        el('p', { class: 'name' }, `${poke.name}${poke.name !== sp.name ? ` (${sp.name})` : ''} `, el('span', { class: 'muted' }, `L${poke.level}`)),
+        typeChips(poke.types && poke.types.length ? poke.types : sp.types),
+        el('p', null, `HP ${pct}%${poke.status ? ` · ${poke.status.toUpperCase()}` : ''}`),
+        el('p', null, `${poke.ability ? 'Ability' : 'Possible abilities'}: ${abilities.join(', ')}`),
+        el('p', null, `Item: ${poke.item ? PS.Dex.items.get(poke.item).name : poke.lastItem ? `none (had ${PS.Dex.items.get(poke.lastItem).name})` : 'unknown'}`),
+        el('p', { class: 'muted small' }, `Base stats: ${Object.entries(sp.baseStats).map(([k, v]) => `${STAT_NAMES[k]} ${v}`).join(' · ')}`),
+        poke.moveSlots && poke.moveSlots.length
+          ? el('p', { class: 'muted small' }, `Seen: ${poke.moveSlots.map(m => `${PS.Dex.moves.get(m.id).name}${m.ppUsed ? ` (${m.ppUsed} used)` : ''}`).join(' · ')}`)
+          : el('p', { class: 'muted small' }, 'No moves seen yet.'),
+      ]
+    }
+    function moveTip(id, extra) {
+      const m = PS.Dex.moves.get(id)
+      return [
+        el('p', { class: 'name' }, m.name),
+        typeChips([m.type]),
+        el('p', null, `${m.category}${m.basePower ? ` · ${m.basePower} power` : ''} · ${m.accuracy === true ? 'never misses' : `${m.accuracy}% accuracy`}${m.priority ? ` · priority ${m.priority > 0 ? '+' : ''}${m.priority}` : ''}`),
+        extra && el('p', { class: 'muted small' }, extra),
+        el('p', { class: 'muted small' }, m.shortDesc || m.desc || ''),
+      ]
+    }
+
+    // ── Field ──
+    function setSprite(img, poke, back) {
+      if (!poke) { img.hidden = true; img.dataset.id = ''; return }
+      const species = PS.Dex.species.get(poke.speciesForme)
+      const id = species.spriteid || PS.toID(poke.speciesForme)
+      const key = `${id}${back ? ':b' : ''}${poke.shiny ? ':s' : ''}`
+      img.hidden = false
+      img.classList.toggle('fainted', !!poke.fainted)
+      // Terastallized: a glow in its Tera type's colour.
+      const tera = teraOf(poke)
+      img.classList.toggle('tera', !!tera)
+      if (tera) img.style.setProperty('--tera', teraColor(tera))
+      if (img.dataset.id === key) return
+      img.dataset.id = key
+      const shiny = poke.shiny ? '-shiny' : ''
+      const gen = battle.gen && battle.gen.num
+      const tries = [
+        ...(gen && gen <= 5 && gen >= 1 ? [] : [`${SHOWDOWN_SPRITES}ani${back ? '-back' : ''}${shiny}/${id}.gif`]),
+        `${SHOWDOWN_SPRITES}gen5${back ? '-back' : ''}${shiny}/${id}.png`,
+        `${SHOWDOWN_SPRITES}gen5${back ? '-back' : ''}/${PS.toID(species.baseSpecies || poke.speciesForme)}.png`,
+      ]
+      let n = 0
+      // Hidden until the new one loads, so the last Pokémon doesn't linger.
+      img.style.visibility = 'hidden'
+      img.onload = () => { img.style.visibility = '' }
+      img.onerror = () => { if (++n < tries.length) img.src = tries[n] }
+      img.src = tries[0]
+    }
+
+    const hpClass = frac => (frac > 0.5 ? 'good' : frac > 0.2 ? 'warn' : 'bad')
+
+    function infoBox(box, poke, near, slot, owner) {
+      if (!poke) { box.hidden = true; return }
+      box.hidden = false
+      const frac = poke.maxhp ? poke.hp / poke.maxhp : 0
+      const pct = Math.round(frac * 100)
+      const status = poke.fainted ? 'fnt' : poke.status
+      const boosts = Object.entries(poke.boosts || {}).filter(([, v]) => v)
+      const mine = near && !spectator && request && request.side ? request.side.pokemon.find(p => p.ident === poke.originalIdent) : null
+      const vol = Object.keys(poke.volatiles || {}).filter(v => ['dynamax', 'substitute', 'confusion', 'leechseed', 'taunt', 'encore', 'perishsong', 'yawn', 'protosynthesis', 'quarkdrive'].some(x => v.startsWith(x)))
+      pkFill(box, 
+        el('div', { class: 'pk-name' },
+          four && owner && el('span', { class: `pk-owner ${owner === player && !spectator ? 'you' : multi && owner === allyOf() ? 'ally' : ''}` }, owner === player && !spectator ? 'You' : nameOf(owner)),
+          el('strong', null, poke.name),
+          el('span', { class: 'muted' }, ` L${poke.level}`),
+          teraOf(poke) && el('span', { class: 'pk-tera-badge', style: `--tera: ${teraColor(teraOf(poke))}`, title: `Terastallized into ${teraOf(poke)}` }, `💎 Tera ${teraOf(poke)}`)),
+        el('div', { class: 'pk-hp' }, el('div', { class: `pk-hp-fill ${hpClass(frac)}`, style: `width: ${Math.max(0, pct)}%` })),
+        el('div', { class: 'pk-hp-text' },
+          mine ? `${Math.max(0, Math.round(mine.hp))}/${mine.maxhp} HP` : `${pct}%`,
+          status && el('span', { class: `pk-status ${status}` }, status.toUpperCase()),
+          boosts.map(([stat, v]) => el('span', { class: `pk-boost ${v > 0 ? 'up' : 'down'}` }, `${v > 0 ? '+' : ''}${v} ${STAT_NAMES[stat] || stat}`)),
+          vol.map(v => el('span', { class: 'pk-vol' }, v.replace(/^./, c => c.toUpperCase())))))
+      box.classList.toggle('tera', !!teraOf(poke))
+      if (teraOf(poke)) box.style.setProperty('--tera', teraColor(teraOf(poke)))
+      box.onpointerenter = null
+      box._tip = () => (mine ? myTip(mine) : foeTip(poke))
+    }
+
+    // Six balls per side: who's still standing, and how many of theirs
+    // we've seen.
+    function drawBalls(target, sideObj, sideId) {
+      pkFill(target, ...ballNodes(sideObj, sideId), teraChip(sideId))
+    }
+    // Each trainer can Terastallize once a battle.
+    function teraChip(sideId) {
+      const t = teraUsed[sideId]
+      return t ? el('span', { class: 'pk-tera-used', style: `--tera: ${teraColor(t.type)}`, title: `${t.name} Terastallized into ${t.type}` }, '💎 Tera used') : null
+    }
+    // Four players: each trainer on this half gets a labelled row.
+    function drawBallsFour(target, half) {
+      pkFill(target, SHOWDOWN_FOUR.filter(s => halfOf(s) === half && battle[s]).map(s =>
+        el('div', { class: 'pk-ballrow' }, el('span', { class: 'pk-ballname' }, s === player && !spectator ? 'You' : nameOf(s)), ballNodes(battle[s], s), teraChip(s))))
+    }
+    function ballNodes(sideObj, sideId) {
+      const team = sideObj.team || []
+      const total = Math.max(sideObj.totalPokemon || 6, team.length)
+      const out = []
+      for (let i = 0; i < total; i++) {
+        const p = team[i]
+        const tera = teraOf(p)
+        const b = el('span', { class: `pk-ball ${!p ? 'unknown' : p.fainted ? 'out' : ''} ${tera ? 'tera' : ''}`, style: tera ? `--tera: ${teraColor(tera)}` : '' })
+        if (p) tippable(b, () => (sideId === player && !spectator && request && request.side
+          ? myTip(request.side.pokemon.find(x => x.ident === p.originalIdent) || {})
+          : foeTip(p)))
+        out.push(b)
+      }
+      return out
+    }
+
+    function drawConditions() {
+      const f = battle.field
+      field.dataset.weather = f.weather || ''
+      field.dataset.terrain = f.terrain || ''
+      const chips = []
+      if (f.weather) chips.push(PS.Dex.conditions.get(f.weather).name || f.weather)
+      if (f.terrain) chips.push(PS.Dex.conditions.get(f.terrain).name || f.terrain)
+      for (const id of Object.keys(f.pseudoWeather || {})) chips.push(PS.Dex.conditions.get(id).name || id)
+      pkFill(conditions, ...chips.map(c => el('span', { class: 'pk-chip' }, c)))
+      for (const s of ['p1', 'p2']) {
+        const sc = {}
+        for (const x of four ? SHOWDOWN_FOUR.filter(x => halfOf(x) === s) : [s]) Object.assign(sc, (battle[x] && battle[x].sideConditions) || {})
+        pkFill(sideConds[s], ...Object.entries(sc).map(([id, c]) => el('span', { class: 'pk-chip small' },
+          `${c.name || PS.Dex.conditions.get(id).name || id}${c.level > 1 ? ` ×${c.level}` : ''}`)))
+      }
+    }
+
+    function renderField() {
+      if (four) {
+        for (const s of SHOWDOWN_FOUR) {
+          const poke = fieldMon(s)
+          const at = placeOf(s)
+          setSprite(sprites[at.s][at.i], poke, at.s === side)
+          infoBox(boxes[at.s][at.i], poke, at.s === side, at.i, s)
+        }
+        for (const s of ['p1', 'p2']) drawBallsFour(balls[s], s)
+        drawConditions()
+        return
+      }
+      // Nobody is out yet during team preview.
+      const previewing = !!request && request.requestType === 'team'
+      for (const s of ['p1', 'p2']) {
+        const sideObj = battle[s]
+        if (!sideObj) continue
+        for (const i of slots) {
+          let poke = previewing ? null : sideObj.active[i]
+          if (poke) lastShown[s][i] = poke
+          // A fainted Pokémon leaves its slot empty; keep showing it, greyed
+          // out, until the next one comes in.
+          else if (lastShown[s][i] && lastShown[s][i].fainted) poke = lastShown[s][i]
+          setSprite(sprites[s][i], poke, s === side)
+          infoBox(boxes[s][i], poke, s === side, i)
+        }
+        drawBalls(balls[s], sideObj, s)
+      }
+      drawConditions()
+    }
+    for (const s of ['p1', 'p2']) for (const i of slots) {
+      const box = boxes[s][i]
+      box.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse' && box._tip) showTip(box, box._tip()) })
+      box.addEventListener('pointerleave', hideTip)
+      box.addEventListener('click', () => { if (!box._tip) return; if (tip.hidden) showTip(box, box._tip()); else hideTip() })
+    }
+
+    function animate(ident, cls) {
+      const at = placeOf(ident)
+      if (!at) return
+      const img = sprites[at.s][at.i]
+      if (!img) return
+      img.classList.remove(cls)
+      void img.offsetWidth
+      img.classList.add(cls)
+    }
+
+    // ── Bar ──
+    function fmtTime(ms) {
+      const s = Math.ceil(ms / 1000)
+      return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+    }
+    function renderBar() {
+      const t = timer
+      const now = Date.now()
+      const left = k => (t && t[k] !== null && t[k] !== undefined ? Math.max(0, t[k] - (now - t.at)) : null)
+      const mineLeft = left(four ? player : 'p1')
+      const foeLeft = left('p2')
+      const everyone = SHOWDOWN_FOUR.map(s => (s === player && !spectator ? 'You' : nameOf(s)))
+      pkFill(bar, 
+        el('span', { class: 'pk-format' }, showdownFormatName(info.format)),
+        info.banner && el('span', { class: 'pill pk-tower-pill' }, info.banner),
+        turn > 0 && el('span', { class: 'pill' }, `Turn ${turn}`),
+        spectator && el('span', { class: 'pill' }, four ? `👀 ${multi ? `${nameOf('p1')} & ${nameOf('p3')} vs ${nameOf('p2')} & ${nameOf('p4')}` : everyone.join(' · ')}` : `👀 ${info.me} vs ${info.foe}`),
+        t && t.on && four && el('span', { class: `pill ${!spectator && mineLeft !== null && mineLeft < 30000 ? 'pk-hurry' : ''}` },
+          `⏱ ${SHOWDOWN_FOUR.map((s, i) => `${everyone[i]} ${left(s) === null ? '—' : fmtTime(left(s))}`).join(' · ')}`),
+        t && t.on && !four && el('span', { class: `pill ${mineLeft !== null && mineLeft < 30000 ? 'pk-hurry' : ''}` }, `⏱ ${spectator ? info.me : 'You'} ${mineLeft === null ? '—' : fmtTime(mineLeft)} · ${info.foe} ${foeLeft === null ? '—' : fmtTime(foeLeft)}`),
+        el('span', { class: 'grow' }),
+        io.timer && !result && el('button', { type: 'button', class: 'chip', onClick: () => io.timer(!(t && t.on)) }, t && t.on ? 'Timer on' : 'Timer off'),
+        !spectator && el('button', { type: 'button', class: `chip ${coach ? 'on' : ''}`, title: 'Show how each move matches up, and suggest one', onClick: () => { coach = !coach; pkStore.set('coach', coach); renderBar(); renderControls() } }, '💡 Coach'),
+        el('button', { type: 'button', class: 'chip', title: 'Sound', onClick: () => { setSound(!sound.on); renderBar() } }, sound.on ? '🔊' : '🔇'),
+        (() => {
+          const s = el('select', { class: 'pk-speed', title: 'Speed', onChange: e => { speed = e.target.value; pkStore.set('speed', speed) } },
+            [['normal', 'Normal speed'], ['fast', 'Fast'], ['instant', 'Instant']].map(([v, l]) => el('option', { value: v }, l)))
+          s.value = speed
+          return s
+        })(),
+        el('button', { type: 'button', class: 'chip', onClick: downloadReplay }, 'Replay ⤓'),
+        !spectator && !result && io.forfeit && el('button', { type: 'button', class: 'chip pk-forfeit', onClick: () => {
+          if (!confirm('Forfeit this battle?')) return
+          io.forfeit()
+          // In a free-for-all the other three play on without you.
+          if (four && !multi) finish('lose', null, 'You forfeited')
+        } }, 'Forfeit'))
+    }
+
+    // Showdown's own replay format: open the file and Showdown's replay
+    // player plays it back.
+    function downloadReplay() {
+      const names = four ? SHOWDOWN_FOUR.map(nameOf).join(multi ? ' & ' : ' vs. ').replace(/^(.*?) & (.*?) & (.*?) & (.*)$/, '$1 & $3 vs. $2 & $4') : `${info.me} vs. ${info.foe}`
+      const data = rawLog.join('\n').replace(/<\//g, '<\\/')
+      const html = `<!DOCTYPE html>\n<meta charset="utf-8" />\n<title>${showdownFormatName(info.format)} replay: ${names}</title>\n` +
+        '<div class="wrapper replay-wrapper" style="max-width:1180px;margin:0 auto">\n<input type="hidden" name="replayid" value="debrod" />\n' +
+        '<div class="battle"></div><div class="battle-log"></div><div class="replay-controls"></div><div class="replay-controls-2"></div>\n' +
+        `<h1 style="font-weight:normal;text-align:center"><strong>${showdownFormatName(info.format)}</strong><br />${names}</h1>\n` +
+        `<script type="text/plain" class="battle-log-data">${data}</` + 'script>\n</div>\n' +
+        `<script>let daily = Math.floor(Date.now()/1000/60/60/24);document.write('<script src="${SHOWDOWN_SITE}js/replay-embed.js?version'+daily+'"></'+'script>');</` + 'script>\n'
+      const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+      // _self: the page's <base target="_top"> would otherwise turn the download into a navigation.
+      const a = el('a', { href: url, target: '_self', download: `${info.format}-${four ? SHOWDOWN_FOUR.map(s => PS.toID(nameOf(s))).join('-') : `${PS.toID(info.me)}-${PS.toID(info.foe)}`}.html` })
+      document.body.append(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+    }
+
+    // ── Controls ──
+    const activeMons = () => (request && request.side ? request.side.pokemon.slice(0, decide.length) : [])
+    const typeOf = id => PS.Dex.moves.get(id).type || 'Normal'
+
+    const genDex = () => PS.Dex.forGen((battle.gen && battle.gen.num) || 9)
+    // How a move fares against each Pokémon across the field (null for
+    // status moves).
+    function matchup(id) {
+      const dex = genDex()
+      const move = dex.moves.get(id)
+      if (!move.exists || move.category === 'Status') return null
+      const foes = four ? opponents().map(fieldMon) : slots.map(i => battle[foeSide].active[i])
+      return foes.filter(f => f && !f.fainted).map(f => {
+        const types = f.types && f.types.length ? f.types : dex.species.get(f.speciesForme).types
+        if (!dex.getImmunity(move.type, types)) return 0
+        return Math.pow(2, dex.getEffectiveness(move.type, types))
+      })
+    }
+    function moveScore(id, slot) {
+      const dex = genDex()
+      const move = dex.moves.get(id)
+      if (!move.exists) return 0
+      if (move.category === 'Status') return 25
+      const mine = myLive(slot)
+      const stab = mine && mine.types && mine.types.includes(move.type) ? 1.5 : 1
+      const best = Math.max(0, ...(matchup(id) || [1]))
+      return (move.basePower || 70) * stab * best * (move.accuracy === true ? 1 : move.accuracy / 100)
+    }
+    const multLabel = x => (x === 0 ? 'No effect' : x >= 4 ? '×4' : x >= 2 ? '×2' : x <= 0.25 ? '×¼' : x < 1 ? '×½' : '×1')
+
+    function moveButton(m, j, slot, active, isBest) {
+      let label = m.name || PS.Dex.moves.get(m.id).name
+      let id = m.id
+      let disabled = !!m.disabled
+      const live = myLive(slot)
+      const dynamaxed = live && live.volatiles && live.volatiles.dynamax
+      if (mech === 'zmove') {
+        const z = active.zMoves && active.zMoves[j]
+        if (z) { label = z.name; id = z.id } else disabled = true
+      } else if ((mech === 'dynamax' || dynamaxed) && active.maxMoves && active.maxMoves[j]) {
+        id = active.maxMoves[j].move || active.maxMoves[j].id
+        label = PS.Dex.moves.get(id).name
+      }
+      const type = typeOf(id)
+      const mu = coach ? matchup(id) : null
+      const shown = mu && mu.length ? mu : null
+      const b = el('button', {
+        type: 'button', class: `pk-move ${coach && isBest ? 'best' : ''}`, disabled: disabled || waiting,
+        style: `--type: ${TYPE_COLORS[type] || '#888'}`,
+        onClick: () => chooseMove(slot, j, m, active),
+      },
+        el('span', { class: 'pk-move-name' }, label, coach && isBest && el('span', { class: 'pk-best' }, ' 💡')),
+        el('span', { class: 'pk-move-meta' }, `${type}${m.maxpp ? ` · ${m.pp}/${m.maxpp}` : ''}`),
+        shown && el('span', { class: 'pk-eff' }, shown.map(x => el('span', { class: x === 0 ? 'imm' : x > 1 ? 'se' : x < 1 ? 'nve' : 'neu' }, multLabel(x)))))
+      return tippable(b, () => moveTip(id, m.maxpp ? `PP ${m.pp}/${m.maxpp}` : ''))
+    }
+
+    function chooseMove(slot, j, m, active) {
+      const target = m.target
+      const needsTarget = doubles && ['normal', 'any', 'adjacentFoe', 'adjacentAlly', 'adjacentAllyOrSelf'].includes(target) && mech !== 'dynamax'
+      if (needsTarget) {
+        targeting = { slot, j, target, mech }
+        return renderControls()
+      }
+      commit(slot, `move ${j + 1}${mech ? ` ${mech}` : ''}`)
+    }
+
+    function teamButton(p, i, enabled, onPick) {
+      const id = PS.Dex.species.get(p.speciesForme).spriteid || PS.toID(p.speciesForme)
+      const frac = p.maxhp ? p.hp / p.maxhp : 0
+      const tera = p.terastallized || ''
+      const b = el('button', {
+        type: 'button', class: `pk-mon ${p.fainted ? 'out' : ''} ${p.active ? 'active' : ''} ${tera ? 'tera' : ''}`, disabled: !enabled || waiting,
+        style: tera ? `--tera: ${teraColor(tera)}` : '',
+        onClick: () => (onPick ? onPick() : null),
+      },
+        el('img', { src: `${SHOWDOWN_SPRITES}gen5/${id}.png`, alt: '', loading: 'lazy', onError: e => { e.target.style.visibility = 'hidden' } }),
+        el('span', { class: 'pk-mon-name' }, tera && el('span', { class: 'pk-mon-tera', title: `Terastallized into ${tera}` }, '💎 '), p.name),
+        el('span', { class: `pk-mon-hp ${hpClass(frac)}` }, p.fainted ? 'fainted' : `${Math.round(frac * 100)}%`))
+      return tippable(b, () => myTip(p))
+    }
+
+    // Which slots still need a decision this turn.
+    function slotsToDecide() {
+      if (!request) return []
+      if (request.requestType === 'switch') return decide.filter(i => request.forceSwitch && request.forceSwitch[i])
+      if (request.requestType === 'move') return decide.filter(i => request.active && request.active[i] && !(request.side.pokemon[i] || {}).commanding)
+      return []
+    }
+
+    function commit(slot, choice) {
+      pending[slot] = choice
+      targeting = null
+      mech = ''
+      const left = slotsToDecide().filter(i => pending[i] === undefined)
+      if (left.length) return renderControls()
+      const all = decide.map(i => (pending[i] !== undefined ? pending[i] : 'pass'))
+      send(all.length > 1 ? all.join(', ') : all[0])
+    }
+
+    function send(choice) {
+      if (waiting || result) return
+      waiting = true
+      renderControls()
+      io.choose(choice)
+    }
+
+    function renderControls() {
+      hideTip()
+      if (result) {
+        pkFill(controls, el('div', { class: 'row pk-end' },
+          io.again && el('button', { type: 'button', class: 'primary', onClick: io.again }, io.againLabel ? io.againLabel(result) : info.online ? 'Rematch' : 'Battle again'),
+          info.online && !io.again && !spectator && el('p', { class: 'muted small' }, 'The host can start a rematch.'),
+          el('button', { type: 'button', onClick: downloadReplay }, 'Download replay'),
+          el('button', { type: 'button', onClick: io.back }, '‹ Back')))
+        return
+      }
+      if (spectator) {
+        pkFill(controls, el('div', { class: 'row pk-wait' },
+          el('p', { class: 'muted' }, four ? `Watching ${SHOWDOWN_FOUR.map(nameOf).join(', ')}.` : `Watching ${info.me} and ${info.foe}.`),
+          el('button', { type: 'button', class: 'link', onClick: io.back }, 'Leave')))
+        return
+      }
+      if (!request || request.requestType === 'wait' || waiting || pumping || nextRequest) {
+        const canCancel = waiting && request && request.requestType !== 'wait' && !pumping
+        pkFill(controls, el('div', { class: 'row pk-wait' },
+          el('p', { class: 'muted' }, !request ? 'Starting the battle…' : pumping ? '…' : four && fieldMon(player) && fieldMon(player).fainted && request.requestType === 'wait' && !(request.side.pokemon || []).some(p => !p.fainted) ? 'You\'re out. Watching the rest…' : `Waiting for ${four ? 'the others' : info.foe}…`),
+          canCancel && el('button', { type: 'button', onClick: () => { waiting = false; pending = []; io.choose('undo'); renderControls() } }, 'Cancel'),
+          el('button', { type: 'button', class: 'link', onClick: io.back }, 'Leave')))
+        return
+      }
+      const team = request.side.pokemon
+      if (request.requestType === 'team') {
+        const size = request.maxChosenTeamSize || team.length
+        const foeTeam = (battle[foeSide] && battle[foeSide].team) || []
+        pkFill(controls, 
+          el('p', { class: 'pk-prompt' }, size < team.length
+            ? `Choose ${size} to bring, in order${doubles ? ' (the first two lead)' : ''}. ${preview.length}/${size}`
+            : `Pick your lead${doubles ? 's' : ''}, then start.`),
+          foeTeam.length && el('div', { class: 'pk-foe-preview' }, el('span', { class: 'muted small' }, `${info.foe}'s team: `),
+            foeTeam.map(p => tippable(el('img', { src: `${SHOWDOWN_SPRITES}gen5/${PS.Dex.species.get(p.speciesForme).spriteid}.png`, alt: p.speciesForme, title: p.speciesForme }), () => foeTip(p)))),
+          el('div', { class: 'pk-team' }, team.map((p, i) => {
+            const at = preview.indexOf(i)
+            const b = teamButton(p, i, true, () => {
+              if (at >= 0) preview.splice(at, 1)
+              else if (preview.length < size) preview.push(i)
+              renderControls()
+            })
+            if (at >= 0) { b.classList.add('picked'); b.dataset.order = String(at + 1) }
+            return b
+          })),
+          el('div', { class: 'row' },
+            el('button', { type: 'button', class: 'primary', disabled: size < team.length ? preview.length !== size : !preview.length, onClick: () => {
+              const order = preview.slice()
+              if (size >= team.length) for (let i = 0; i < team.length; i++) if (!order.includes(i)) order.push(i)
+              preview = []
+              send(`team ${order.map(i => i + 1).join('')}`)
+            } }, 'Start'),
+            size >= team.length && el('button', { type: 'button', onClick: () => { preview = []; send('default') } }, 'Keep this order')))
+        return
+      }
+      const todo = slotsToDecide().filter(i => pending[i] === undefined)
+      const slot = todo[0]
+      if (slot === undefined) return
+      const now = team[slot]
+      const back = doubles && todo.length < slotsToDecide().length && el('button', { type: 'button', class: 'link', onClick: () => { pending = []; targeting = null; mech = ''; renderControls() } }, '‹ Redo this turn')
+      const chosenSwitches = new Set(pending.filter(c => c && c.startsWith('switch ')).map(c => Number(c.split(' ')[1]) - 1))
+
+      if (request.requestType === 'switch') {
+        // In doubles you can be asked to fill two slots with only one
+        // Pokémon left; the other slot passes.
+        const options = team.filter((p, i) => !p.active && !p.fainted && !chosenSwitches.has(i))
+        if (!options.length) return commit(slot, 'pass')
+        pkFill(controls, 
+          el('p', { class: 'pk-prompt' }, doubles ? `Send in a Pokémon for ${now ? now.name : `slot ${slot + 1}`}.` : 'Choose a Pokémon to send in.'),
+          el('div', { class: 'pk-team' }, team.map((p, i) => teamButton(p, i, !p.active && !p.fainted && !chosenSwitches.has(i), () => commit(slot, `switch ${i + 1}`)))),
+          back)
+        return
+      }
+
+      const active = request.active[slot]
+      if (targeting && targeting.slot === slot) {
+        const t = targeting.target
+        const opts = []
+        const foeActive = battle[foeSide].active
+        if (four) {
+          // Everyone else on the field, by where they stand.
+          const ally = allyOf()
+          for (const s of others()) {
+            const ok = ['normal', 'any'].includes(t) || (t === 'adjacentFoe' && s !== ally) || (['adjacentAlly', 'adjacentAllyOrSelf'].includes(t) && s === ally)
+            if (!ok) continue
+            const p = fieldMon(s)
+            opts.push({ label: p ? `${p.name} (${s === ally ? 'your partner' : nameOf(s)})` : nameOf(s), n: targetLoc(s), ok: !!p && !p.fainted })
+          }
+          if (t === 'adjacentAllyOrSelf') opts.push({ label: `${now.name} (itself)`, n: targetLoc(player), ok: true })
+          if (!opts.length) return commit(slot, `move ${targeting.j + 1}${targeting.mech ? ` ${targeting.mech}` : ''}`)
+        } else if (['normal', 'any', 'adjacentFoe'].includes(t)) {
+          for (const i of slots) opts.push({ label: foeActive[i] ? `${foeActive[i].name} (theirs)` : `Their slot ${i + 1}`, n: i + 1, ok: !!foeActive[i] && !foeActive[i].fainted })
+        }
+        if (!four && ['normal', 'any', 'adjacentAlly', 'adjacentAllyOrSelf'].includes(t)) {
+          const ally = slot ^ 1
+          if (team[ally]) opts.push({ label: `${team[ally].name} (yours)`, n: -(ally + 1), ok: !team[ally].fainted })
+        }
+        if (!four && t === 'adjacentAllyOrSelf') opts.push({ label: `${now.name} (itself)`, n: -(slot + 1), ok: true })
+        pkFill(controls, 
+          el('p', { class: 'pk-prompt' }, `${PS.Dex.moves.get(active.moves[targeting.j].id).name}: who should ${now.name} target?`),
+          el('div', { class: 'pk-targets' }, opts.map(o => el('button', { type: 'button', disabled: !o.ok, onClick: () => commit(slot, `move ${targeting.j + 1} ${o.n}${targeting.mech ? ` ${targeting.mech}` : ''}`) }, o.label))),
+          el('button', { type: 'button', class: 'link', onClick: () => { targeting = null; renderControls() } }, '‹ Pick a different move'))
+        return
+      }
+
+      const used = new Set(pending.map(c => (c || '').split(' ').pop()))
+      const mechs = [
+        active.canTerastallize && ['terastallize', `Terastallize (${active.canTerastallize})`, TYPE_COLORS[active.canTerastallize]],
+        active.canMegaEvo && ['mega', 'Mega Evolve', '#ff7a1a'],
+        active.canUltraBurst && ['ultra', 'Ultra Burst', '#ffd319'],
+        active.canZMove && ['zmove', 'Z-Move', '#00f0ff'],
+        active.canDynamax && ['dynamax', active.canGigantamax ? 'Gigantamax' : 'Dynamax', '#ff2bd6'],
+      ].filter(Boolean).filter(([key]) => !used.has(key))
+      const trapped = active.trapped || active.maybeTrapped
+      pkFill(controls, 
+        el('p', { class: 'pk-prompt' }, `What will ${now ? now.name : 'your Pokémon'} do?`),
+        el('div', { class: 'pk-moves' }, (() => {
+          const scores = active.moves.map((m, j) => (m.disabled ? -1 : moveScore(mech === 'zmove' && active.zMoves && active.zMoves[j] ? active.zMoves[j].id : m.id, slot)))
+          const best = scores.indexOf(Math.max(...scores))
+          return active.moves.map((m, j) => moveButton(m, j, slot, active, j === best))
+        })()),
+        mechs.length && el('div', { class: 'row pk-mechs' }, mechs.map(([key, label, color]) => el('label', { class: 'pk-tera', style: `--type: ${color || '#888'}` },
+          el('input', { type: 'checkbox', checked: mech === key, onChange: e => { mech = e.target.checked ? key : ''; renderControls() } }), ` ${label}`))),
+        el('p', { class: 'muted small pk-switch-label' }, trapped ? 'You can\'t switch out right now.' : 'Switch'),
+        el('div', { class: 'pk-team' }, team.map((p, i) => teamButton(p, i, !trapped && !p.active && !p.fainted && !chosenSwitches.has(i), () => commit(slot, `switch ${i + 1}`)))),
+        back)
+    }
+
+    // ── The log ──
+    // The formatter writes **bold** and ||exact||rounded|| for HP; we show
+    // the rounded part, like the Showdown client does for the other side.
+    function addText(text, cls) {
+      for (const raw of text.split('\n')) {
+        if (!raw.trim()) continue
+        const t = /^== Turn (\d+) ==$/.exec(raw.trim())
+        if (t) { log.append(el('p', { class: 'pk-turn' }, `Turn ${t[1]}`)); continue }
+        const clean = raw.replace(/\|\|([^|]*)\|\|([^|]*)\|\|/g, '$2')
+        const parts = clean.trim().split('**')
+        log.append(el('p', { class: cls || (raw.startsWith('  ') ? 'minor' : '') }, parts.map((x, i) => (i % 2 ? el('strong', null, x) : x))))
+      }
+      while (log.children.length > 600) log.firstChild.remove()
+      log.scrollTop = log.scrollHeight
+    }
+
+    const DELAYS = { move: 750, switch: 650, drag: 650, replace: 500, faint: 650, '-damage': 350, '-heal': 300, turn: 250, '-terastallize': 600, '-mega': 600, '-zpower': 500, '-start': 150, '-boost': 150, '-unboost': 150, '-status': 200, '-weather': 200 }
+    const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+    // One protocol line: update the battle, write the log, and say how
+    // long to linger on it.
+    function handle(line) {
+      if (line.startsWith('|request|')) { if (line.length > 9) nextRequest = line.slice(9); return 0 }
+      if (line.startsWith('|error|')) {
+        addText(`  ${line.slice(7).replace(/^\[[^\]]*\]\s*/, '')}`, 'pk-error')
+        waiting = false
+        pending = []
+        targeting = null
+        return 0
+      }
+      rawLog.push(line)
+      let delay = 0
+      for (const { args, kwArgs } of PS.Protocol.parse(line)) {
+        let text = ''
+        const kind = args[0]
+        let before = null
+        if (kind === '-damage' || kind === '-heal') {
+          const pk = battle.getPokemon(args[1])
+          before = pk && pk.maxhp ? pk.hp / pk.maxhp : null
+        }
+        try { text = fmt.formatText(args, kwArgs) } catch (e) { /* unformatted line */ }
+        battle.add(args, kwArgs)
+        if (text) addText(text)
+        try { effects(kind, args, kwArgs, before) } catch (e) { /* effects are only decoration */ }
+        if (four && ['switch', 'drag', 'replace'].includes(kind)) onField[String(args[1]).slice(0, 2)] = String(args[1])
+        if (kind === 'switch' || kind === 'drag') { cry(String(args[2] || '').split(',')[0]); setTimeout(() => animate(args[1], 'enter'), 0) }
+        if (kind === '-damage') animate(args[1], 'hit')
+        if (kind === 'turn') turn = Number(args[1]) || turn
+        if (kind === '-terastallize') {
+          teraUsed[sideOf(args[1])] = { type: args[2], name: String(args[1]).split(': ').slice(1).join(': ') }
+          teraMons[monKey(args[1])] = args[2]
+        }
+        // A Multi win names both partners: "A & B".
+        if (kind === 'win') finish((four ? String(args[1]).split(' & ') : [args[1]]).includes(battle[player] && battle[player].name) ? 'win' : 'lose', args[1])
+        if (kind === 'tie') finish('tie')
+        delay = Math.max(delay, DELAYS[kind] || 0)
+      }
+      return delay
+    }
+
+    async function pump() {
+      if (pumping) return
+      pumping = true
+      while (queue.length && !destroyed) {
+        const delay = handle(queue.shift())
+        const factor = speed === 'instant' ? 0 : speed === 'fast' ? 0.35 : 1
+        if (delay && factor && queue.length) {
+          renderField()
+          renderBar()
+          await sleep(delay * factor)
+        }
+      }
+      pumping = false
+      if (destroyed) return
+      if (nextRequest) {
+        request = PS.Protocol.parseRequest(nextRequest)
+        nextRequest = null
+        battle.update(request)
+        waiting = false
+        pending = []
+        mech = ''
+        targeting = null
+        preview = []
+      }
+      renderField()
+      renderBar()
+      renderControls()
+    }
+
+    function feed(chunk) {
+      if (destroyed) return
+      for (const line of chunk.split('\n')) if (line) queue.push(line)
+      pump()
+    }
+
+    // Who carried the battle: damage dealt (in % of HP) and KOs.
+    function summary() {
+      const rows = Object.values(credits).filter(c => spectator || c.side === player)
+      if (!rows.length) return null
+      const score = c => c.dealt + c.kos * 40
+      rows.sort((a, b) => score(b) - score(a))
+      const mvp = rows[0]
+      return el('div', { class: 'pk-summary' },
+        el('p', { class: 'pk-mvp' }, `MVP: ${mvp.name}`, el('span', { class: 'muted small' }, ` · ${Math.round(mvp.dealt)}% damage · ${mvp.kos} KO${mvp.kos === 1 ? '' : 's'}`)),
+        el('div', { class: 'pk-summary-rows' }, rows.slice(1, 6).map(c => el('span', { class: 'muted small' }, `${c.name} ${Math.round(c.dealt)}% · ${c.kos} KO`))))
+    }
+
+    function finish(kind, who, title) {
+      if (result) return
+      result = kind
+      music(false)
+      banner.hidden = false
+      pkFill(banner, 
+        el('p', { class: 'wordmark' }, title || (spectator ? `${who || 'Nobody'} won` : kind === 'win' ? 'You won!' : kind === 'lose' ? `${who} won` : 'It\'s a tie')),
+        el('p', { class: 'muted small' }, spectator ? 'GG.' : kind === 'win' ? 'GG.' : kind === 'lose' ? 'Better luck next time.' : 'Nobody\'s left standing.'),
+        summary())
+      if (kind === 'win' && !spectator) for (let i = 0; i < 8; i++) setTimeout(() => floatEmote(pick(['🎉', '✨', '🏆', '🔥'])), i * 140)
+      if (io.onFinish) io.onFinish(kind)
+      if (!spectator) {
+        const rec = pkStore.get('record', {})
+        const r = rec[info.format] || { w: 0, l: 0, t: 0 }
+        r[kind === 'win' ? 'w' : kind === 'lose' ? 'l' : 't']++
+        rec[info.format] = r
+        pkStore.set('record', rec)
+      }
+    }
+
+    renderField()
+    renderBar()
+    renderControls()
+    return {
+      feed,
+      over: () => !!result,
+      notice: text => addText(`  ${text}`, 'pk-note'),
+      emote: e => floatEmote(e),
+      chat: (who, text) => addText(`${who}: ${text}`, 'pk-chatline'),
+      timer(state) {
+        timer = Object.assign({ at: Date.now() }, state)
+        clearInterval(timerTick)
+        timerTick = state && state.on ? setInterval(renderBar, 1000) : null
+        renderBar()
+      },
+      destroy() {
+        destroyed = true
+        clearInterval(timerTick)
+        hideTip()
+      },
+    }
+  }
+
+  // Opened from an invite link with a name we already know: straight in.
+  if (opts && opts.code && name && canOnline) online(String(opts.code).toUpperCase(), 'guest')
+  else menu()
+
+  return {
+    stop() {
+      dead = true
+      endMatch()
+      leaveNet()
+    },
+  }
+}
+</script>
