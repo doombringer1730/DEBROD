@@ -18,6 +18,29 @@
     <div class="floor"><div class="grid-lines"></div></div>
   </div>
   <div id="app"></div>
+  <script>
+    // If something stops DEBROD starting, say what instead of leaving the
+    // background up: the first script error, or, after 15 seconds of
+    // nothing, the usual suspects.
+    (function () {
+      var shown = false
+      function show(title, detail) {
+        if (shown) return
+        var app = document.getElementById('app')
+        if (!app || app.children.length) return
+        shown = true
+        app.innerHTML = '<main class="login"><div class="card stack"><p class="name"></p><p class="muted small"></p></div></main>'
+        app.querySelector('.name').textContent = title
+        app.querySelector('.muted').textContent = detail
+      }
+      window.addEventListener('error', function (e) {
+        setTimeout(function () { show('DEBROD hit an error starting up', (e.message || 'Unknown error') + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '')) }, 3000)
+      })
+      setTimeout(function () {
+        show('DEBROD is taking too long to start', 'Check that every HTML file from the zip is in the project with the right name (Index, App, Account, Chat, Themes, Hub, Study, Classes, Focus and the games), then make a new deployment: Deploy → Manage deployments → edit → Version: New version. Old deployments keep running the old code.')
+      }, 15000)
+    })()
+  </script>
   <?!= include('App') ?>
   <?!= include('Account') ?>
   <?!= include('Chat') ?>

@@ -30,6 +30,13 @@ const Account = (() => {
   let wordDraft = ''
 
   const email = u => `${u.trim().toLowerCase()}@${EMAIL_DOMAIN}`
+  const noLock = async (name, timeout, fn) => fn()
+  const memory = {}
+  const safeStorage = {
+    getItem: k => { try { return localStorage.getItem(k) } catch (e) { return k in memory ? memory[k] : null } },
+    setItem: (k, v) => { try { localStorage.setItem(k, v) } catch (e) { memory[k] = v } },
+    removeItem: k => { try { localStorage.removeItem(k) } catch (e) { delete memory[k] } },
+  }
 
   async function session() {
     const { data } = await auth.auth.getSession()
@@ -81,8 +88,11 @@ const Account = (() => {
       }
       // Its own storage key, so the games' Supabase clients never see (or
       // refresh) this session.
+      // No cross-tab lock (it can wait forever inside Apps Script's sandboxed
+      // frame), and storage that falls back to memory where the browser
+      // won't allow it, so signing in always gets as far as a screen.
       auth = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
-        auth: { storageKey: 'debrod-account', persistSession: true, autoRefreshToken: true },
+        auth: { storageKey: 'debrod-account', persistSession: true, autoRefreshToken: true, lock: noLock, storage: safeStorage },
       })
       route()
     })
@@ -92,7 +102,7 @@ const Account = (() => {
     stopWaiting()
     let p = null
     try {
-      p = await loadProfile()
+      p = await Promise.race([loadProfile(), new Promise((_, no) => setTimeout(() => no(new Error('Couldn\'t reach your account in time. Sign in again.')), 8000))])
     } catch (e) {
       return signInScreen('in', e.message)
     }

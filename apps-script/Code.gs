@@ -32,15 +32,38 @@ const PLAIN_KEYS = ['SUPABASE_URL', 'TORRENTIO_URL', 'SITE_NAME']
 
 // ── Menu and dialogs ────────────────────────────────────────────────────────
 
+// The doc's UI, or null when there isn't one: run from the Apps Script
+// editor, from a trigger, or in a script that isn't attached to a doc.
+function docUi_() {
+  try { return DocumentApp.getUi() } catch (e) { return null }
+}
+
 // The menu doesn't read settings: onOpen runs with limited access, and a
-// storage read there can fail before anything is authorized.
+// storage read there can fail before anything is authorized. Google runs
+// it when the doc opens; run from the editor there's no menu to add to.
 function onOpen() {
-  DocumentApp.getUi()
-    .createMenu('DEBROD')
+  const ui = docUi_()
+  if (!ui) {
+    console.log('onOpen only adds the DEBROD menu when the Google Doc opens. To try it, reload the doc. To approve permissions, run setup instead.')
+    return
+  }
+  ui.createMenu('DEBROD')
     .addItem('Open', 'openDebrod')
     .addSeparator()
     .addItem('Settings', 'openSettings')
     .addToUi()
+}
+
+// Run this once from the editor (pick "setup", then Run): it asks for the
+// permissions DEBROD needs and says what to do next.
+function setup() {
+  PropertiesService.getScriptProperties().getKeys()
+  CacheService.getScriptCache().get('setup')
+  UrlFetchApp.getRequest('https://api.themoviedb.org/3')
+  const url = appUrl_()
+  console.log(docUi_() === null && DocumentApp.getActiveDocument() === null
+    ? 'Permissions approved. This script isn\'t attached to a Google Doc, so there\'s no DEBROD menu: deploy it as a web app (Deploy → New deployment → Web app) and open that URL.'
+    : `Permissions approved. Reload the Google Doc and use the DEBROD menu.${url ? ` Or open the web app: ${url}` : ''}`)
 }
 
 function onInstall() {
@@ -59,7 +82,9 @@ function openDebrod() {
   const html = t.evaluate()
     .setWidth(1200)
     .setHeight(780)
-  DocumentApp.getUi().showModalDialog(html, siteName_())
+  const ui = docUi_()
+  if (!ui) throw new Error('Open DEBROD from the DEBROD menu in the Google Doc, or from the web app, not from the editor.')
+  ui.showModalDialog(html, siteName_())
 }
 
 function openSettings() {
@@ -68,7 +93,9 @@ function openSettings() {
   const html = t.evaluate()
     .setWidth(460)
     .setHeight(620)
-  DocumentApp.getUi().showModalDialog(html, `${siteName_()} settings`)
+  const ui = docUi_()
+  if (!ui) throw new Error('Open Settings from the DEBROD menu in the Google Doc, or open the web app with ?page=settings.')
+  ui.showModalDialog(html, `${siteName_()} settings`)
 }
 
 // Run as a web app (Deploy → Web app): the same page full screen, with
