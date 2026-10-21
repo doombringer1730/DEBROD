@@ -124,11 +124,14 @@ const Account = (() => {
 
   function shell(...kids) {
     backdrop.hidden = false
-    mount(el('main', { class: 'login' }, el('div', { class: 'card stack' },
+    mount(el('main', { class: 'login t-gate' }, el('div', { class: 'card stack' },
       el('div', null,
-        el('p', { class: 'tagline' }, 'Study · games · watch parties'),
+        el('p', { class: 'tagline' }, 'Space Clipper · boarding pass'),
         el('h1', { class: 'wordmark' }, cfg.siteName || 'DEBROD')),
-      ...kids)))
+      ...kids,
+      el('div', { class: 'pass-stub', 'aria-hidden': 'true' },
+        el('div', null, 'Study · games · parties', el('b', null, 'Admit one')),
+        el('div', { class: 'barcode' })))))
   }
 
   function signInScreen(mode, note) {
@@ -296,7 +299,7 @@ const Account = (() => {
   const when = t => (t ? new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '')
 
   function personRow(p, actions) {
-    return el('div', { class: 'stream' },
+    return el('div', { class: `stream ${p.status}` },
       el('div', { class: 'info' },
         el('p', null, el('strong', null, p.display), ' ', el('span', { class: 'muted' }, `@${p.username}`),
           p.is_admin && el('span', { class: 'tag good' }, 'admin')),

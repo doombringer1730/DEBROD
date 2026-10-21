@@ -25,13 +25,14 @@ keys live in the script's properties instead of environment variables.
 | `StarSling.html` | Star Sling, a memorial to Angry Birds Star Wars. |
 | `Settings.html` | The keys form. |
 | `Styles.html` | `app/globals.css`, wrapped in `<style>`. |
+| `Themes.html` | Each page's look (see [Looks](#looks)). |
 | `appsscript.json` | The project manifest. |
 
 ## Set it up
 
 1. Create a Google Doc, then open **Extensions → Apps Script**.
 2. Replace `Code.gs` with the one here. Add the HTML files with **+ → HTML**,
-   named `Index`, `App`, `Account`, `Hub`, `Study`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
+   named `Index`, `App`, `Account`, `Themes`, `Hub`, `Study`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
    one in. To edit `appsscript.json`, turn on **Project Settings → Show
    "appsscript.json" manifest file in editor**.
 3. Save, reload the doc, and open **DEBROD → Settings**. Approve the
@@ -81,14 +82,30 @@ reset. Huddy resets passwords from Members instead.
 
 ## Home
 
-DEBROD opens on **Home**, a hub dressed as a 70s mission-control console
-(Study shares the look, with flashcards as ruled index cards; the rest of
-DEBROD keeps its neon look). It shows what's due in Study,
+DEBROD opens on **Home**, a hub dressed as a 70s mission-control console.
+It shows what's due in Study,
 games to jump back into (with Star Sling's endless level), a quick search
 and watch-party join, and **Online now**: everyone else on your DEBROD,
 what they're doing, and a **Join** button for their Scribble, Showdown,
 Color Clash or Sea Battle room or watch party. That's live Supabase presence,
 nothing stored; flip **Show me** off to hide (you then see nobody either).
+
+## Looks
+
+Every page is a different decade's idea of the future, done the way it
+was printed or built at the time (all in `Themes.html`, except Study's,
+which lives in `Study.html`):
+
+| Page | Look |
+| --- | --- |
+| Home | A 70s mission-control console: charcoal panels, amber screens, chunky keys. |
+| Search | A 1958 TV listings magazine: newsprint, two inks slightly off register, a starburst masthead, every poster a walnut TV set. |
+| Arcade | A 1977 woodgrain console: ribbed black plastic, the rainbow stripe, aluminium switches, games as cartridges, and the game itself on a woodgrain TV. |
+| Study | A 1964 punch-card computer room: manila cards with the corner cut, green-bar printout, keypunch keys, and flashcards with holes punched. |
+| Members | A 1961 personnel file: a manila folder, typewritten index cards and rubber stamps for who's cleared. |
+| Sign in | A Space Clipper boarding pass with a torn-off stub. |
+
+The watch-together room keeps the original neon, like a cinema.
 
 Every tab opens with a second of an old terminal booting it up; a click or
 any key skips it, and it's off for anyone with reduced motion turned on.

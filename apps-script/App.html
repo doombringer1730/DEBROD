@@ -304,11 +304,20 @@ async function copyStream(s) {
   }
 }
 
+// Each page has its own era (Themes.html), and its own line under the name.
+const TAGLINES = {
+  home: 'Stream search · est. 1984',
+  search: 'Tonight\'s listings',
+  arcade: 'Home video computer system',
+  study: 'Data processing division',
+  admin: 'Personnel office · restricted',
+}
+
 function header() {
   return el('header', { class: 'top' },
     el('div', null,
       el('h1', { class: 'wordmark' }, S.cfg.siteName),
-      el('p', { class: 'tagline' }, 'Stream search · est. 1984')),
+      el('p', { class: 'tagline' }, TAGLINES[S.tab] || TAGLINES.home)),
     el('nav', { class: 'tabs' },
       tab('home', 'Home'),
       tab('search', 'Search'),
@@ -388,10 +397,10 @@ function bootLines(tab, first) {
   ] : []
   const by = {
     home: ['> mission-control --boot', 'checking link ......... OK', 'loading crew roster ... OK', 'reading the board ..... OK', 'ALL SYSTEMS NOMINAL'],
-    search: ['$ debrod search --init', 'mount /dev/tmdb ........ ok', 'warm torrentio cache .... ok', `debrid keys ............. ${S.cfg && S.cfg.hasDebrid ? 'ok' : 'MISSING'}`, 'ready.'],
-    arcade: ['C:\\> CD ARCADE', 'C:\\ARCADE> ARCADE.EXE', `loading ${games || 'all'} cartridges ...`, 'calibrating joystick ... ok', 'INSERT COIN'],
-    admin: ['$ sudo members --queue', 'reading sign-ups ........ ok', `waiting for you ......... ${typeof Account !== 'undefined' ? Account.pendingCount() : 0}`, 'ready.'],
-    study: ['$ study --focus', 'opening notebook ........ ok', sum ? `assignments due ......... ${(sum.open || []).length}${sum.overdue ? ` (${sum.overdue} overdue)` : ''}` : 'loading decks ........... ok', sum && sum.cardsDue ? `cards to review .......... ${sum.cardsDue}` : 'spaced repetition ....... ok', 'focus mode engaged.'],
+    search: ['DEBROD TELEVISION · CHANNEL 4', 'warming up the tubes ...... ok', 'adjusting the rabbit ears . ok', `tonight's listings ........ ${S.cfg && S.cfg.hasDebrid ? 'ready' : 'NO SIGNAL'}`, 'please stand by.'],
+    arcade: ['HOME VIDEO COMPUTER SYSTEM', 'cartridge seated ......... ok', `${games || 'all'} games in the drawer`, 'difficulty switches ...... A / B', 'PRESS GAME RESET'],
+    admin: ['TELETYPE 33 · PERSONNEL OFFICE', 'unlocking the cabinet ...... ok', `files awaiting clearance ... ${typeof Account !== 'undefined' ? Account.pendingCount() : 0}`, 'READY.'],
+    study: ['//STUDY    JOB (DEBROD),CLASS=A', '//STEP1    EXEC PGM=NOTEBOOK', sum ? `//ASSIGN   DD DUE=${(sum.open || []).length}${sum.overdue ? `,LATE=${sum.overdue}` : ''}` : '//DECKS    DD DSN=FLASH.CARDS', sum && sum.cardsDue ? `//REVIEW   DD CARDS=${sum.cardsDue}` : '//REVIEW   DD SPACED=YES', 'IEF142I STUDY - STEP WAS EXECUTED'],
   }
   return power.concat(by[tab] || by.search)
 }
@@ -401,7 +410,7 @@ function bootScreen(tab, first) {
   if (bootEl) bootEl.remove()
   const lines = bootLines(tab, first)
   const out = el('pre', { class: 'boot-text' })
-  const node = el('div', { class: `boot ${tab === 'home' || tab === 'study' ? 'amber' : ''}`, 'aria-hidden': 'true' }, out)
+  const node = el('div', { class: `boot boot-${tab} ${tab === 'home' ? 'amber' : ''}`, 'aria-hidden': 'true' }, out)
   bootEl = node
   document.body.append(node)
   const step = first ? 85 : 55
@@ -445,20 +454,22 @@ function render() {
     homePage.hidden = !home
     if (home) Hub.show(); else Hub.hide()
   }
-  if (!arcadePage || !arcadePage.isConnected) arcadePage = el('main', { class: 'page' }, el('header'), Arcade.root)
+  if (!arcadePage || !arcadePage.isConnected) arcadePage = el('main', { class: 'page t-arcade' }, el('header'), Arcade.root)
   arcadePage.firstElementChild.replaceWith(header())
   arcadePage.hidden = !arcade
   if (arcade) Arcade.show()
   else Arcade.hide()
   const hasStudy = typeof Study !== 'undefined'
-  if (!studyPage || !studyPage.isConnected) studyPage = el('main', { class: 'page mc' }, el('header'), hasStudy ? Study.root : studyMissing())
+  if (!studyPage || !studyPage.isConnected) studyPage = el('main', { class: 'page t-study' }, el('header'), hasStudy ? Study.root : studyMissing())
   studyPage.firstElementChild.replaceWith(header())
   studyPage.hidden = !study
   if (hasStudy) { if (study) Study.show(); else Study.hide() }
 
   for (const n of [...app.children]) if (n !== arcadePage && n !== studyPage && n !== homePage) n.remove()
   const search = arcade || study || home ? null
-    : el('main', { class: 'page' }, header(), S.tab === 'admin' && Account.isAdmin() ? Account.adminView() : view())
+    : S.tab === 'admin' && Account.isAdmin()
+      ? el('main', { class: 'page t-members' }, header(), Account.adminView())
+      : el('main', { class: 'page t-search' }, header(), view())
   if (search) app.prepend(search)
   if (homePage && !homePage.isConnected) app.append(homePage)
   if (!arcadePage.isConnected) app.append(arcadePage)

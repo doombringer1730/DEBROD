@@ -1,0 +1,314 @@
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo+Narrow:wght@500;600;700&family=Barlow+Condensed:wght@500;600;700&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@400;500&family=Jost:wght@400;500;600;700&family=Libre+Franklin:ital,wght@0,400;0,600;0,700;1,400&family=Oswald:wght@500;600;700&family=Righteous&family=Special+Elite&family=Yellowtail&display=swap');
+/* ── Page themes ──────────────────────────────────────────────────────────
+   Home is the 70s mission-control console (Hub.html). Every other page is a
+   different decade's idea of the future, done the way it was printed or
+   built at the time: flat inks, hard offset shadows, paper and plastic,
+   no glow. App.html tags each page:
+   - .t-search   Search: a 1958 Atomic Age TV listings magazine.
+   - .t-arcade   Arcade: a 1977 woodgrain home video console and its cartridges.
+   - .t-study    Study: a 1964 punch-card computer room (styled in Study.html).
+   - .t-members  Members: a 1961 space agency personnel file, for Huddy.
+   - .t-gate     Sign in: a 1968 Space Clipper boarding pass (Account.html). */
+:root {
+  --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .2 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --paper-noise-soft: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .08 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+/* None of them use the neon sky, grid or scanlines. */
+body:has(.page.t-search:not([hidden])) #backdrop, body:has(.page.t-search:not([hidden]))::after,
+body:has(.page.t-arcade:not([hidden])) #backdrop, body:has(.page.t-arcade:not([hidden]))::after,
+body:has(.page.t-study:not([hidden])) #backdrop, body:has(.page.t-study:not([hidden]))::after,
+body:has(.page.t-members:not([hidden])) #backdrop, body:has(.page.t-members:not([hidden]))::after,
+body:has(.t-gate) #backdrop, body:has(.t-gate)::after { display: none; }
+/* Shared resets: the base wordmark is chrome gradient text. */
+.t-search .wordmark, .t-arcade .wordmark, .t-members .wordmark, .t-gate .wordmark {
+  background: none; -webkit-background-clip: border-box; background-clip: border-box; filter: none; }
+.t-search .tagline, .t-arcade .tagline, .t-members .tagline, .t-gate .tagline { text-shadow: none; }
+.t-search .card::before, .t-arcade .card::before, .t-members .card::before { display: none; }
+
+/* ═══ Search: Atomic Age TV listings, 1958 ═══════════════════════════════
+   Newsprint, two spot inks that never quite line up, a starburst on the
+   masthead, every poster a little walnut TV set. */
+.t-search {
+  --ts-paper: #f2e8d2; --ts-card: #fbf5e6; --ts-ink: #231f1c; --ts-teal: #2c8783; --ts-coral: #df5236;
+  --ts-mustard: #e6a634; --ts-walnut: #5b3b27; --ts-soft: #6d6252;
+  --text: var(--ts-ink); --muted: var(--ts-soft); --cyan: var(--ts-teal); --magenta: var(--ts-coral); --yellow: var(--ts-mustard);
+  --good: #2f7d4f; --bad: #c23b22; --line: rgba(35, 31, 28, 0.35); --panel: var(--ts-card); --panel-solid: var(--ts-card);
+  position: relative; color: var(--ts-ink); font-family: 'Libre Franklin', system-ui, sans-serif;
+}
+html:has(.page.t-search:not([hidden])) {
+  background: var(--paper-noise), radial-gradient(rgba(35, 31, 28, 0.07) 1px, transparent 1.3px) 0 0 / 6px 6px, #f2e8d2;
+}
+body:has(.page.t-search:not([hidden])) { color: #231f1c; }
+.t-search .top { position: relative; padding-bottom: 14px; border-bottom: 4px double var(--ts-ink); }
+.t-search .top::before { /* the starburst behind the masthead */
+  content: ''; position: absolute; left: -30px; top: -34px; width: 84px; height: 84px; z-index: -1;
+  background: var(--ts-mustard); transform: rotate(9deg);
+  clip-path: polygon(50% 0%, 56.7% 20.8%, 71.7% 5%, 68.7% 26.5%, 89.1% 18.8%, 77% 37%, 98.7% 38.9%, 80% 50%, 98.7% 61.1%, 77% 63%, 89.1% 81.2%, 68.7% 73.5%, 71.7% 95%, 56.7% 79.2%, 50% 100%, 43.3% 79.2%, 28.3% 95%, 31.3% 73.5%, 10.9% 81.2%, 23% 63%, 1.3% 61.1%, 20% 50%, 1.3% 38.9%, 23% 37%, 10.9% 18.8%, 31.3% 26.5%, 28.3% 5%, 43.3% 20.8%);
+}
+.t-search .top::after { /* a small four-point sparkle off to the side */
+  content: ''; position: absolute; left: 240px; top: 2px; width: 18px; height: 18px; background: var(--ts-teal);
+  clip-path: polygon(50% 0%, 58.5% 41.5%, 100% 50%, 58.5% 58.5%, 50% 100%, 41.5% 58.5%, 0% 50%, 41.5% 41.5%);
+}
+.t-search .wordmark { font: 400 34px/0.95 'Archivo Black', system-ui, sans-serif; letter-spacing: 0.02em; color: var(--ts-ink); text-shadow: 3px 2px 0 var(--ts-coral); }
+.t-search .tagline { font: 400 21px/1 'Yellowtail', cursive; letter-spacing: 0; text-transform: none; color: var(--ts-coral); margin-top: 4px; }
+.t-search .tabs { gap: 14px; }
+.t-search .tabs .link { font: 400 12px 'Archivo Black', sans-serif; letter-spacing: 0.08em; color: var(--ts-ink); }
+.t-search .tabs .link:hover:not(:disabled) { color: var(--ts-coral); text-shadow: none; }
+.t-search .tabs .on, .t-search .tabs .on:hover:not(:disabled) { background: var(--ts-coral); color: #fff; padding: 3px 9px; border-radius: 2px; transform: rotate(-2deg); text-shadow: none; }
+
+.t-search button, .t-search .actions a {
+  font-family: 'Libre Franklin', sans-serif; font-weight: 600; color: var(--ts-ink); background: var(--ts-card);
+  border: 2px solid var(--ts-ink); border-radius: 999px; box-shadow: 3px 3px 0 var(--ts-ink); }
+.t-search button:hover:not(:disabled), .t-search .actions a:hover { border-color: var(--ts-ink); color: var(--ts-ink); background: #fff; transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ts-ink); }
+.t-search button:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ts-ink); }
+.t-search .primary, .t-search .primary:hover:not(:disabled) { background: var(--ts-coral); color: #fff; font: 400 13px/1 'Archivo Black', sans-serif; letter-spacing: 0.06em; }
+.t-search .link, .t-search .link:hover:not(:disabled) { background: none; border: none; box-shadow: none; transform: none; font: 600 12px 'Libre Franklin', sans-serif; letter-spacing: 0.12em; color: var(--ts-soft); }
+.t-search .link:hover:not(:disabled) { color: var(--ts-coral); text-shadow: none; }
+.t-search input { background: #fffdf6; color: var(--ts-ink); border: 2px solid var(--ts-ink); border-radius: 10px; font: 16px 'Libre Franklin', sans-serif; caret-color: var(--ts-coral); }
+.t-search input::placeholder { color: #9a8f7c; font-style: italic; }
+.t-search input:focus { border-color: var(--ts-ink); box-shadow: 3px 3px 0 var(--ts-teal); }
+.t-search .error { color: var(--bad); font: 600 14px 'Libre Franklin', sans-serif; text-shadow: none; }
+.t-search .mono { color: var(--ts-teal); font-family: 'Courier Prime', monospace; }
+.t-search .muted.mono { font-style: italic; }
+
+/* Movies / TV / YouTube: the channel selector */
+.t-search .toggle { background: var(--ts-ink); border: none; border-radius: 999px; padding: 5px; box-shadow: 3px 3px 0 var(--ts-coral); }
+.t-search .toggle button, .t-search .toggle button:hover:not(:disabled) { border: none; box-shadow: none; transform: none; background: none; color: var(--ts-paper); font: 400 12px/1 'Archivo Black', sans-serif; letter-spacing: 0.1em; border-radius: 999px; }
+.t-search .toggle button:hover:not(.on) { color: var(--ts-mustard); }
+.t-search .toggle button.on { background: var(--ts-mustard); color: var(--ts-ink); }
+
+/* Posters: little TV sets with a walnut cabinet and a bulging screen */
+.t-search .grid { gap: 22px 18px; }
+.t-search .poster, .t-search .poster:hover:not(:disabled) { border: none; box-shadow: none; background: none; border-radius: 0; }
+.t-search .poster img, .t-search .noposter {
+  border: 7px solid var(--ts-walnut); border-radius: 18px / 24px; background: #2b2723;
+  box-shadow: 0 0 0 2px var(--ts-ink), 4px 5px 0 2px var(--ts-ink); transition: transform 0.15s; }
+.t-search .noposter { color: #d8ccb2; font: 600 13px 'Libre Franklin', sans-serif; }
+.t-search .poster:hover:not(:disabled) { transform: rotate(-1.5deg) translateY(-3px); }
+.t-search .poster:hover img, .t-search .poster:hover .noposter { border-color: var(--ts-walnut); box-shadow: 0 0 0 2px var(--ts-ink), 6px 7px 0 2px var(--ts-coral); }
+.t-search .poster .name { font: 700 14px/1.2 'Libre Franklin', sans-serif; color: var(--ts-ink); text-shadow: none; margin-top: 6px; }
+.t-search .poster .muted { font: 600 11px 'Libre Franklin', sans-serif; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ts-coral); }
+.t-search .grid.wide .poster img, .t-search .grid.wide .noposter { border-radius: 16px / 20px; }
+
+.t-search .heading img { border: 4px solid var(--ts-walnut); border-radius: 8px; box-shadow: 3px 3px 0 var(--ts-ink); }
+.t-search .heading .name { font: 400 22px/1.15 'Archivo Black', sans-serif; letter-spacing: 0; }
+.t-search .heading .muted { color: var(--ts-coral); font: 600 13px 'Libre Franklin', sans-serif; letter-spacing: 0.12em; }
+.t-search .item, .t-search .item:hover:not(:disabled) { border-radius: 10px; text-align: left; }
+.t-search .item .muted.mono { color: var(--ts-coral); font: 700 13px 'Courier Prime', monospace; font-style: normal; }
+.t-search > .stack > .name { font: 400 22px 'Archivo Black', sans-serif; }
+
+/* Streams read like the evening's listings: bold time slot, dotted rules */
+.t-search .stream { background: none; border: none; border-bottom: 2px dotted rgba(35, 31, 28, 0.45); border-radius: 0; padding: 12px 2px; }
+.t-search .stream strong { font: 400 15px 'Archivo Black', sans-serif; letter-spacing: 0.02em; }
+.t-search .stream .muted { font: 13px 'Libre Franklin', sans-serif; color: var(--ts-soft); }
+.t-search .tag { font: 700 10px 'Libre Franklin', sans-serif; letter-spacing: 0.1em; color: var(--ts-ink); border: 1.5px solid var(--ts-ink); border-radius: 999px; padding: 1px 7px; }
+.t-search .tag.good { background: var(--ts-teal); color: #fff; border-color: var(--ts-teal); }
+.t-search .tag.bad { background: var(--ts-coral); color: #fff; border-color: var(--ts-coral); }
+.t-search .actions button, .t-search .actions a { font: 700 11px 'Libre Franklin', sans-serif; letter-spacing: 0.08em; box-shadow: 2px 2px 0 var(--ts-ink); }
+.t-search .actions .together, .t-search .actions .together:hover:not(:disabled) { background: var(--ts-mustard); color: var(--ts-ink); border: 2px solid var(--ts-ink); }
+.t-search .chip.on, .t-search .chip.on:hover:not(:disabled) { background: var(--ts-teal); color: #fff; border-color: var(--ts-ink); }
+.t-search .player video, .t-search .player iframe {
+  border: 14px solid var(--ts-walnut); border-radius: 26px / 34px; background: #000;
+  box-shadow: 0 0 0 3px var(--ts-ink), 7px 8px 0 3px var(--ts-ink); }
+.t-search .player p { color: var(--ts-soft); margin-top: 14px; }
+.t-search .card { background: var(--ts-card); border: 2px solid var(--ts-ink); border-radius: 14px; box-shadow: 5px 5px 0 var(--ts-ink); backdrop-filter: none; }
+
+/* ═══ Arcade: the woodgrain console, 1977 ════════════════════════════════
+   Ribbed black plastic, a walnut-veneer header with the rainbow stripe,
+   aluminium switches, and every game a chunky cartridge. The games
+   themselves keep their own colours, as if on the TV. */
+html:has(.page.t-arcade:not([hidden])) {
+  background: repeating-linear-gradient(90deg, #1b1815 0 3px, #24201c 3px 7px), #1f1b18;
+}
+body:has(.page.t-arcade:not([hidden])) { color: #f1e4c8; }
+.t-arcade .top {
+  position: relative; align-items: center; padding: 16px 20px; margin-bottom: 34px; border-radius: 6px;
+  background:
+    repeating-linear-gradient(91deg, rgba(0, 0, 0, 0.13) 0 2px, transparent 2px 9px),
+    repeating-linear-gradient(89deg, rgba(255, 214, 160, 0.07) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(90.5deg, transparent 0 37px, rgba(0, 0, 0, 0.18) 37px 39px, transparent 39px 61px),
+    linear-gradient(180deg, #8e5d36, #6b4426 55%, #5a381f);
+  box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.25), inset 0 0 0 1px rgba(0, 0, 0, 0.45), 0 5px 0 #0f0d0b; }
+.t-arcade .top::after { content: ''; position: absolute; left: 0; right: 0; bottom: -17px; height: 9px;
+  background: linear-gradient(180deg, #c9372c 0 33%, #e8691e 33% 66%, #f3a521 66%); }
+.t-arcade .wordmark { font: 400 31px/1 'Righteous', sans-serif; letter-spacing: 0.06em; color: #f4e7cb; text-shadow: 2px 2px 0 #36210f; }
+.t-arcade .tagline { font: 600 12px 'Barlow Condensed', sans-serif; letter-spacing: 0.32em; color: #f3c46b; }
+.t-arcade .tabs .link { font: 600 14px 'Barlow Condensed', sans-serif; letter-spacing: 0.18em; color: #f1e4c8; }
+.t-arcade .tabs .link:hover:not(:disabled) { color: #f3a521; text-shadow: none; }
+.t-arcade .tabs .on { color: #f3a521; text-shadow: none; box-shadow: inset 0 -3px 0 #e8691e; }
+.t-arcade .arcade-top .name { font: 400 26px 'Righteous', sans-serif; color: #f3a521; }
+.t-arcade .arcade-top .muted, .t-arcade .game-hint { font: 500 16px 'Barlow Condensed', sans-serif; color: #b8a88a; letter-spacing: 0.04em; text-shadow: none; }
+.t-arcade .arcade-top .pill { background: #0f0d0c; border: 1px solid #3a332c; border-radius: 3px; color: #f3a521; font: 600 14px 'Barlow Condensed', sans-serif; letter-spacing: 0.08em; }
+.t-arcade .arcade-top .pill .mono { color: #f1e4c8; font: inherit; }
+/* Switches: brushed aluminium, like the console's difficulty toggles. */
+.t-arcade .arcade-top button:not(.link), .t-arcade .game-end button:not(.link) {
+  font: 700 13px/1 'Barlow Condensed', sans-serif; letter-spacing: 0.16em; text-transform: uppercase; color: #191614;
+  background: linear-gradient(180deg, #e7e4dc, #aeaaa1); border: none; border-radius: 3px; padding: 9px 14px;
+  box-shadow: 0 3px 0 #55524c, inset 0 1px 0 #fff; }
+.t-arcade .arcade-top button:not(.link):hover:not(:disabled), .t-arcade .game-end button:not(.link):hover:not(:disabled) {
+  color: #191614; background: linear-gradient(180deg, #f3f1eb, #bdb9b0); box-shadow: 0 3px 0 #55524c, inset 0 1px 0 #fff; }
+.t-arcade .arcade-top button:not(.link):active:not(:disabled), .t-arcade .game-end button:not(.link):active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #55524c, inset 0 1px 0 #fff; }
+.t-arcade .game-end .primary { background: linear-gradient(180deg, #f08a3e, #e8691e); color: #1b1009; box-shadow: 0 3px 0 #8a3a0c, inset 0 1px 0 #ffc08a; }
+.t-arcade .arcade-top .link, .t-arcade .game-end .link { font: 600 14px 'Barlow Condensed', sans-serif; letter-spacing: 0.16em; color: #f3c46b; }
+.t-arcade .arcade-top .link:hover:not(:disabled), .t-arcade .game-end .link:hover:not(:disabled) { color: #f3a521; text-shadow: none; }
+
+/* Cartridges: a ridged black grip on top, a coloured label below, and a
+   catalogue number stamped on the grip. */
+.t-arcade .arcade-grid { counter-reset: cart; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 20px 16px; }
+.t-arcade .game-card {
+  --cart: #e8691e; counter-increment: cart; position: relative; gap: 5px; padding: 50px 17px 20px; border: none; border-radius: 7px 7px 3px 3px;
+  color: #1b1410; font-family: 'Barlow Condensed', sans-serif;
+  background: repeating-linear-gradient(90deg, #2a2521 0 4px, #191614 4px 8px) top / 100% 36px no-repeat, var(--cart);
+  box-shadow: inset 0 0 0 7px #191614, inset 0 0 0 8px rgba(255, 255, 255, 0.08), 0 6px 0 #0b0908; transition: transform 0.12s; }
+.t-arcade .game-card::before { content: 'CX-26' counter(cart, decimal-leading-zero); position: absolute; top: 11px; right: 13px;
+  font: 600 11px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; color: #a2937a; }
+.t-arcade .game-card:nth-child(6n+2) { --cart: #f3a521; }
+.t-arcade .game-card:nth-child(6n+3) { --cart: #d4c8a8; }
+.t-arcade .game-card:nth-child(6n+4) { --cart: #c9372c; }
+.t-arcade .game-card:nth-child(6n+5) { --cart: #5d8c86; }
+.t-arcade .game-card:nth-child(6n) { --cart: #b5703c; }
+.t-arcade .game-card:hover:not(:disabled) { transform: translateY(-4px) rotate(-0.6deg); border: none;
+  box-shadow: inset 0 0 0 7px #191614, inset 0 0 0 8px rgba(255, 255, 255, 0.08), 0 10px 0 #0b0908; }
+.t-arcade .game-card:active:not(:disabled) { transform: translateY(1px); }
+.t-arcade .game-icon { position: absolute; top: 5px; left: 13px; font-size: 24px; filter: none; }
+.t-arcade .game-card .name { font: 400 19px/1.1 'Righteous', sans-serif; color: #1b1410; letter-spacing: 0.01em; }
+.t-arcade .game-card .muted { font: 500 14px/1.25 'Barlow Condensed', sans-serif; color: rgba(27, 20, 16, 0.78); }
+.t-arcade .game-card .mono { margin-top: auto; padding-top: 4px; font: 700 12px 'Barlow Condensed', sans-serif; letter-spacing: 0.14em; text-transform: uppercase; color: #1b1410; border-top: 1px solid rgba(27, 20, 16, 0.3); width: 100%; }
+/* While playing, the game sits on a woodgrain TV. */
+.t-arcade .game-stage {
+  padding: 16px; border-radius: 18px;
+  background: repeating-linear-gradient(91deg, rgba(0, 0, 0, 0.13) 0 2px, transparent 2px 9px), linear-gradient(180deg, #8e5d36, #6b4426 55%, #5a381f);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 220, 170, 0.25), 0 7px 0 #0b0908; }
+.t-arcade .game-canvas { border: 3px solid #0b0908; border-radius: 16px / 20px; box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.7); }
+.t-arcade .game-end { border-radius: 16px; }
+.t-arcade .game-end .card { background: #f1e4c8; color: #1b1410; border: none; border-radius: 4px; backdrop-filter: none;
+  box-shadow: 0 0 0 7px #191614, 0 9px 0 4px #0b0908; }
+.t-arcade .game-end .card::before { display: block; left: 0; right: 0; top: 0; height: 9px; box-shadow: none; border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, #c9372c 0 33%, #e8691e 33% 66%, #f3a521 66%); }
+.t-arcade .game-end .wordmark { font: 400 26px 'Righteous', sans-serif; color: #1b1410; text-shadow: none; }
+.t-arcade .game-end .tagline { color: #8a3a0c; font: 700 13px 'Barlow Condensed', sans-serif; letter-spacing: 0.2em; }
+.t-arcade .game-toast { background: #0f0d0c; color: #f3a521; border-color: #3a332c; font-family: 'Barlow Condensed', sans-serif; font-weight: 600; }
+
+/* ═══ Members: the personnel file, 1961 ══════════════════════════════════
+   A steel-green cabinet, one manila folder, typewritten index cards
+   slightly off square, and rubber stamps for who's cleared. Huddy only. */
+.t-members { --tm-steel: #4a5946; --tm-manila: #e7d09b; --tm-card: #f7f1e1; --tm-ink: #2c2a26; --tm-brown: #4a3d27; --tm-red: #b3261e; --tm-blue: #2b4f8a; --tm-green: #2f5d3a; }
+html:has(.page.t-members:not([hidden])) {
+  background: var(--paper-noise), repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.05) 0 1px, transparent 1px 5px), #4a5946;
+}
+body:has(.page.t-members:not([hidden])) { color: #2c2a26; }
+.t-members .wordmark { display: inline-block; position: relative; }
+.t-members .wordmark::after { content: 'Confidential'; position: absolute; left: 100%; top: 2px; margin-left: 16px; white-space: nowrap;
+  font: 700 12px 'Oswald', sans-serif; letter-spacing: 0.24em; text-transform: uppercase; color: #e0715f;
+  border: 2px solid #e0715f; padding: 1px 7px; transform: rotate(-6deg); opacity: 0.85; }
+.t-members .wordmark { font: 400 31px/1 'Special Elite', monospace; letter-spacing: 0.08em; color: #efe6cf; }
+.t-members .tagline { font: 500 12px 'Oswald', sans-serif; letter-spacing: 0.34em; color: #c9c0a1; }
+.t-members .tabs .link { font: 500 13px 'Oswald', sans-serif; letter-spacing: 0.16em; color: #d8cfb3; }
+.t-members .tabs .link:hover:not(:disabled) { color: #fff; text-shadow: none; }
+.t-members .tabs .on { color: #fff; text-shadow: none; box-shadow: inset 0 -2px 0 #d9b25a; }
+/* The folder, with its tab sticking up */
+.t-members .top + .stack {
+  position: relative; margin-top: 46px; padding: 32px 26px 30px; border-radius: 3px 10px 4px 4px; color: var(--tm-ink);
+  background: var(--paper-noise), linear-gradient(180deg, #ecd7a6, #e2c98e); box-shadow: 0 2px 0 #b29655, 0 20px 34px rgba(0, 0, 0, 0.35); }
+.t-members .top + .stack::before { content: 'File 7-A · Clearances'; position: absolute; left: 22px; top: -27px; padding: 6px 18px 5px;
+  border-radius: 8px 8px 0 0; background: #ecd7a6; font: 600 11px 'Oswald', sans-serif; letter-spacing: 0.26em; text-transform: uppercase; color: #6a5630; }
+.t-members .stack > .name { font: 600 14px 'Oswald', sans-serif; letter-spacing: 0.22em; text-transform: uppercase; color: var(--tm-brown);
+  border-bottom: 1px solid rgba(74, 61, 39, 0.45); padding-bottom: 4px; }
+.t-members .muted { color: #6b5f48; }
+.t-members .stack > .muted, .t-members .stack > .error { font: 14px 'Special Elite', monospace; }
+.t-members .error { color: var(--tm-red); text-shadow: none; }
+.t-members .stream {
+  position: relative; background: var(--tm-card); border: none; border-radius: 1px; padding: 12px 14px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.18), 0 3px 8px rgba(74, 61, 39, 0.18);
+  background-image: linear-gradient(180deg, transparent 31px, rgba(179, 38, 30, 0.4) 31px 32px, transparent 32px), repeating-linear-gradient(180deg, transparent 0 21px, rgba(43, 79, 138, 0.12) 21px 22px); }
+.t-members .stack.tight > .stream:nth-child(odd) { transform: rotate(-0.35deg); }
+.t-members .stack.tight > .stream:nth-child(even) { transform: rotate(0.3deg); }
+.t-members .stream strong { font: 400 17px 'Special Elite', monospace; letter-spacing: 0.02em; color: var(--tm-ink); }
+.t-members .stream .muted { font: 13px 'Special Elite', monospace; color: #6b5f48; }
+.t-members .tag.good { font: 700 10px 'Oswald', sans-serif; letter-spacing: 0.2em; color: var(--tm-blue); border: 2px solid var(--tm-blue); border-radius: 2px; padding: 0 6px; transform: rotate(-4deg); }
+/* Rubber stamps on each card, by status */
+.t-members .stream.pending::after, .t-members .stream.approved::after, .t-members .stream.rejected::after {
+  position: absolute; left: 46%; top: 50%; pointer-events: none; white-space: nowrap;
+  font: 700 13px 'Oswald', sans-serif; letter-spacing: 0.22em; text-transform: uppercase; padding: 2px 9px; border: 3px double; opacity: 0.5; }
+.t-members .stream.pending::after { content: 'Awaiting clearance'; color: var(--tm-red); transform: translate(-50%, -50%) rotate(-7deg); }
+.t-members .stream.approved::after { content: 'Cleared'; color: var(--tm-green); transform: translate(-50%, -50%) rotate(5deg); opacity: 0.35; }
+.t-members .stream.rejected::after { content: 'Denied'; color: var(--tm-red); transform: translate(-50%, -50%) rotate(-11deg); }
+.t-members .actions button {
+  font: 600 12px 'Oswald', sans-serif; letter-spacing: 0.14em; text-transform: uppercase; color: var(--tm-brown); background: none;
+  border: 2px solid var(--tm-brown); border-radius: 2px; padding: 6px 11px; box-shadow: none; }
+.t-members .actions button:hover:not(:disabled) { background: var(--tm-brown); color: var(--tm-card); border-color: var(--tm-brown); box-shadow: none; }
+.t-members .actions .together { color: var(--tm-red); border-color: var(--tm-red); background: none; box-shadow: none; font-weight: 700; }
+.t-members .actions .together:hover:not(:disabled) { background: var(--tm-red); border-color: var(--tm-red); color: #fff; }
+.t-members .actions input { width: 170px; background: transparent; border: none; border-bottom: 2px solid var(--tm-brown); border-radius: 0; padding: 6px 2px; font: 15px 'Special Elite', monospace; color: var(--tm-ink); caret-color: var(--tm-red); }
+.t-members .actions input:focus { box-shadow: none; border-bottom-color: var(--tm-red); }
+@media (max-width: 760px) {
+  .t-members .stream.pending::after, .t-members .stream.approved::after, .t-members .stream.rejected::after {
+    position: static; order: -1; align-self: flex-start; transform: rotate(-3deg); margin-bottom: -4px; font-size: 10px; }
+  .t-members .wordmark::after { display: none; }
+  .t-members .top + .stack { padding: 28px 14px 22px; }
+}
+
+/* ═══ Sign in: a Space Clipper boarding pass, 1968 ═══════════════════════
+   Night sky over the spaceport, and a paper pass with a torn-off stub. */
+html:has(.t-gate) {
+  background:
+    radial-gradient(circle at 50% 135%, #2b4675 0 42%, rgba(43, 70, 117, 0) 42.3%),
+    radial-gradient(1.4px 1.4px at 12% 18%, #f7f3ea 99%, transparent), radial-gradient(1px 1px at 27% 61%, #f7f3ea 99%, transparent),
+    radial-gradient(1.6px 1.6px at 41% 9%, #f7f3ea 99%, transparent), radial-gradient(1px 1px at 58% 33%, #f7f3ea 99%, transparent),
+    radial-gradient(1.2px 1.2px at 71% 14%, #f7f3ea 99%, transparent), radial-gradient(1px 1px at 84% 47%, #f7f3ea 99%, transparent),
+    radial-gradient(1.8px 1.8px at 91% 8%, #f0b23a 99%, transparent), radial-gradient(1px 1px at 6% 72%, #f7f3ea 99%, transparent),
+    radial-gradient(1.2px 1.2px at 36% 82%, #f7f3ea 99%, transparent), radial-gradient(1px 1px at 66% 70%, #f7f3ea 99%, transparent),
+    #13233f;
+}
+.t-gate .card {
+  width: min(400px, 100%); padding: 34px 26px 0; border: none; border-radius: 14px; color: #1f2a44; backdrop-filter: none;
+  background: var(--paper-noise-soft), #f7f3ea; box-shadow: 0 26px 60px rgba(0, 0, 0, 0.45); overflow: hidden; }
+.t-gate .card::before { left: 0; right: 0; top: 0; height: 10px; box-shadow: none; background: linear-gradient(90deg, #1f5aa6 0 68%, #df5236 68% 80%, #f0b23a 80%); }
+.t-gate .tagline { font: 500 11px 'DM Mono', monospace; letter-spacing: 0.3em; color: #1f5aa6; text-align: left; margin: 0 0 4px; }
+.t-gate .wordmark { font: 700 34px/1 'Jost', sans-serif; letter-spacing: 0.3em; color: #1f2a44; }
+.t-gate .name { font: 600 18px 'Jost', sans-serif; }
+.t-gate .muted { color: #5a6680; font-family: 'Jost', sans-serif; }
+.t-gate .error { color: #c23b22; font: 500 13px 'DM Mono', monospace; text-shadow: none; }
+.t-gate .field span { font: 500 10px 'DM Mono', monospace; letter-spacing: 0.24em; color: #5a6680; }
+.t-gate input { background: transparent; border: none; border-bottom: 2px solid #1f2a44; border-radius: 0; padding: 6px 2px; font: 500 18px 'Jost', sans-serif; color: #1f2a44; caret-color: #df5236; }
+.t-gate input:focus { box-shadow: none; border-bottom-color: #1f5aa6; }
+.t-gate button { font: 600 13px 'Jost', sans-serif; letter-spacing: 0.14em; text-transform: uppercase; color: #1f2a44; background: none; border: 2px solid #1f2a44; border-radius: 999px; box-shadow: none; }
+.t-gate button:hover:not(:disabled) { background: #1f2a44; color: #f7f3ea; border-color: #1f2a44; box-shadow: none; }
+.t-gate .primary { background: #1f5aa6; border-color: #1f5aa6; color: #fff; font: 600 14px/1 'Jost', sans-serif; letter-spacing: 0.2em; padding: 13px 18px; }
+.t-gate .primary:hover:not(:disabled) { background: #174a8c; border-color: #174a8c; color: #fff; transform: none; box-shadow: none; }
+.t-gate .link, .t-gate .link:hover:not(:disabled) { border: none; background: none; color: #5a6680; font: 500 11px 'DM Mono', monospace; letter-spacing: 0.2em; }
+.t-gate .link:hover:not(:disabled) { color: #1f5aa6; text-shadow: none; }
+.t-gate .toggle { background: #e8e2d3; border: none; border-radius: 999px; }
+.t-gate .toggle button, .t-gate .toggle button:hover:not(:disabled) { border: none; color: #5a6680; background: none; font: 600 12px/1 'Jost', sans-serif; letter-spacing: 0.16em; }
+.t-gate .toggle button.on { background: #1f2a44; color: #f7f3ea; box-shadow: none; }
+/* The stub: perforated, notched, with a barcode */
+.t-gate .pass-stub {
+  position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 8px -26px 0; padding: 16px 26px 18px; border-top: 2px dashed rgba(31, 42, 68, 0.35); background: rgba(31, 42, 68, 0.05);
+  font: 500 11px 'DM Mono', monospace; letter-spacing: 0.18em; text-transform: uppercase; color: #5a6680; }
+.t-gate .pass-stub::before, .t-gate .pass-stub::after { content: ''; position: absolute; top: -12px; width: 22px; height: 22px; border-radius: 50%; background: #13233f; }
+.t-gate .pass-stub::before { left: -11px; }
+.t-gate .pass-stub::after { right: -11px; }
+.t-gate .pass-stub b { display: block; font: 600 15px 'Jost', sans-serif; letter-spacing: 0.12em; color: #1f2a44; }
+.t-gate .barcode { flex: none; width: 112px; height: 30px; opacity: 0.85;
+  background: repeating-linear-gradient(90deg, #1f2a44 0 2px, transparent 2px 3px, #1f2a44 3px 4px, transparent 4px 7px, #1f2a44 7px 10px, transparent 10px 11px, #1f2a44 11px 12px, transparent 12px 15px); }
+
+/* ═══ Boot screens, one per page (App.html bootScreen) ═══════════════════ */
+.boot.boot-search { background: #1f1c19; color: #f2e8d2; }
+.boot.boot-search .boot-text { font-family: 'Courier Prime', monospace; text-shadow: none; }
+.boot.boot-arcade { background: repeating-linear-gradient(90deg, #1b1815 0 3px, #24201c 3px 7px); color: #f3a521; }
+.boot.boot-arcade .boot-text { font: 600 18px/1.55 'Barlow Condensed', sans-serif; letter-spacing: 0.12em; text-shadow: none; }
+.boot.boot-study { background: #0b120d; color: #79e08f; }
+.boot.boot-study .boot-text { font-family: 'Courier Prime', monospace; text-shadow: 0 0 4px rgba(121, 224, 143, 0.45); }
+.boot.boot-admin { background: var(--paper-noise), #e7d09b; color: #2c2a26; }
+.boot.boot-admin .boot-text { font-family: 'Special Elite', monospace; text-shadow: none; }
+
+@media (max-width: 560px) {
+  .t-search .wordmark { font-size: 28px; }
+  .t-search .top::after { display: none; }
+  .t-search .top::before { left: -12px; top: -22px; width: 62px; height: 62px; }
+  .t-arcade .wordmark, .t-members .wordmark { font-size: 26px; }
+  .t-arcade .top { padding: 14px; }
+}
+</style>
