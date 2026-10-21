@@ -1,0 +1,692 @@
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Pixelify+Sans:wght@400;500;600&display=swap');
+/* ── Chat: the 1984 desktop ────────────────────────────────────────────────
+   A one-bit desktop of the year personal computers got windows: a dithered
+   grey desk, white windows with pinstriped title bars and close boxes, a
+   menu-bar header, inverted selections, rounded push buttons. The only
+   colour is each person's avatar. */
+:root {
+  --ch-desk: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' shape-rendering='crispEdges'%3E%3Crect width='4' height='4' fill='%23d6d6d6'/%3E%3Crect width='1' height='1' fill='%238a8a8a'/%3E%3Crect x='2' y='2' width='1' height='1' fill='%238a8a8a'/%3E%3C/svg%3E");
+}
+.t-chat {
+  --ch-ui: 'Pixelify Sans', 'Chicago', system-ui, sans-serif;
+  --ch-text: 'Atkinson Hyperlegible', system-ui, sans-serif;
+  color: #000; font-family: var(--ch-text);
+}
+html:has(.page.t-chat:not([hidden])) { background: var(--ch-desk) 0 0 / 4px 4px, #d6d6d6; }
+body:has(.page.t-chat:not([hidden])) #backdrop, body:has(.page.t-chat:not([hidden]))::after { display: none; }
+body:has(.page.t-chat:not([hidden])) { color: #000; }
+.page.t-chat { max-width: 1320px; padding-bottom: 24px; }
+.t-chat .top { align-items: center; padding: 7px 14px; margin-bottom: 16px; background: #fff; border: 1px solid #000; box-shadow: 2px 2px 0 #000; }
+.t-chat .wordmark { background: none; -webkit-background-clip: border-box; background-clip: border-box; filter: none; color: #000; font: 600 22px/1 var(--ch-ui); letter-spacing: 0.04em; }
+.t-chat .tagline { color: #000; text-shadow: none; font: 400 12px var(--ch-ui); letter-spacing: 0.08em; margin-top: 3px; }
+.t-chat .tabs { gap: 2px; }
+.t-chat .tabs .link { font: 400 15px var(--ch-ui); letter-spacing: 0; text-transform: none; color: #000; padding: 2px 9px; border-radius: 0; }
+.t-chat .tabs .link:hover:not(:disabled) { color: #000; text-shadow: none; text-decoration: underline; }
+.t-chat .tabs .link.on, .t-chat .tabs .link.on:hover:not(:disabled) { background: #000; color: #fff; text-shadow: none; text-decoration: none; }
+
+.chat { display: grid; grid-template-columns: 220px minmax(0, 1fr) 236px; gap: 14px; height: calc(100dvh - 150px); min-height: 520px; }
+.ch-win { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: #fff; color: #000; border: 1px solid #000; box-shadow: 2px 2px 0 #000; }
+.ch-bar { flex: none; position: relative; height: 21px; display: grid; place-items: center; border-bottom: 1px solid #000;
+  background: repeating-linear-gradient(180deg, #000 0 1px, transparent 1px 2px) 4px 4px / calc(100% - 8px) 11px no-repeat, #fff; }
+.ch-bar > span { background: #fff; padding: 0 9px; font: 500 14px/19px var(--ch-ui); max-width: calc(100% - 60px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-bar::before { content: ''; position: absolute; left: 9px; top: 3px; width: 11px; height: 11px; border: 1px solid #000; background: #fff; box-shadow: 0 0 0 2px #fff; }
+
+/* Push buttons */
+.t-chat .ch-btn, .ch-modal .ch-btn { font: 400 14px/1 var(--ch-ui); letter-spacing: 0; text-transform: none; color: #000; background: #fff; border: 1px solid #000; border-radius: 7px; padding: 6px 14px; box-shadow: none; }
+.t-chat .ch-btn:hover:not(:disabled), .ch-modal .ch-btn:hover:not(:disabled) { background: #000; color: #fff; border-color: #000; box-shadow: none; }
+.t-chat .ch-btn.default, .ch-modal .ch-btn.default { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #000; margin: 4px; }
+.t-chat .ch-btn:disabled { opacity: 0.4; }
+.t-chat .ch-plain, .ch-modal .ch-plain { font: 400 13px var(--ch-ui); color: #000; background: none; border: none; border-radius: 0; padding: 2px 6px; box-shadow: none; text-decoration: underline; }
+.t-chat .ch-plain:hover:not(:disabled), .ch-modal .ch-plain:hover:not(:disabled) { background: #000; color: #fff; box-shadow: none; text-decoration: none; }
+.t-chat input, .t-chat textarea, .ch-modal input, .ch-modal textarea { width: 100%; font: 15px/1.4 var(--ch-text); color: #000; background: #fff; border: 1px solid #000; border-radius: 0; padding: 8px 10px; caret-color: #000; box-shadow: none; }
+.t-chat input:focus, .t-chat textarea:focus, .ch-modal input:focus, .ch-modal textarea:focus { outline: none; border-color: #000; box-shadow: inset 0 0 0 1px #000; }
+.t-chat ::placeholder, .ch-modal ::placeholder { color: #808080; }
+
+/* Avatars: the one place colour shows up */
+.ch-avatar { position: relative; flex: none; width: 40px; height: 40px; padding: 0; display: grid; place-items: center; border-radius: 50%; border: 1px solid #000; font-size: 21px; line-height: 1; box-shadow: none; cursor: pointer; }
+button.ch-avatar:hover:not(:disabled) { border-color: #000; box-shadow: 0 0 0 2px #fff, 0 0 0 3px #000; }
+.ch-avatar.sm { width: 28px; height: 28px; font-size: 15px; }
+.ch-avatar.xl { width: 96px; height: 96px; font-size: 50px; border-width: 2px; }
+
+/* Channels window */
+.ch-channels { flex: 1; overflow-y: auto; padding: 8px 6px; display: flex; flex-direction: column; gap: 1px; }
+.t-chat .ch-chan { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; text-align: left; font: 400 15px var(--ch-ui); color: #000; background: none; border: none; border-radius: 0; padding: 4px 8px; box-shadow: none; }
+.t-chat .ch-chan:hover:not(:disabled) { background: #e6e6e6; color: #000; box-shadow: none; }
+.t-chat .ch-chan.on, .t-chat .ch-chan.on:hover:not(:disabled) { background: #000; color: #fff; }
+.ch-chan .hash { opacity: 0.6; margin-right: 2px; }
+.ch-chan.unread .label { font-weight: 600; }
+.ch-unread { min-width: 18px; padding: 1px 5px; border-radius: 9px; background: #000; color: #fff; font: 12px/1.2 var(--ch-ui); text-align: center; }
+.ch-chan.on .ch-unread { background: #fff; color: #000; }
+.ch-new-chan { margin: 6px 8px 0; align-self: flex-start; }
+.ch-me { flex: none; display: flex; gap: 8px; align-items: center; padding: 8px; border-top: 1px solid #000; background: #f2f2f2; }
+.ch-me-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ch-me-name { font: 500 14px var(--ch-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-me-tag { font: 12px var(--ch-text); color: #555; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Messages window */
+.ch-topic { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid #000; font: 13px var(--ch-text); color: #333; min-height: 32px; }
+.ch-topic .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 10px 10px; }
+.ch-note { padding: 18px 8px; font: 14px var(--ch-ui); color: #555; }
+.ch-welcome { padding: 20px 6px 14px; }
+.ch-welcome-title { font: 600 24px var(--ch-ui); margin-bottom: 4px; }
+.ch-welcome p + p { color: #444; }
+.ch-older { display: block; margin: 0 auto 10px; }
+.ch-day { display: flex; align-items: center; gap: 10px; margin: 14px 0 6px; font: 12px var(--ch-ui); color: #555; }
+.ch-day::before, .ch-day::after { content: ''; flex: 1; border-top: 1px dotted #000; }
+.ch-msg { position: relative; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 0 10px; padding: 6px 6px 3px; }
+.ch-msg.grouped { padding-top: 1px; }
+.ch-msg:hover { background: #f2f2f2; }
+.ch-msg.mention { background: #fff3bf; box-shadow: inset 3px 0 0 #000; }
+.ch-time-side { font: 11px/22px var(--ch-ui); color: #777; text-align: right; visibility: hidden; }
+.ch-msg:hover .ch-time-side { visibility: visible; }
+.ch-msg-head { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+.t-chat .ch-name { font: 600 15px var(--ch-ui); color: #000; background: none; border: none; border-radius: 0; padding: 0; box-shadow: none; }
+.t-chat .ch-name:hover:not(:disabled) { color: #000; background: none; box-shadow: none; text-decoration: underline; }
+.ch-msg-head time { font: 12px var(--ch-ui); color: #6b6b6b; }
+.ch-badge { font: 11px/1 var(--ch-ui); padding: 2px 5px; border: 1px solid #000; border-radius: 3px; }
+.ch-body { font: 15px/1.45 var(--ch-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ch-body a { color: #000; text-decoration: underline; }
+.ch-at { background: #000; color: #fff; padding: 0 3px; }
+.ch-edited { color: #777; font-size: 12px; }
+.ch-tools { position: absolute; top: -11px; right: 10px; display: none; background: #fff; border: 1px solid #000; box-shadow: 1px 1px 0 #000; }
+.ch-msg:hover .ch-tools, .ch-msg:focus-within .ch-tools { display: flex; }
+.t-chat .ch-tools button { font: 12px var(--ch-ui); color: #000; background: #fff; border: none; border-radius: 0; padding: 3px 9px; box-shadow: none; }
+.t-chat .ch-tools button:hover:not(:disabled) { background: #000; color: #fff; box-shadow: none; }
+.ch-edit { display: flex; flex-direction: column; gap: 6px; margin: 4px 0; }
+.ch-edit .row { align-items: center; gap: 8px; font: 12px var(--ch-ui); color: #555; }
+.ch-compose { flex: none; display: flex; gap: 8px; align-items: flex-end; padding: 10px; border-top: 1px solid #000; }
+.ch-compose textarea { flex: 1; resize: none; min-height: 42px; max-height: 160px; }
+.ch-compose .ch-btn { flex: none; margin-bottom: 4px; }
+.ch-err { flex: none; padding: 0 12px 8px; font: 13px var(--ch-ui); }
+.ch-err:empty { display: none; }
+.ch-err:not(:empty)::before { content: '⚠ '; }
+
+/* Members window */
+.ch-members { flex: 1; overflow-y: auto; padding: 6px; }
+.ch-group { font: 12px var(--ch-ui); letter-spacing: 0.08em; text-transform: uppercase; color: #555; padding: 8px 6px 4px; }
+.t-chat .ch-member { display: flex; gap: 8px; align-items: center; width: 100%; text-align: left; padding: 4px 6px; color: #000; background: none; border: none; border-radius: 0; box-shadow: none; }
+.t-chat .ch-member:hover:not(:disabled) { background: #000; color: #fff; box-shadow: none; }
+.t-chat .ch-member:hover .ch-member-tag { color: #ccc; }
+.ch-member:not(.on) { opacity: 0.55; }
+.ch-member.on .ch-avatar::after { content: ''; position: absolute; right: -2px; bottom: -2px; width: 8px; height: 8px; background: #000; border: 2px solid #fff; }
+.ch-member-text { min-width: 0; display: flex; flex-direction: column; }
+.ch-member-name { font: 500 14px var(--ch-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-member-tag { font: 12px var(--ch-text); color: #555; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Dialogs: profile cards and forms */
+.ch-modal { position: fixed; inset: 0; z-index: 45; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, 0.22); color: #000; font-family: var(--ch-text); }
+.ch-modal[hidden] { display: none; }
+.ch-modal .ch-win { width: min(380px, 100%); max-height: calc(100dvh - 32px); }
+.ch-modal .ch-win.wide { width: min(460px, 100%); }
+.ch-dialog { overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.ch-card { align-items: center; text-align: center; }
+.ch-card-name { font: 600 24px/1.1 var(--ch-ui); }
+.ch-card-user { font: 13px var(--ch-ui); color: #555; display: flex; gap: 8px; align-items: center; justify-content: center; }
+.ch-card-tag { font: italic 15px var(--ch-text); }
+.ch-card-bio { width: 100%; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; font: 15px/1.45 var(--ch-text); padding: 10px 12px; border: 1px solid #000; background: #f7f7f7; }
+.ch-card-since { font: 12px var(--ch-ui); color: #555; }
+.ch-dialog .row { justify-content: center; flex-wrap: wrap; }
+.ch-field { display: flex; flex-direction: column; gap: 5px; text-align: left; }
+.ch-field > span { font: 13px var(--ch-ui); display: flex; justify-content: space-between; }
+.ch-field > span small { color: #666; }
+.ch-field textarea { resize: vertical; min-height: 84px; }
+.ch-preview { display: flex; gap: 12px; align-items: center; padding: 10px; border: 1px solid #000; background: #f7f7f7; }
+.ch-preview .ch-member-text { flex: 1; }
+.ch-emojis { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
+.ch-modal .ch-emoji { aspect-ratio: 1; padding: 0; font-size: 19px; background: #fff; border: 1px solid #000; border-radius: 0; box-shadow: none; }
+.ch-modal .ch-emoji:hover:not(:disabled) { background: #e6e6e6; border-color: #000; box-shadow: none; }
+.ch-modal .ch-emoji.on, .ch-modal .ch-emoji.on:hover:not(:disabled) { background: #000; }
+.ch-colors { display: flex; flex-wrap: wrap; gap: 6px; }
+.ch-modal .ch-color { width: 30px; height: 30px; padding: 0; border: 1px solid #000; border-radius: 50%; box-shadow: none; }
+.ch-modal .ch-color:hover:not(:disabled) { border-color: #000; box-shadow: 0 0 0 2px #fff, 0 0 0 3px #000; }
+.ch-modal .ch-color.on { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #000; }
+.ch-modal .ch-err { padding: 0; }
+
+/* The boot screen: a one-bit hello */
+.boot.boot-chat { background: #fff; color: #000; }
+.boot.boot-chat .boot-text { font: 400 17px/1.6 'Pixelify Sans', monospace; text-shadow: none; }
+
+@media (max-width: 900px) {
+  .chat { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 0; }
+  .ch-win.ch-side { max-height: none; }
+  .ch-channels { flex-direction: row; overflow-x: auto; padding: 6px; }
+  .t-chat .ch-chan { width: auto; flex: none; }
+  .ch-new-chan { margin: 0; flex: none; }
+  .ch-win.ch-main { height: 72dvh; min-height: 420px; }
+  .ch-win.ch-people { max-height: 300px; }
+  .ch-tools { position: static; grid-column: 2; justify-self: start; margin-top: 4px; box-shadow: none; }
+  .ch-msg:hover .ch-tools { display: none; }
+  .ch-msg:focus-within .ch-tools { display: flex; }
+  .ch-msg:focus { outline: none; background: #f2f2f2; }
+}
+</style>
+<script>
+// Chat: DEBROD's public, Discord-style chat. Channels anyone approved can
+// read and post in, profiles (avatar emoji, colour, status line, bio) and a
+// members list with who's online. Everything goes through Supabase with
+// your own session (Account.client()), so the database's rules decide who
+// sees what, and its word filter masks messages and profiles on the way in
+// (supabase/schema.sql).
+
+const Chat = (() => {
+  const PAGE = 60                 // messages per load
+  const GROUP_MS = 5 * 60 * 1000  // same person within this runs together
+  const CHANNEL_KEY = 'ds_chat_channel'
+  const AVATARS = ['🙂', '😎', '🤓', '😴', '🦊', '🐸', '🐙', '🐢', '🦉', '👾', '🤖', '🛰️', '🚀', '🪐', '🌙', '⭐', '🔥', '🎧', '🎮', '📚', '✏️', '🧪', '🎬', '🍕']
+  const COLORS = ['#2d5fa6', '#df5236', '#2c8783', '#e6a634', '#7a4ea3', '#3a7d44', '#c2477e', '#8a8a8a']
+  const NOBODY = { display: 'Former member', avatar: '👤', color: '#bbbbbb', username: '', tagline: '', bio: '' }
+
+  let auth = null
+  let me = null
+  let started = false
+  let visible = false
+  let channels = []
+  let current = null
+  let messages = []
+  let hasOlder = false
+  let people = new Map()
+  let online = new Set()
+  let unread = {}
+  let editing = null
+  let live = null
+  let presence = null
+
+  // ── DOM ──
+  const root = el('section', { class: 'chat' })
+  const chanList = el('nav', { class: 'ch-channels', 'aria-label': 'Channels' })
+  const mePanel = el('div', { class: 'ch-me' })
+  const titleEl = el('span', null, 'Chat')
+  const topicEl = el('div', { class: 'ch-topic' })
+  const list = el('div', { class: 'ch-list', role: 'log', 'aria-live': 'polite' })
+  const input = el('textarea', { rows: 1, maxlength: 2000, placeholder: 'Message', 'aria-label': 'Message' })
+  const sendBtn = el('button', { type: 'submit', class: 'ch-btn default' }, 'Send')
+  const errEl = el('p', { class: 'ch-err', role: 'status' })
+  const membersEl = el('div', { class: 'ch-members' })
+  const modalEl = el('div', { class: 'ch-modal', hidden: true })
+
+  const bar = title => el('div', { class: 'ch-bar' }, typeof title === 'string' ? el('span', null, title) : title)
+  root.append(
+    el('section', { class: 'ch-win ch-side' }, bar('Channels'), chanList, mePanel),
+    el('section', { class: 'ch-win ch-main' }, bar(titleEl), topicEl, list,
+      el('form', { class: 'ch-compose', onSubmit: send }, input, sendBtn), errEl),
+    el('section', { class: 'ch-win ch-people' }, bar('Members'), membersEl))
+  document.body.append(modalEl)
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(e) }
+  })
+  input.addEventListener('input', () => { autosize(input); errEl.textContent = '' })
+  modalEl.addEventListener('pointerdown', e => { if (e.target === modalEl) closeModal() })
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modalEl.hidden) closeModal() })
+
+  function autosize(t) {
+    t.style.height = 'auto'
+    t.style.height = `${Math.min(t.scrollHeight + 2, 160)}px`
+  }
+
+  // ── Helpers ──
+  // replaceChildren, but taking nested lists and skipping false/null like el().
+  const fill = (node, ...kids) => node.replaceChildren(...kids.flat(Infinity).filter(k => k != null && k !== false))
+  const safeColor = c => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '#bbbbbb')
+  const who = id => people.get(id) || (me && id === me.id ? me : NOBODY)
+  const avatar = (p, cls, onClick) => el(onClick ? 'button' : 'span', {
+    class: `ch-avatar ${cls || ''}`, style: `background: ${safeColor(p.color)}`, type: onClick ? 'button' : null,
+    'aria-label': onClick ? `${p.display}'s profile` : null, onClick,
+  }, p.avatar || '🙂')
+  const time = d => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const full = d => new Date(d).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })
+  function day(d) {
+    const t = new Date(d)
+    const today = new Date()
+    const yesterday = new Date(Date.now() - 864e5)
+    if (t.toDateString() === today.toDateString()) return 'Today'
+    if (t.toDateString() === yesterday.toDateString()) return 'Yesterday'
+    return t.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: t.getFullYear() === today.getFullYear() ? undefined : 'numeric' })
+  }
+  const readable = msg => String(msg || 'Something went wrong.').replace(/^.*?:\s*(?=Slow down|Say something)/, '')
+
+  // Links and @mentions, without ever setting HTML.
+  function rich(text) {
+    return text.split(/(https?:\/\/[^\s]+|@[a-z0-9_]{3,20})/i).map(part => {
+      if (/^https?:\/\//i.test(part)) return el('a', { href: part, target: '_blank', rel: 'noopener noreferrer' }, part)
+      if (/^@[a-z0-9_]{3,20}$/i.test(part)) return el('span', { class: 'ch-at' }, part)
+      return part
+    })
+  }
+  const mentionsMe = body => !!(me && me.username && new RegExp(`(^|[^a-z0-9_])@${me.username}(?![a-z0-9_])`, 'i').test(body))
+
+  // ── Loading ──
+  async function loadChannels() {
+    const { data, error } = await auth.from('debrod_channels').select('id, slug, topic, position').order('position').order('slug')
+    if (error) throw new Error(error.message)
+    channels = data || []
+  }
+
+  async function loadPeople() {
+    const { data, error } = await auth.from('debrod_profiles')
+      .select('id, username, display, avatar, color, tagline, bio, is_admin, created_at').eq('status', 'approved')
+    if (error) return
+    people = new Map((data || []).map(p => [p.id, p]))
+    if (people.has(me.id)) me = Object.assign({}, me, people.get(me.id))
+    renderMe()
+    renderMembers()
+  }
+
+  async function open(id) {
+    current = channels.find(c => c.id === id) || channels[0] || null
+    editing = null
+    messages = []
+    hasOlder = false
+    renderChannels()
+    renderHead()
+    if (!current) return list.replaceChildren(el('p', { class: 'ch-note' }, 'No channels yet.'))
+    try { localStorage.setItem(CHANNEL_KEY, current.id) } catch (e) { /* private mode */ }
+    unread[current.id] = 0
+    badge()
+    list.replaceChildren(el('p', { class: 'ch-note' }, 'Loading…'))
+    const want = current.id
+    const { data, error } = await auth.from('debrod_chat').select('id, channel_id, sender, body, created_at, edited_at')
+      .eq('channel_id', want).order('id', { ascending: false }).limit(PAGE)
+    if (!current || current.id !== want) return
+    if (error) return list.replaceChildren(el('p', { class: 'ch-note' }, error.message))
+    messages = (data || []).reverse()
+    hasOlder = (data || []).length === PAGE
+    renderMessages(true)
+  }
+
+  async function older() {
+    if (!messages.length) return
+    const want = current.id
+    const { data, error } = await auth.from('debrod_chat').select('id, channel_id, sender, body, created_at, edited_at')
+      .eq('channel_id', want).lt('id', messages[0].id).order('id', { ascending: false }).limit(PAGE)
+    if (error || current.id !== want) return
+    const before = list.scrollHeight - list.scrollTop
+    messages = (data || []).reverse().concat(messages)
+    hasOlder = (data || []).length === PAGE
+    renderMessages(false)
+    list.scrollTop = list.scrollHeight - before
+  }
+
+  // ── Live updates ──
+  function subscribe() {
+    live = auth.channel('debrod-chat-live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'debrod_chat' }, ({ new: m }) => {
+        if (current && m.channel_id === current.id) {
+          if (!messages.some(x => x.id === m.id)) messages.push(m)
+          if (!visible) unread[m.channel_id] = (unread[m.channel_id] || 0) + 1
+          renderMessages(m.sender === me.id)
+        } else {
+          unread[m.channel_id] = (unread[m.channel_id] || 0) + 1
+          renderChannels()
+        }
+        badge()
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'debrod_chat' }, ({ new: m }) => {
+        const i = messages.findIndex(x => x.id === m.id)
+        if (i !== -1) { messages[i] = m; renderMessages(false) }
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'debrod_chat' }, ({ old }) => {
+        const n = messages.length
+        messages = messages.filter(x => x.id !== old.id)
+        if (messages.length !== n) renderMessages(false)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'debrod_channels' }, async () => {
+        await loadChannels()
+        if (!current || !channels.some(c => c.id === current.id)) open(channels[0] && channels[0].id)
+        else { current = channels.find(c => c.id === current.id); renderChannels(); renderHead() }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'debrod_profiles' }, async () => {
+        await loadPeople()
+        renderMessages(false)
+      })
+      .subscribe()
+
+    // Online = signed in to DEBROD right now, on any tab.
+    presence = auth.channel('debrod-chat-online', { config: { presence: { key: me.id } } })
+    presence
+      .on('presence', { event: 'sync' }, () => { online = new Set(Object.keys(presence.presenceState())); renderMembers() })
+      .subscribe(async st => { if (st === 'SUBSCRIBED') await presence.track({ at: Date.now() }) })
+  }
+
+  // ── Rendering ──
+  function renderChannels() {
+    fill(chanList, 
+      channels.map(c => {
+        const n = unread[c.id] || 0
+        const on = current && c.id === current.id
+        return el('button', { type: 'button', class: `ch-chan ${on ? 'on' : ''} ${n && !on ? 'unread' : ''}`, onClick: () => open(c.id), 'aria-current': on ? 'true' : null },
+          el('span', { class: 'label' }, el('span', { class: 'hash' }, '#'), c.slug),
+          n > 0 && !on && el('span', { class: 'ch-unread' }, n > 99 ? '99+' : String(n)))
+      }),
+      Account.isAdmin() && el('button', { type: 'button', class: 'ch-plain ch-new-chan', onClick: () => channelForm(null) }, '+ New channel'))
+  }
+
+  function renderHead() {
+    titleEl.textContent = current ? `#${current.slug}` : 'Chat'
+    input.placeholder = current ? `Message #${current.slug}` : 'Message'
+    fill(topicEl, 
+      el('span', { class: 'grow', title: current ? current.topic : '' }, current ? (current.topic || 'No topic.') : ''),
+      current && Account.isAdmin() && el('button', { type: 'button', class: 'ch-plain', onClick: () => channelForm(current) }, 'Edit channel'))
+  }
+
+  function renderMe() {
+    if (!me) return
+    fill(mePanel, 
+      avatar(me, '', () => showProfile(me.id)),
+      el('div', { class: 'ch-me-text' },
+        el('span', { class: 'ch-me-name' }, me.display),
+        el('span', { class: 'ch-me-tag' }, me.tagline || `@${me.username}`)),
+      el('button', { type: 'button', class: 'ch-plain', onClick: editProfile, title: 'Edit your profile' }, 'Edit'))
+  }
+
+  function renderMembers() {
+    const all = [...people.values()].sort((a, b) => a.display.localeCompare(b.display))
+    const on = all.filter(p => online.has(p.id))
+    const off = all.filter(p => !online.has(p.id))
+    const row = p => el('button', { type: 'button', class: `ch-member ${online.has(p.id) ? 'on' : ''}`, onClick: () => showProfile(p.id) },
+      avatar(p, 'sm'),
+      el('span', { class: 'ch-member-text' },
+        el('span', { class: 'ch-member-name' }, p.display),
+        p.tagline && el('span', { class: 'ch-member-tag' }, p.tagline)))
+    fill(membersEl, 
+      el('p', { class: 'ch-group' }, `Online — ${on.length}`), on.map(row),
+      off.length > 0 && el('p', { class: 'ch-group' }, `Offline — ${off.length}`), off.map(row))
+  }
+
+  function renderMessages(toBottom) {
+    const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 90
+    const nodes = []
+    if (hasOlder) nodes.push(el('button', { type: 'button', class: 'ch-btn ch-older', onClick: older }, 'Load older messages'))
+    if (!hasOlder && current) {
+      nodes.push(el('div', { class: 'ch-welcome' },
+        el('p', { class: 'ch-welcome-title' }, `Welcome to #${current.slug}`),
+        el('p', null, current.topic || 'This is the start of the channel.'),
+        el('p', null, 'Be kind. Swears and slurs turn into *** on their own.')))
+    }
+    let prev = null
+    for (const m of messages) {
+      const d = new Date(m.created_at)
+      const sameDay = prev && new Date(prev.created_at).toDateString() === d.toDateString()
+      if (!sameDay) nodes.push(el('div', { class: 'ch-day' }, day(m.created_at)))
+      const grouped = sameDay && prev.sender === m.sender && d - new Date(prev.created_at) < GROUP_MS
+      nodes.push(messageEl(m, grouped))
+      prev = m
+    }
+    list.replaceChildren(...nodes)
+    if (toBottom || nearBottom) list.scrollTop = list.scrollHeight
+    const box = list.querySelector('.ch-edit textarea')
+    if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length) }
+  }
+
+  function messageEl(m, grouped) {
+    const p = who(m.sender)
+    const mine = m.sender === me.id
+    const canDelete = mine || Account.isAdmin()
+    // tabindex: tapping a message focuses it, which shows its tools on phones.
+    return el('article', { class: `ch-msg ${grouped ? 'grouped' : ''} ${mentionsMe(m.body) ? 'mention' : ''}`, tabindex: canDelete ? '-1' : null },
+      grouped
+        ? el('time', { class: 'ch-time-side', datetime: m.created_at, title: full(m.created_at) }, time(m.created_at))
+        : avatar(p, '', () => showProfile(m.sender)),
+      el('div', { class: 'ch-msg-main' },
+        !grouped && el('div', { class: 'ch-msg-head' },
+          el('button', { type: 'button', class: 'ch-name', onClick: () => showProfile(m.sender) }, p.display),
+          p.is_admin && el('span', { class: 'ch-badge' }, 'admin'),
+          el('time', { datetime: m.created_at, title: full(m.created_at) }, `${day(m.created_at) === 'Today' ? '' : `${day(m.created_at)} `}${time(m.created_at)}`)),
+        editing === m.id ? editBox(m) : el('p', { class: 'ch-body' }, rich(m.body),
+          m.edited_at && el('span', { class: 'ch-edited', title: full(m.edited_at) }, ' (edited)'))),
+      canDelete && editing !== m.id && el('div', { class: 'ch-tools' },
+        mine && el('button', { type: 'button', onClick: () => { editing = m.id; renderMessages(false) } }, 'Edit'),
+        el('button', { type: 'button', onClick: () => remove(m) }, 'Delete')))
+  }
+
+  function editBox(m) {
+    const box = el('textarea', { value: m.body, maxlength: 2000, rows: 2 })
+    const save = async () => {
+      const body = box.value.trim()
+      if (!body || body === m.body) { editing = null; return renderMessages(false) }
+      const { data, error } = await auth.from('debrod_chat').update({ body }).eq('id', m.id)
+        .select('id, channel_id, sender, body, created_at, edited_at').single()
+      if (error) { errEl.textContent = readable(error.message); return }
+      const i = messages.findIndex(x => x.id === m.id)
+      if (i !== -1) messages[i] = data
+      editing = null
+      renderMessages(false)
+    }
+    box.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { editing = null; renderMessages(false) }
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); save() }
+    })
+    setTimeout(() => autosize(box), 0)
+    box.addEventListener('input', () => autosize(box))
+    return el('div', { class: 'ch-edit' }, box,
+      el('div', { class: 'row' },
+        el('button', { type: 'button', class: 'ch-btn', onClick: save }, 'Save'),
+        el('button', { type: 'button', class: 'ch-plain', onClick: () => { editing = null; renderMessages(false) } }, 'Cancel'),
+        el('span', null, 'Enter saves, Esc cancels')))
+  }
+
+  // ── Sending, deleting ──
+  let sending = false
+  async function send(e) {
+    if (e) e.preventDefault()
+    const body = input.value.trim()
+    if (!body || sending || !current) return
+    sending = true
+    sendBtn.disabled = true
+    const { data, error } = await auth.from('debrod_chat').insert({ channel_id: current.id, sender: me.id, body })
+      .select('id, channel_id, sender, body, created_at, edited_at').single()
+    sending = false
+    sendBtn.disabled = false
+    if (error) { errEl.textContent = readable(error.message); return }
+    errEl.textContent = ''
+    input.value = ''
+    autosize(input)
+    if (data && data.channel_id === current.id && !messages.some(x => x.id === data.id)) messages.push(data)
+    renderMessages(true)
+    input.focus()
+  }
+
+  async function remove(m) {
+    const mine = m.sender === me.id
+    if (!confirm(mine ? 'Delete this message?' : `Delete ${who(m.sender).display}'s message?`)) return
+    const { error } = await auth.from('debrod_chat').delete().eq('id', m.id)
+    if (error) { errEl.textContent = readable(error.message); return }
+    messages = messages.filter(x => x.id !== m.id)
+    renderMessages(false)
+  }
+
+  // ── Dialogs ──
+  function modal(title, body, wide) {
+    modalEl.replaceChildren(el('section', { class: `ch-win ${wide ? 'wide' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, bar(title), body))
+    modalEl.hidden = false
+    const f = modalEl.querySelector('[autofocus]') || modalEl.querySelector('button')
+    if (f) f.focus()
+  }
+  function closeModal() {
+    modalEl.hidden = true
+    modalEl.replaceChildren()
+  }
+
+  function showProfile(id) {
+    const p = who(id)
+    if (p === NOBODY) return
+    const mine = id === me.id
+    modal('Profile', el('div', { class: 'ch-dialog ch-card' },
+      avatar(p, 'xl'),
+      el('div', null,
+        el('p', { class: 'ch-card-name' }, p.display),
+        el('p', { class: 'ch-card-user' }, `@${p.username}`, p.is_admin && el('span', { class: 'ch-badge' }, 'admin'),
+          online.has(id) ? ' · online' : '')),
+      p.tagline && el('p', { class: 'ch-card-tag' }, p.tagline),
+      el('div', { class: 'ch-card-bio' }, p.bio || (mine ? 'No bio yet. Tell people what you\'re into, what you study, what you play.' : 'No bio yet.')),
+      p.created_at && el('p', { class: 'ch-card-since' }, `Member since ${new Date(p.created_at).toLocaleDateString([], { month: 'long', year: 'numeric' })}`),
+      el('div', { class: 'row' },
+        mine && el('button', { type: 'button', class: 'ch-btn default', onClick: editProfile }, 'Edit profile'),
+        !mine && el('button', { type: 'button', class: 'ch-btn', onClick: () => { closeModal(); mention(p) } }, `Mention @${p.username}`),
+        el('button', { type: 'button', class: 'ch-btn', onClick: closeModal }, 'Close'))))
+  }
+
+  function mention(p) {
+    input.value = `${input.value.replace(/\s*$/, input.value ? ' ' : '')}@${p.username} `
+    autosize(input)
+    input.focus()
+  }
+
+  function editProfile() {
+    const d = { display: me.display, avatar: me.avatar || '🙂', color: safeColor(me.color), tagline: me.tagline || '', bio: me.bio || '' }
+    const err = el('p', { class: 'ch-err', role: 'status' })
+    const preview = el('div', { class: 'ch-preview' })
+    const drawPreview = () => fill(preview, avatar(d, ''),
+      el('span', { class: 'ch-member-text' },
+        el('span', { class: 'ch-member-name' }, d.display || ' '),
+        el('span', { class: 'ch-member-tag' }, d.tagline || `@${me.username}`)))
+    const count = (n, max) => el('small', null, `${n}/${max}`)
+    const field = (label, max, node, get) => {
+      const c = count(get().length, max)
+      node.addEventListener('input', () => { c.textContent = `${get().length}/${max}` })
+      return el('label', { class: 'ch-field' }, el('span', null, label, c), node)
+    }
+    const avatarIn = el('input', { value: d.avatar, maxlength: 8, 'aria-label': 'Avatar emoji', onInput: e => { d.avatar = e.target.value.trim() || '🙂'; drawEmojis(); drawPreview() } })
+    const emojis = el('div', { class: 'ch-emojis' })
+    const drawEmojis = () => fill(emojis, AVATARS.map(a => el('button', {
+      type: 'button', class: `ch-emoji ${d.avatar === a ? 'on' : ''}`, 'aria-label': a,
+      onClick: () => { d.avatar = a; avatarIn.value = a; drawEmojis(); drawPreview() },
+    }, a)))
+    const colors = el('div', { class: 'ch-colors' })
+    const drawColors = () => fill(colors, COLORS.map(c => el('button', {
+      type: 'button', class: `ch-color ${d.color === c ? 'on' : ''}`, style: `background: ${c}`, 'aria-label': `Colour ${c}`,
+      onClick: () => { d.color = c; drawColors(); drawPreview() },
+    })))
+    drawEmojis(); drawColors(); drawPreview()
+    const save = el('button', { type: 'submit', class: 'ch-btn default' }, 'Save')
+
+    async function submit(e) {
+      e.preventDefault()
+      if (!d.display.trim()) { err.textContent = 'Pick a display name.'; return }
+      save.disabled = true
+      err.textContent = ''
+      const { error } = await auth.rpc('debrod_update_me', { p_display: d.display, p_avatar: d.avatar, p_color: d.color, p_tagline: d.tagline, p_bio: d.bio })
+      save.disabled = false
+      if (error) { err.textContent = readable(error.message); return }
+      await Account.refreshProfile()
+      me = Object.assign({}, me, Account.profile())
+      await loadPeople()
+      renderMessages(false)
+      showProfile(me.id) // shows what was saved, filter and all
+    }
+
+    modal('Edit profile', el('form', { class: 'ch-dialog', onSubmit: submit },
+      preview,
+      field('Display name', 24, el('input', { value: d.display, maxlength: 24, autofocus: true, onInput: e => { d.display = e.target.value; drawPreview() } }), () => d.display),
+      el('div', { class: 'ch-field' }, el('span', null, 'Avatar', el('small', null, 'or type any emoji')), emojis, avatarIn),
+      el('div', { class: 'ch-field' }, el('span', null, 'Colour'), colors),
+      field('Status', 60, el('input', { value: d.tagline, maxlength: 60, placeholder: 'Cramming for chem, send snacks', onInput: e => { d.tagline = e.target.value; drawPreview() } }), () => d.tagline),
+      field('About you', 300, el('textarea', { value: d.bio, maxlength: 300, placeholder: 'What you study, what you play, what you\'re watching.', onInput: e => { d.bio = e.target.value } }), () => d.bio),
+      el('p', { class: 'ch-card-since' }, 'Swears and slurs in names, statuses and bios turn into ***.'),
+      err,
+      el('div', { class: 'row' }, el('button', { type: 'button', class: 'ch-btn', onClick: closeModal }, 'Cancel'), save)), true)
+  }
+
+  // Huddy: make, rename, re-topic or delete channels.
+  function channelForm(c) {
+    let slug = c ? c.slug : ''
+    let topic = c ? c.topic : ''
+    const err = el('p', { class: 'ch-err', role: 'status' })
+    const clean = s => s.toLowerCase().trim().replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').slice(0, 24)
+    async function submit(e) {
+      e.preventDefault()
+      const s = clean(slug)
+      if (s.length < 2) { err.textContent = 'Channel names are 2–24 letters, numbers or dashes.'; return }
+      const row = { slug: s, topic: topic.trim().slice(0, 120) }
+      const q = c
+        ? auth.from('debrod_channels').update(row).eq('id', c.id).select('id').single()
+        : auth.from('debrod_channels').insert(Object.assign(row, { position: channels.length + 1, created_by: me.id })).select('id').single()
+      const { data, error } = await q
+      if (error) { err.textContent = /duplicate/.test(error.message) ? `#${s} already exists.` : error.message; return }
+      closeModal()
+      await loadChannels()
+      open(data.id)
+    }
+    async function drop() {
+      if (!confirm(`Delete #${c.slug} and every message in it? This can't be undone.`)) return
+      const { error } = await auth.from('debrod_channels').delete().eq('id', c.id)
+      if (error) { err.textContent = error.message; return }
+      closeModal()
+      await loadChannels()
+      open(channels[0] && channels[0].id)
+    }
+    modal(c ? `#${c.slug}` : 'New channel', el('form', { class: 'ch-dialog', onSubmit: submit },
+      el('label', { class: 'ch-field' }, el('span', null, 'Name'),
+        el('input', { value: slug, maxlength: 24, autofocus: true, placeholder: 'homework-help', autocapitalize: 'none', onInput: e => { slug = e.target.value } })),
+      el('label', { class: 'ch-field' }, el('span', null, 'Topic'),
+        el('input', { value: topic, maxlength: 120, placeholder: 'What this channel is for', onInput: e => { topic = e.target.value } })),
+      err,
+      el('div', { class: 'row' },
+        c && el('button', { type: 'button', class: 'ch-btn', onClick: drop }, 'Delete channel'),
+        el('button', { type: 'button', class: 'ch-btn', onClick: closeModal }, 'Cancel'),
+        el('button', { type: 'submit', class: 'ch-btn default' }, c ? 'Save' : 'Create'))))
+  }
+
+  // ── The Chat tab's count ──
+  const unreadTotal = () => Object.values(unread).reduce((a, b) => a + b, 0)
+  function badge() {
+    const n = unreadTotal()
+    for (const b of document.querySelectorAll('[data-chat-unread]')) b.textContent = n ? `Chat (${n > 99 ? '99+' : n})` : 'Chat'
+  }
+
+  // ── Lifecycle ──
+  // Starts once you're signed in and approved (App.html render), so unread
+  // counts and "online" work from any tab.
+  async function start() {
+    if (started || !Account.ready()) return
+    started = true
+    auth = Account.client()
+    me = Object.assign({}, Account.profile())
+    renderMe()
+    try {
+      await Promise.all([loadChannels(), loadPeople()])
+    } catch (e) {
+      list.replaceChildren(el('p', { class: 'ch-note' }, `Chat isn't set up yet: ${e.message}`))
+      return
+    }
+    subscribe()
+    let saved = null
+    try { saved = localStorage.getItem(CHANNEL_KEY) } catch (e) { /* private mode */ }
+    open(saved)
+  }
+
+  function stop() {
+    if (!started) return
+    started = false
+    if (live) auth.removeChannel(live)
+    if (presence) { presence.untrack(); auth.removeChannel(presence) }
+    live = presence = null
+    channels = []
+    messages = []
+    people = new Map()
+    online = new Set()
+    unread = {}
+    current = null
+    closeModal()
+    fill(chanList, )
+    fill(membersEl, )
+    list.replaceChildren()
+  }
+
+  function show() {
+    visible = true
+    if (current) { unread[current.id] = 0; renderChannels(); badge() }
+    if (list.scrollHeight - list.scrollTop - list.clientHeight < 200) list.scrollTop = list.scrollHeight
+    if (window.matchMedia && window.matchMedia('(hover: hover)').matches) setTimeout(() => input.focus(), 0)
+  }
+
+  function hide() {
+    visible = false
+    if (!modalEl.hidden) closeModal()
+  }
+
+  return { root, start, stop, show, hide, unreadCount: unreadTotal }
+})()
+</script>

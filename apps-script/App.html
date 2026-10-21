@@ -311,6 +311,7 @@ const TAGLINES = {
   arcade: 'Home video computer system',
   study: 'Data processing division',
   admin: 'Personnel office · restricted',
+  chat: 'The bulletin board',
 }
 
 function header() {
@@ -323,6 +324,10 @@ function header() {
       tab('search', 'Search'),
       tab('arcade', 'Arcade'),
       tab('study', 'Study'),
+      typeof Chat !== 'undefined' && el('button', {
+        type: 'button', class: `link ${S.tab === 'chat' ? 'on' : ''}`, 'data-chat-unread': '',
+        onClick: () => { S.tab = 'chat'; render() },
+      }, Chat.unreadCount() ? `Chat (${Chat.unreadCount()})` : 'Chat'),
       Account.isAdmin() && el('button', {
         type: 'button', class: `link ${S.tab === 'admin' ? 'on' : ''}`, 'data-pending': '',
         onClick: () => { S.tab = 'admin'; render() },
@@ -375,6 +380,8 @@ let arcadePage = null
 // which holds the "online now" presence.
 let studyPage = null
 let homePage = null
+// And Chat (Chat.html), so a half-written message and your scroll stay put.
+let chatPage = null
 const studyMissing = () => el('div', { class: 'card stack' },
   el('p', { class: 'name' }, 'Study.html is missing'),
   el('p', { class: 'muted small' }, 'Add it in the Apps Script editor with + → HTML, named Study (no .html), paste in Study.html, and make sure Index has <?!= include(\'Study\') ?> after include(\'App\'). Then save and reload.'))
@@ -399,6 +406,7 @@ function bootLines(tab, first) {
     home: ['> mission-control --boot', 'checking link ......... OK', 'loading crew roster ... OK', 'reading the board ..... OK', 'ALL SYSTEMS NOMINAL'],
     search: ['DEBROD TELEVISION · CHANNEL 4', 'warming up the tubes ...... ok', 'adjusting the rabbit ears . ok', `tonight's listings ........ ${S.cfg && S.cfg.hasDebrid ? 'ready' : 'NO SIGNAL'}`, 'please stand by.'],
     arcade: ['HOME VIDEO COMPUTER SYSTEM', 'cartridge seated ......... ok', `${games || 'all'} games in the drawer`, 'difficulty switches ...... A / B', 'PRESS GAME RESET'],
+    chat: ['Welcome to DEBROD.', 'opening "Bulletin Board" ... ok', 'dialling everyone in ...... ok', 'say hi.'],
     admin: ['TELETYPE 33 · PERSONNEL OFFICE', 'unlocking the cabinet ...... ok', `files awaiting clearance ... ${typeof Account !== 'undefined' ? Account.pendingCount() : 0}`, 'READY.'],
     study: ['//STUDY    JOB (DEBROD),CLASS=A', '//STEP1    EXEC PGM=NOTEBOOK', sum ? `//ASSIGN   DD DUE=${(sum.open || []).length}${sum.overdue ? `,LATE=${sum.overdue}` : ''}` : '//DECKS    DD DSN=FLASH.CARDS', sum && sum.cardsDue ? `//REVIEW   DD CARDS=${sum.cardsDue}` : '//REVIEW   DD SPACED=YES', 'IEF142I STUDY - STEP WAS EXECUTED'],
   }
@@ -447,6 +455,9 @@ function render() {
   const arcade = S.tab === 'arcade'
   const study = S.tab === 'study'
   const home = S.tab === 'home' && typeof Hub !== 'undefined'
+  const hasChat = typeof Chat !== 'undefined'
+  const chat = S.tab === 'chat' && hasChat
+  if (hasChat) Chat.start()
   backdrop.hidden = false
   if (!homePage && typeof Hub !== 'undefined') homePage = el('main', { class: 'page mc' }, el('header'), Hub.root)
   if (homePage) {
@@ -464,9 +475,15 @@ function render() {
   studyPage.firstElementChild.replaceWith(header())
   studyPage.hidden = !study
   if (hasStudy) { if (study) Study.show(); else Study.hide() }
+  if (hasChat) {
+    if (!chatPage || !chatPage.isConnected) chatPage = el('main', { class: 'page t-chat' }, el('header'), Chat.root)
+    chatPage.firstElementChild.replaceWith(header())
+    chatPage.hidden = !chat
+    if (chat) Chat.show(); else Chat.hide()
+  }
 
-  for (const n of [...app.children]) if (n !== arcadePage && n !== studyPage && n !== homePage) n.remove()
-  const search = arcade || study || home ? null
+  for (const n of [...app.children]) if (n !== arcadePage && n !== studyPage && n !== homePage && n !== chatPage) n.remove()
+  const search = arcade || study || home || chat ? null
     : S.tab === 'admin' && Account.isAdmin()
       ? el('main', { class: 'page t-members' }, header(), Account.adminView())
       : el('main', { class: 'page t-search' }, header(), view())
@@ -474,7 +491,8 @@ function render() {
   if (homePage && !homePage.isConnected) app.append(homePage)
   if (!arcadePage.isConnected) app.append(arcadePage)
   if (!studyPage.isConnected) app.append(studyPage)
-  const f = (search || (home ? homePage : study ? studyPage : arcadePage)).querySelector('[autofocus]')
+  if (chatPage && !chatPage.isConnected) app.append(chatPage)
+  const f = (search || (home ? homePage : study ? studyPage : chat ? chatPage : arcadePage)).querySelector('[autofocus]')
   if (f) f.focus()
 }
 

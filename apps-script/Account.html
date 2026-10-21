@@ -26,6 +26,8 @@ const Account = (() => {
   let resetFor = null
   let resetDraft = ''
   let adminError = null
+  let words = null // the chat filter, loaded when the Members tab opens
+  let wordDraft = ''
 
   const email = u => `${u.trim().toLowerCase()}@${EMAIL_DOMAIN}`
 
@@ -62,7 +64,7 @@ const Account = (() => {
     const s = await session()
     if (!s) return null
     const { data, error } = await auth.from('debrod_profiles')
-      .select('id, username, display, status, is_admin').eq('id', s.user.id).maybeSingle()
+      .select('id, username, display, status, is_admin, avatar, color, tagline, bio, created_at').eq('id', s.user.id).maybeSingle()
     if (error) throw new Error(error.message)
     return data
   }
@@ -227,6 +229,8 @@ const Account = (() => {
     stopWaiting()
     if (adminChannel) auth.removeChannel(adminChannel)
     adminChannel = null
+    words = null
+    if (typeof Chat !== 'undefined') Chat.stop()
     if (inRoom) exitRoom()
     S.tab = 'home'
     try { await auth.auth.signOut() } catch (e) { /* already gone */ }
@@ -340,7 +344,55 @@ const Account = (() => {
       el('div', { class: 'stack tight' }, rejected.map(p => personRow(p, [
         el('button', { type: 'button', disabled: off(p.id), onClick: () => decide(p, 'approved') }, 'Approve after all'),
         el('button', { type: 'button', disabled: off(p.id), onClick: () => remove(p) }, 'Delete'),
-      ]))))
+      ]))),
+
+      filterView())
+  }
+
+  // ── Chat filter (admins) ──
+  // Words in debrod_banned_words become *** in messages, names, status
+  // lines and bios. The database does the masking; this only edits the list.
+
+  async function loadWords() {
+    const { data, error } = await auth.from('debrod_banned_words').select('word').order('word')
+    if (error) adminError = error.message
+    else words = (data || []).map(w => w.word)
+    if (S.tab === 'admin') render()
+  }
+
+  async function addWord(e) {
+    e.preventDefault()
+    const w = wordDraft.trim().toLowerCase()
+    if (!/^[a-z]{2,30}$/.test(w)) { adminError = 'Filter words are 2–30 letters, no spaces.'; return render() }
+    const { error } = await auth.from('debrod_banned_words').insert({ word: w })
+    adminError = error ? (/duplicate/.test(error.message) ? `"${w}" is already on the list.` : error.message) : null
+    if (!error) wordDraft = ''
+    loadWords()
+  }
+
+  async function dropWord(w) {
+    const { error } = await auth.from('debrod_banned_words').delete().eq('word', w)
+    if (error) adminError = error.message
+    loadWords()
+  }
+
+  function filterView() {
+    if (words === null) { loadWords(); words = [] }
+    return el('div', { class: 'stack' },
+      el('p', { class: 'name' }, `Chat filter (${words.length})`),
+      el('p', { class: 'muted small' }, 'These become *** in chat messages, display names, status lines and bios, whole words only. It also catches l33t spellings (sh1t, f@g), dots between letters and stretched letters. Removing a word doesn\'t unmask anything already posted.'),
+      el('form', { class: 'row filter-add', onSubmit: addWord },
+        el('input', { placeholder: 'Add a word', maxlength: 30, value: wordDraft, autocapitalize: 'none', spellcheck: 'false', onInput: e => { wordDraft = e.target.value } }),
+        el('button', { type: 'submit' }, 'Add')),
+      el('div', { class: 'filter-words' }, words.map(w => el('span', { class: 'filter-word' }, w,
+        el('button', { type: 'button', 'aria-label': `Remove ${w}`, title: 'Remove', onClick: () => dropWord(w) }, '×')))))
+  }
+
+  // Re-read your own profile after editing it (Chat.html).
+  async function refreshProfile() {
+    const p = await loadProfile()
+    if (p) profile = p
+    return profile
   }
 
   return {
@@ -349,6 +401,8 @@ const Account = (() => {
     signOut,
     adminView,
     pendingCount,
+    refreshProfile,
+    client: () => auth,
     ready: () => ready,
     profile: () => profile,
     isAdmin: () => !!(ready && profile && profile.is_admin),

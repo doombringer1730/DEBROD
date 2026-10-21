@@ -11,6 +11,7 @@ keys live in the script's properties instead of environment variables.
 | `Code.gs` | Server side: the menu, settings, TMDB lookups, Torrentio URLs and room codes. |
 | `Index.html` | The page shell. |
 | `Account.html` | Sign in, sign up, the approval queue and Huddy's Members tab. |
+| `Chat.html` | The public chat: channels, messages, profiles and who's online. |
 | `App.html` | The search, player and watch-together room (from `app/browser.tsx` and `app/watch/[room]/room.tsx`). |
 | `Hub.html` | Home: the hub, styled as a 70s mission-control console. |
 | `Study.html` | The Study tab: assignments with due dates and turn-in, flashcards, coins and the shop (from Hiranda's old Study section). |
@@ -32,7 +33,7 @@ keys live in the script's properties instead of environment variables.
 
 1. Create a Google Doc, then open **Extensions → Apps Script**.
 2. Replace `Code.gs` with the one here. Add the HTML files with **+ → HTML**,
-   named `Index`, `App`, `Account`, `Themes`, `Hub`, `Study`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
+   named `Index`, `App`, `Account`, `Chat`, `Themes`, `Hub`, `Study`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
    one in. To edit `appsscript.json`, turn on **Project Settings → Show
    "appsscript.json" manifest file in editor**.
 3. Save, reload the doc, and open **DEBROD → Settings**. Approve the
@@ -80,6 +81,29 @@ Logins are usernames; behind the scenes each is a Supabase Auth user with a
 made-up `@debrod.example.com` address nobody receives, so there's no email
 reset. Huddy resets passwords from Members instead.
 
+## Chat
+
+**Chat** is a public, Discord-style chat for everyone approved: channels
+down the left (#general, #study-hall, #games, #watch-party, #off-topic),
+messages in the middle, and the members list on the right with who's
+online. Messages arrive live; you can edit or delete your own (Huddy can
+delete anyone's), `@username` highlights the message for that person,
+and links work. The Chat tab counts what came in while you were elsewhere.
+
+Everyone has a **profile**: an avatar emoji and colour, a status line and
+a short bio. Click anyone's name or avatar to see theirs; edit yours from
+the bottom of the channel list. Huddy can add, rename and delete channels.
+
+### The filter
+
+Swears and slurs turn into `***` in messages, display names, status lines
+and bios. The database does it as things are saved, so nothing gets around
+it: whole words only (so "class", "spicy" and "Scunthorpe" are fine), and it
+catches l33t spellings (`sh1t`, `f@g`), dots between letters (`f.u.c.k`),
+stretched letters (`fuuuck`) and endings (`-ing`, `-er`, `-s`). Huddy edits
+the word list under **Members → Chat filter**. Posting more than 6
+messages in 10 seconds gets a "Slow down" too.
+
 ## Home
 
 DEBROD opens on **Home**, a hub dressed as a 70s mission-control console.
@@ -102,6 +126,7 @@ which lives in `Study.html`):
 | Search | A 1958 TV listings magazine: newsprint, two inks slightly off register, a starburst masthead, every poster a walnut TV set. |
 | Arcade | A 1977 woodgrain console: ribbed black plastic, the rainbow stripe, aluminium switches, games as cartridges, and the game itself on a woodgrain TV. |
 | Study | A 1964 punch-card computer room: manila cards with the corner cut, green-bar printout, keypunch keys, and flashcards with holes punched. |
+| Chat | A 1984 one-bit desktop: dithered grey, white windows with pinstriped title bars, inverted selections. The only colour is people's avatars. |
 | Members | A 1961 personnel file: a manila folder, typewritten index cards and rubber stamps for who's cleared. |
 | Sign in | A Space Clipper boarding pass with a torn-off stub. |
 

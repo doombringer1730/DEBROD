@@ -1,6 +1,6 @@
 -- DEBROD accounts, chats, shared deadlines and per-user Study, for the
 -- Apps Script version. Run this once in your DEBROD Supabase project
--- (SQL Editor → New query → paste → Run). It's safe to run again.
+-- (SQL Editor → New query → paste → Run) in a fresh project.
 --
 -- How it fits together:
 -- - Logins are Supabase Auth users, created by the debrod-auth Edge Function
@@ -266,6 +266,196 @@ do $$
 declare t text;
 begin
   foreach t in array array['debrod_messages', 'debrod_members', 'debrod_deadlines', 'debrod_profiles'] loop
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
+
+-- ══ Public chat, profiles and the word filter ════════════════════════════
+-- Discord-style channels every approved person can read and post in, a
+-- profile on every account (avatar emoji, colour, status line, bio), and a
+-- filter Huddy keeps: banned words in messages, display names, status lines
+-- and bios become ***, whole words only, catching l33t spellings, dots
+-- between letters, stretched letters and common endings.
+
+-- ── Profiles ─────────────────────────────────────────────────────────────
+alter table public.debrod_profiles
+  add column if not exists avatar text not null default '🙂' check (char_length(avatar) between 1 and 8),
+  add column if not exists color text not null default '#2d5fa6' check (color ~ '^#[0-9a-fA-F]{6}$'),
+  add column if not exists tagline text not null default '' check (char_length(tagline) <= 60),
+  add column if not exists bio text not null default '' check (char_length(bio) <= 300);
+
+-- ── The filter ───────────────────────────────────────────────────────────
+create or replace function public.debrod_word_pattern(w text) returns text
+language plpgsql immutable set search_path = public as $$
+declare
+  core text := '';
+  c text;
+  cls text;
+begin
+  foreach c in array regexp_split_to_array(lower(w), '') loop
+    cls := case c
+      when 'a' then '[a@4]' when 'b' then '[b8]' when 'c' then '[ck(]' when 'e' then '[e3]'
+      when 'g' then '[g9]' when 'i' then '[i1!|]' when 'l' then '[l1|]' when 'o' then '[o0]'
+      when 's' then '[s5$]' when 't' then '[t7+]' else c end;
+    core := core || case when core = '' then '' else '[^[:alnum:][:space:]_]*' end || cls || '+';
+  end loop;
+  -- Whole words only (plus common endings; _ counts as part of a word, so
+  -- @usernames are left alone), so "class", "spicy" and "Scunthorpe" pass.
+  -- Words that need a -y form are listed on their own.
+  return '(^|[^[:alnum:]_])(' || core || '(s|es|ed|er|ers|ing|in|z)?)(?=[^[:alnum:]_]|$)';
+end $$;
+
+create table if not exists public.debrod_banned_words (
+  word text primary key check (word ~ '^[a-z]{2,30}$'),
+  pattern text not null default '',
+  added_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table public.debrod_banned_words enable row level security;
+
+create or replace function public.debrod_set_word_pattern() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  new.word := lower(new.word);
+  new.pattern := public.debrod_word_pattern(new.word);
+  new.added_by := coalesce(new.added_by, auth.uid());
+  return new;
+end $$;
+create or replace trigger debrod_set_word_pattern before insert or update on public.debrod_banned_words
+  for each row execute function public.debrod_set_word_pattern();
+
+create or replace function public.debrod_clean(t text) returns text
+language plpgsql stable security definer set search_path = public as $$
+declare
+  p text;
+begin
+  if t is null or t = '' then return t; end if;
+  for p in select pattern from public.debrod_banned_words loop
+    t := regexp_replace(t, p, '\1***', 'gi');
+  end loop;
+  return t;
+end $$;
+
+-- Only Huddy sees or changes the list (Members → Chat filter).
+create policy "admins read the filter" on public.debrod_banned_words for select to authenticated using (public.debrod_admin());
+create policy "admins add to the filter" on public.debrod_banned_words for insert to authenticated with check (public.debrod_admin());
+create policy "admins remove from the filter" on public.debrod_banned_words for delete to authenticated using (public.debrod_admin());
+
+-- A starting list: common swears and slurs. Huddy can add or remove words.
+insert into public.debrod_banned_words (word) values
+ ('fuck'),('fucky'),('motherfucker'),('fuckface'),('fuckwit'),('shit'),('shitty'),('bullshit'),('shithead'),('dipshit'),
+ ('bitch'),('bitchy'),('bastard'),('asshole'),('ass'),('arse'),('arsehole'),('dumbass'),('jackass'),('dick'),('dickhead'),
+ ('cock'),('cocksucker'),('pussy'),('cunt'),('twat'),('wanker'),('prick'),('slut'),('slutty'),('whore'),('piss'),('pissy'),
+ ('bollocks'),('douche'),('douchebag'),('dildo'),('blowjob'),('handjob'),('jizz'),('porn'),('nigger'),('nigga'),('faggot'),
+ ('fag'),('retard'),('tranny'),('chink'),('spic'),('kike'),('wetback'),('dyke'),('gook'),('coon'),('beaner'),('paki'),('kys')
+on conflict do nothing;
+
+create or replace function public.debrod_clean_profile() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  new.display := left(public.debrod_clean(new.display), 24);
+  new.tagline := left(public.debrod_clean(new.tagline), 60);
+  new.bio := left(public.debrod_clean(new.bio), 300);
+  return new;
+end $$;
+create or replace trigger debrod_clean_profile before insert or update on public.debrod_profiles
+  for each row execute function public.debrod_clean_profile();
+
+-- Your own profile: only these fields, only while approved.
+create or replace function public.debrod_update_me(p_display text, p_avatar text, p_color text, p_tagline text, p_bio text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.debrod_approved() then raise exception 'not approved'; end if;
+  if coalesce(trim(p_display), '') = '' then raise exception 'Pick a display name.'; end if;
+  update public.debrod_profiles set
+    display = left(trim(p_display), 24),
+    avatar = coalesce(nullif(left(trim(p_avatar), 8), ''), avatar),
+    color = case when p_color ~ '^#[0-9a-fA-F]{6}$' then p_color else color end,
+    tagline = left(coalesce(trim(p_tagline), ''), 60),
+    bio = left(coalesce(trim(p_bio), ''), 300)
+  where id = auth.uid();
+end $$;
+
+-- ── Channels and messages ────────────────────────────────────────────────
+create table if not exists public.debrod_channels (
+  id uuid primary key default gen_random_uuid(),
+  slug text not null unique check (slug ~ '^[a-z0-9-]{2,24}$'),
+  topic text not null default '' check (char_length(topic) <= 120),
+  position integer not null default 100,
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table public.debrod_channels enable row level security;
+create policy "approved people see channels" on public.debrod_channels for select to authenticated using (public.debrod_approved());
+create policy "admins add channels" on public.debrod_channels for insert to authenticated with check (public.debrod_admin());
+create policy "admins edit channels" on public.debrod_channels for update to authenticated using (public.debrod_admin()) with check (public.debrod_admin());
+create policy "admins remove channels" on public.debrod_channels for delete to authenticated using (public.debrod_admin());
+
+create table if not exists public.debrod_chat (
+  id bigint generated always as identity primary key,
+  channel_id uuid not null references public.debrod_channels (id) on delete cascade,
+  sender uuid references auth.users (id) on delete cascade,
+  body text not null check (char_length(body) between 1 and 2000),
+  created_at timestamptz not null default now(),
+  edited_at timestamptz
+);
+create index if not exists debrod_chat_by_channel on public.debrod_chat (channel_id, created_at desc);
+create index if not exists debrod_chat_by_sender on public.debrod_chat (sender, created_at desc);
+alter table public.debrod_chat enable row level security;
+create policy "approved people read chat" on public.debrod_chat for select to authenticated using (public.debrod_approved());
+create policy "approved people post as themselves" on public.debrod_chat for insert to authenticated
+  with check (sender = auth.uid() and public.debrod_approved());
+create policy "edit your own messages" on public.debrod_chat for update to authenticated
+  using (sender = auth.uid() and public.debrod_approved()) with check (sender = auth.uid());
+create policy "delete your own, or any if admin" on public.debrod_chat for delete to authenticated
+  using (public.debrod_approved() and (sender = auth.uid() or public.debrod_admin()));
+
+insert into public.debrod_channels (slug, topic, position) values
+  ('general', 'Say hi. Be nice.', 1),
+  ('study-hall', 'Homework help, study buddies, what''s due.', 2),
+  ('games', 'Arcade scores, Showdown teams, who''s up for a round.', 3),
+  ('watch-party', 'What are we watching tonight?', 4),
+  ('off-topic', 'Anything else.', 5)
+on conflict (slug) do nothing;
+
+-- New messages: filtered, stamped now, and no more than 6 in 10 seconds.
+-- Edits: only the text changes, and it's filtered again.
+create or replace function public.debrod_chat_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' then
+    if (select count(*) from public.debrod_chat where sender = new.sender and created_at > now() - interval '10 seconds') >= 6 then
+      raise exception 'Slow down a little.';
+    end if;
+    new.created_at := now();
+    new.edited_at := null;
+  else
+    new.channel_id := old.channel_id;
+    new.sender := old.sender;
+    new.created_at := old.created_at;
+    new.edited_at := case when new.body is distinct from old.body then now() else old.edited_at end;
+  end if;
+  new.body := left(trim(public.debrod_clean(new.body)), 2000);
+  if new.body = '' then raise exception 'Say something first.'; end if;
+  return new;
+end $$;
+create or replace trigger debrod_chat_guard before insert or update on public.debrod_chat
+  for each row execute function public.debrod_chat_guard();
+
+-- ── Grants and live updates ──────────────────────────────────────────────
+grant select, insert, delete on public.debrod_banned_words to authenticated;
+grant select, insert, update, delete on public.debrod_channels to authenticated;
+grant select, insert, update, delete on public.debrod_chat to authenticated;
+revoke all on public.debrod_banned_words, public.debrod_channels, public.debrod_chat from anon;
+revoke execute on function public.debrod_update_me(text, text, text, text, text), public.debrod_clean(text) from anon, public;
+grant execute on function public.debrod_update_me(text, text, text, text, text), public.debrod_clean(text) to authenticated;
+revoke execute on function public.debrod_clean_profile(), public.debrod_set_word_pattern(), public.debrod_chat_guard() from anon, authenticated, public;
+do $$
+declare t text;
+begin
+  foreach t in array array['debrod_chat', 'debrod_channels'] loop
     if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
       execute format('alter publication supabase_realtime add table public.%I', t);
     end if;

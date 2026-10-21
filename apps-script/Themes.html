@@ -242,6 +242,15 @@ body:has(.page.t-members:not([hidden])) { color: #2c2a26; }
 .t-members .actions .together:hover:not(:disabled) { background: var(--tm-red); border-color: var(--tm-red); color: #fff; }
 .t-members .actions input { width: 170px; background: transparent; border: none; border-bottom: 2px solid var(--tm-brown); border-radius: 0; padding: 6px 2px; font: 15px 'Special Elite', monospace; color: var(--tm-ink); caret-color: var(--tm-red); }
 .t-members .actions input:focus { box-shadow: none; border-bottom-color: var(--tm-red); }
+.t-members .filter-add input { flex: 1; min-width: 0; background: var(--tm-card); border: none; border-bottom: 2px solid var(--tm-brown); border-radius: 0; padding: 7px 8px; font: 15px 'Special Elite', monospace; color: var(--tm-ink); }
+.t-members input::placeholder { color: #9a8c6c; }
+.t-members .filter-add input:focus { box-shadow: none; border-bottom-color: var(--tm-red); }
+.t-members .filter-add button { font: 600 12px 'Oswald', sans-serif; letter-spacing: 0.14em; text-transform: uppercase; color: var(--tm-brown); background: none; border: 2px solid var(--tm-brown); border-radius: 2px; box-shadow: none; }
+.t-members .filter-add button:hover:not(:disabled) { background: var(--tm-brown); color: var(--tm-card); border-color: var(--tm-brown); box-shadow: none; }
+.t-members .filter-words { display: flex; flex-wrap: wrap; gap: 6px; }
+.t-members .filter-word { display: inline-flex; align-items: center; gap: 2px; padding: 2px 2px 2px 9px; font: 14px 'Special Elite', monospace; color: var(--tm-ink); background: var(--tm-card); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.18); }
+.t-members .filter-word button { padding: 0 6px; font: 700 16px/1 'Oswald', sans-serif; color: var(--tm-red); background: none; border: none; box-shadow: none; }
+.t-members .filter-word button:hover:not(:disabled) { color: #fff; background: var(--tm-red); box-shadow: none; }
 @media (max-width: 760px) {
   .t-members .stream.pending::after, .t-members .stream.approved::after, .t-members .stream.rejected::after {
     position: static; order: -1; align-self: flex-start; transform: rotate(-3deg); margin-bottom: -4px; font-size: 10px; }
