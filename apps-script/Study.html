@@ -341,7 +341,7 @@ const Study = (() => {
   const INTERVALS = [1, 2, 4, 7, 15, 30] // Leitner boxes, in days
   const DEFAULT_GOAL = 500
   const QUESTION_SECONDS = 15
-  const MODE_LABEL = { quiz: 'Quiz', write: 'Write', learn: 'Learn', match: 'Match', review: 'Review', assignment: 'Turned in' }
+  const MODE_LABEL = { quiz: 'Quiz', write: 'Write', learn: 'Learn', match: 'Match', review: 'Review', assignment: 'Turned in', focus: 'Focus session' }
   // Hiranda's coupons were for your partner; here they're rewards for you.
   const PRESETS = [
     { emoji: '🎮', title: '30 minutes in the Arcade, guilt-free', cost: 20 },
@@ -785,6 +785,18 @@ const Study = (() => {
       if (target) setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
     }
   }
+  // What Focus.html needs from Study: recording a session, and redrawing.
+  const focusUi = {
+    record: (minutes, ms) => recordAttempt(null, 'focus', 0, 0, minutes, ms),
+    pop: t => pop(t),
+    redraw: () => { if (visible && view.name === 'home') render() },
+    focusToday: () => {
+      const today = dayKey()
+      const list = D.attempts.filter(a => a.mode === 'focus' && dayOf(a.at) === today)
+      return { minutes: Math.round(list.reduce((t, a) => t + (a.ms || 0), 0) / 60000), sessions: list.length }
+    },
+  }
+
   // What Classes.html needs from Study to draw its pages.
   const classUi = {
     go: v => go(v),
@@ -844,10 +856,11 @@ const Study = (() => {
             el('div', { class: 'st-stat' }, el('span', { class: 'st-sub' }, 'Best week'), el('b', { class: 'st-xp' }, `${s.bestWeek.toLocaleString()} XP`)),
             el('div', { class: 'st-stat' }, el('span', { class: 'st-sub' }, 'Study streak'), el('b', null, `🔥 ${s.streak} day${s.streak === 1 ? '' : 's'}`)),
             el('div', { class: 'st-stat' }, el('span', { class: 'st-sub' }, 'All-time'), el('b', { class: 'st-xp' }, `${s.xp.toLocaleString()} XP`)))),
-        el('div', { class: 'st-w st-span2' }, el('h2', null, '🕘 Activity'), activityLog()),
+        typeof Focus !== 'undefined' && Focus.panel(focusUi),
         el('div', { class: 'st-w st-span2', 'data-section': 'assignments' }, assignmentsPanel()),
         el('div', { class: 'st-w st-span2', 'data-section': 'calendar' }, calendarWidget()),
-        classesPanel()),
+        classesPanel(),
+        el('div', { class: 'st-w st-span4' }, el('h2', null, '🕘 Activity'), activityLog())),
       el('section', { class: 'stack tight', 'data-section': 'decks' },
         el('div', { class: 'st-section-head' },
           el('h2', { class: 'st-label' }, '🗂️ Flashcard sets'),
@@ -927,8 +940,10 @@ const Study = (() => {
         if (wrong > 0 && GRADED.has(a.mode)) chips.push(el('span', { class: 'c st-life' }, `❤️−${wrong}`))
         const deck = a.deckId ? deckById(a.deckId) : null
         const label = MODE_LABEL[a.mode] || a.mode
-        const text = a.mode === 'assignment' ? 'Turned in an assignment' : `${label}${a.total > 0 ? ` · ${a.correct}/${a.total}` : ''}${deck ? ` · ${deck.title}` : a.mode === 'review' ? ' · all sets' : ''}`
-        return { emoji: a.mode === 'assignment' ? '✅' : '📚', text, chips, when: a.at }
+        const text = a.mode === 'assignment' ? 'Turned in an assignment'
+          : a.mode === 'focus' ? `Focused ${Math.round((a.ms || 0) / 60000)} min`
+            : `${label}${a.total > 0 ? ` · ${a.correct}/${a.total}` : ''}${deck ? ` · ${deck.title}` : a.mode === 'review' ? ' · all sets' : ''}`
+        return { emoji: a.mode === 'assignment' ? '✅' : a.mode === 'focus' ? '⏱' : '📚', text, chips, when: a.at }
       }),
       ...D.coupons.map(c => ({ emoji: c.emoji || '🎁', text: `Bought “${c.title}”`, chips: [el('span', { class: 'c st-coin' }, `🪙−${c.cost}`)], when: c.at })),
     ].sort((a, b) => b.when.localeCompare(a.when)).slice(0, 14)

@@ -214,6 +214,13 @@ const Hub = (() => {
       joinRoom({ preventDefault() {} })
       return
     }
+    if (a.game === 'study') {
+      S.tab = 'study'
+      render()
+      if (typeof Focus !== 'undefined') Focus.joinRoom(a.code)
+      if (typeof Study !== 'undefined' && Study.open) Study.open('home')
+      return
+    }
     S.tab = 'arcade'
     render()
     Arcade.open(a.game, { code: a.code })
@@ -243,8 +250,19 @@ const Hub = (() => {
       el('span', { class: 'hub-lamp' }, el('span', { class: `hub-led ${online && subscribed ? 'green' : online ? 'amber' : ''}` }), online && subscribed ? 'Link' : online ? 'Linking' : 'Offline'),
       online && el('span', { class: 'hub-lamp' }, el('span', { class: `hub-led ${others.length ? 'green' : ''}` }), `Crew ${others.length}`),
       sum && el('span', { class: 'hub-lamp' }, el('span', { class: `hub-led ${overdue ? 'red' : due ? 'amber' : 'green'}` }), overdue ? `${overdue} overdue` : due ? `${due} due` : 'All clear'),
+      focusLamp(),
       el('span', { class: 'grow' }),
       el('span', { class: 'hub-clock', 'aria-label': 'Time' }, clockText()))
+  }
+
+  // A lamp while a focus session or break is running (Focus.html).
+  function focusLamp() {
+    const f = typeof Focus !== 'undefined' && Focus.status()
+    if (!f) return null
+    const m = Math.ceil(f.left / 60000)
+    return el('button', { type: 'button', class: 'hub-lamp link', onClick: () => { S.tab = 'study'; render() } },
+      el('span', { class: `hub-led ${f.phase === 'focus' && !f.paused ? 'green' : 'amber'}` }),
+      `${f.phase === 'focus' ? 'Focus' : 'Break'} ${f.paused ? 'paused' : `${m} min left`}${f.room ? ` · ${f.room === 'HALL' ? 'Study hall' : f.room}` : ''}`)
   }
 
   function greeting() {
