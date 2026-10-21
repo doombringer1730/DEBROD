@@ -570,7 +570,7 @@ function showdown(host, ctx, opts) {
     endMatch()
     const foe = extra.foe || 'CPU'
     const brain = extra.brain || level
-    const view = viewer('p1', { format: fid, me: name, foe, vsCpu: true, banner: extra.banner || `CPU: ${levelName(level)}` }, {
+    const view = viewer('p1', { format: fid, me: name, foe, vsCpu: true, level: extra.brain ? null : level, floor: extra.floor, banner: extra.banner || `CPU: ${levelName(level)}` }, {
       choose: choice => sim.choose('p1', choice),
       forfeit: () => sim.forfeit('p1'),
       again: extra.again || (() => startCpu()),
@@ -614,7 +614,7 @@ function showdown(host, ctx, opts) {
     const names = Object.assign({ p1: name }, SHOWDOWN_CPU_NAMES, isMulti(format) ? { p3: 'Partner Mae' } : {})
     const fid = format
     const T = teams || Object.fromEntries(SHOWDOWN_FOUR.map(x => [x, fourTeam(fid)]))
-    const view = viewer('p1', { format: fid, me: name, foe: 'the CPUs', names, vsCpu: true, banner: `CPUs: ${levelName(level)}` }, {
+    const view = viewer('p1', { format: fid, me: name, foe: 'the CPUs', names, vsCpu: true, level, banner: `CPUs: ${levelName(level)}` }, {
       choose: choice => sim.choose('p1', choice),
       forfeit: () => sim.forfeit('p1'),
       again: extra.again || (() => startCpu()),
@@ -799,6 +799,7 @@ function showdown(host, ctx, opts) {
     let outcome = null
     cpuBattle('debrod-tower', PS.Teams.pack(tower.team), PS.Teams.pack(cpuSets), {
       foe,
+      floor,
       // Sharper every floor; it thinks like Hard from floor 4, and bosses play at Expert.
       brain: boss ? SHOWDOWN_BRAINS.expert
         : Object.assign({}, floor >= 4 ? SHOWDOWN_BRAINS.hard : SHOWDOWN_BRAINS.normal, { skill: Math.min(0.95, 0.62 + floor * 0.04) }),
@@ -1036,6 +1037,26 @@ function showdown(host, ctx, opts) {
       }
       return `move ${c.j + 1}${target}${mech}`
     }).join(', ')
+  }
+
+  // Every finished battle goes on the Home leaderboard (debrod_pk_results),
+  // when you're signed in. Losing the report just means it isn't counted.
+  function report(info, kind) {
+    const auth = typeof Account !== 'undefined' && Account.ready() ? Account.client() : null
+    const who = auth && Account.profile()
+    if (!who) return
+    const row = {
+      user_id: who.id,
+      kind: info.format === 'debrod-tower' ? 'tower' : info.vsCpu ? 'cpu' : 'online',
+      level: info.vsCpu && info.level ? info.level : null,
+      format: String(info.format).slice(0, 60),
+      result: kind === 'win' ? 'win' : kind === 'lose' ? 'lose' : 'tie',
+      floor: info.floor || null,
+    }
+    auth.from('debrod_pk_results').insert(row).then(({ error }) => {
+      if (error) console.warn('Showdown: result not counted:', error.message)
+      else if (typeof Hub !== 'undefined' && Hub.refresh) Hub.refresh(true)
+    })
   }
 
   // ── Online: the host runs the battle; the guest and spectators follow ──
@@ -2631,6 +2652,7 @@ function showdown(host, ctx, opts) {
         r[kind === 'win' ? 'w' : kind === 'lose' ? 'l' : 't']++
         rec[info.format] = r
         pkStore.set('record', rec)
+        report(info, kind)
       }
     }
 

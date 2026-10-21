@@ -289,6 +289,13 @@ battle, the guest sends their moves, and anyone else in the room watches.
 [`showdown/`](showdown) and loads from jsDelivr the first time (about 1 MB).
 Sprites and sound come from Showdown's own servers.
 
+**CPU difficulty** (on the Showdown menu, remembered): Easy picks almost at
+random; Normal goes for super-effective hits; Hard works out real damage,
+goes for knockouts, uses status moves only when they'd help and switches
+into the best matchup; Expert does all that without ever slipping, and
+won't attack into Levitate or Water Absorb. It applies to every CPU,
+four-player and draft ones included. The Battle Tower ramps on its own.
+
 ### Built-in Supabase
 
 `DEFAULT_SUPABASE_URL` and `DEFAULT_SUPABASE_ANON_KEY` at the top of
@@ -297,6 +304,14 @@ can ship ready for watch together and Scribble. They point at DEBROD's own
 Supabase project (`zppygyfzbwbusidmqlru`); the publishable key is meant for
 browsers. Everyone who opens your DEBROD uses your settings, so friends
 never need a key of their own.
+
+### Pokémon leaderboard
+
+Home's **Pokémon leaderboard** ranks everyone by points from their
+Showdown wins: Easy 1, Normal 2, Hard 3, Expert 5, beating a real person 4,
+each Battle Tower floor 2. It also shows wins and losses, win rate, Expert
+wins, wins against people and best tower floor. Every finished battle is
+saved to Supabase under your account (one result per 15 seconds at most).
 
 ## Study
 

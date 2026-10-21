@@ -461,3 +461,65 @@ begin
     end if;
   end loop;
 end $$;
+
+-- ══ Pokémon leaderboard (Home) ═══════════════════════════════════════════
+-- Each finished Showdown battle, reported by the player's own page. Points
+-- for wins: Easy 1, Normal 2, Hard 3, Expert 5, a real person 4, each
+-- Battle Tower floor cleared 2.
+create table if not exists public.debrod_pk_results (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  kind text not null check (kind in ('cpu', 'online', 'tower')),
+  level text check (level is null or level in ('easy', 'normal', 'hard', 'expert')),
+  format text not null check (char_length(format) <= 60),
+  result text not null check (result in ('win', 'lose', 'tie')),
+  floor integer check (floor is null or floor between 1 and 999),
+  created_at timestamptz not null default now()
+);
+create index if not exists debrod_pk_results_by_user on public.debrod_pk_results (user_id, created_at desc);
+alter table public.debrod_pk_results enable row level security;
+create policy "approved people see results" on public.debrod_pk_results for select to authenticated using (public.debrod_approved());
+create policy "record your own results" on public.debrod_pk_results for insert to authenticated with check (user_id = auth.uid() and public.debrod_approved());
+create policy "admins clear results" on public.debrod_pk_results for delete to authenticated using (public.debrod_admin());
+
+-- One result per 15 seconds, stamped now: a battle takes longer than that.
+create or replace function public.debrod_pk_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if exists (select 1 from public.debrod_pk_results where user_id = new.user_id and created_at > now() - interval '15 seconds') then
+    raise exception 'Too many results at once.';
+  end if;
+  new.created_at := now();
+  if new.kind <> 'tower' then new.floor := null; end if;
+  if new.kind <> 'cpu' then new.level := null; end if;
+  return new;
+end $$;
+create or replace trigger debrod_pk_guard before insert on public.debrod_pk_results
+  for each row execute function public.debrod_pk_guard();
+
+create or replace function public.debrod_pk_leaderboard()
+returns table (user_id uuid, display text, avatar text, color text, wins integer, losses integer, ties integer,
+  expert_wins integer, online_wins integer, best_floor integer, points integer)
+language sql stable security definer set search_path = public as $$
+  select p.id, p.display, p.avatar, p.color,
+    count(*) filter (where r.result = 'win')::int,
+    count(*) filter (where r.result = 'lose')::int,
+    count(*) filter (where r.result = 'tie')::int,
+    count(*) filter (where r.result = 'win' and r.level = 'expert')::int,
+    count(*) filter (where r.result = 'win' and r.kind = 'online')::int,
+    coalesce(max(r.floor) filter (where r.result = 'win'), 0)::int,
+    coalesce(sum(case when r.result <> 'win' then 0
+      when r.kind = 'online' then 4 when r.kind = 'tower' then 2
+      else case r.level when 'easy' then 1 when 'hard' then 3 when 'expert' then 5 else 2 end end), 0)::int
+  from public.debrod_pk_results r
+  join public.debrod_profiles p on p.id = r.user_id and p.status = 'approved'
+  where public.debrod_approved()
+  group by p.id
+  order by 11 desc, 5 desc
+  limit 50
+$$;
+grant select, insert, delete on public.debrod_pk_results to authenticated;
+revoke all on public.debrod_pk_results from anon;
+revoke execute on function public.debrod_pk_leaderboard() from anon, public;
+grant execute on function public.debrod_pk_leaderboard() to authenticated;
+revoke execute on function public.debrod_pk_guard() from anon, authenticated, public;

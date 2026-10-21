@@ -60,6 +60,18 @@ body:has(.page.mc:not([hidden])) { color: #2d2f33; }
 .hub-wide { grid-column: span 7; }
 .hub-narrow { grid-column: span 5; }
 .hub-half { grid-column: span 6; }
+.hub-full { grid-column: 1 / -1; }
+.hub-board-screen { overflow-x: auto; }
+.hub-board { width: 100%; border-collapse: collapse; font: 13px var(--hub-mono); }
+.hub-board th { text-align: left; font: 600 10px var(--hub-mono); letter-spacing: 0.12em; text-transform: uppercase; color: #9b7a37; text-shadow: none; padding: 2px 10px 6px 0; border-bottom: 1px dashed rgba(255, 176, 0, 0.3); white-space: nowrap; }
+.hub-board td { padding: 5px 10px 5px 0; border-bottom: 1px dashed rgba(255, 176, 0, 0.12); white-space: nowrap; }
+.hub-board tr:last-child td { border-bottom: none; }
+.hub-board .rank { width: 2em; color: #ffd06b; }
+.hub-board .who { display: inline-flex; align-items: center; gap: 8px; color: #f1e6cf; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.hub-board .pts { font-weight: 600; color: var(--hub-amber); }
+.hub-board tr.me td { background: rgba(255, 176, 0, 0.1); }
+.hub-board tr.me .who::after { content: 'you'; font-size: 10px; color: var(--hub-ink); background: var(--hub-amber); border-radius: 4px; padding: 0 5px; }
+.hub-av { flex: none; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; font-size: 12px; text-shadow: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35); }
 
 /* Controls inside the hub: keys, screens and switches */
 .mc button { font: 600 12px var(--hub-sans); letter-spacing: 0.1em; text-transform: uppercase; color: var(--hub-ink); background: linear-gradient(180deg, #f6f1e5, #ddd5c2);
@@ -356,12 +368,54 @@ const Hub = (() => {
       } }, 'Copy DEBROD link for friends'))
   }
 
+  // ── Pokémon leaderboard ──
+  // From debrod_pk_results (Showdown reports each finished battle), read
+  // when Home opens, at most once a minute, and right after you finish one.
+  let board = null
+  let boardAt = 0
+  let boardBusy = false
+  async function loadBoard(force) {
+    if (boardBusy || typeof Account === 'undefined' || !Account.ready()) return
+    if (!force && board && Date.now() - boardAt < 60000) return
+    boardBusy = true
+    const { data, error } = await Account.client().rpc('debrod_pk_leaderboard')
+    boardBusy = false
+    boardAt = Date.now()
+    board = error ? { error: error.message } : data || []
+    if (visible) draw()
+  }
+
+  function boardPanel() {
+    if (typeof Account === 'undefined' || !Account.ready()) return null
+    const myId = (Account.profile() || {}).id
+    const rows = Array.isArray(board) ? board : []
+    const pct = r => (r.wins + r.losses ? `${Math.round((r.wins / (r.wins + r.losses)) * 100)}%` : '—')
+    const safe = c => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '#8a8578')
+    return panel('hub-full', 'D1', 'Pokémon leaderboard', el('button', { type: 'button', class: 'link', onClick: () => toArcade('showdown') }, 'Battle ›'),
+      el('div', { class: 'hub-screen hub-board-screen' },
+        board === null ? el('p', { class: 'dim' }, 'PULLING THE STANDINGS…')
+          : board.error ? el('p', { class: 'dim' }, `NO STANDINGS: ${board.error.toUpperCase()}`)
+            : !rows.length ? el('p', { class: 'dim' }, 'NO BATTLES ON RECORD YET. WIN ONE AND YOU\'RE FIRST.')
+              : el('table', { class: 'hub-board' },
+                el('thead', null, el('tr', null, ['#', 'Trainer', 'W–L', 'Win %', 'Expert wins', 'vs people', 'Tower', 'Points'].map(h => el('th', null, h)))),
+                el('tbody', null, rows.map((r, i) => el('tr', { class: r.user_id === myId ? 'me' : '' },
+                  el('td', { class: 'rank' }, i === 0 ? '★' : String(i + 1)),
+                  el('td', null, el('span', { class: 'who' }, el('span', { class: 'hub-av', style: `background: ${safe(r.color)}` }, r.avatar || '🙂'), r.display)),
+                  el('td', null, `${r.wins}–${r.losses}${r.ties ? `–${r.ties}` : ''}`),
+                  el('td', null, pct(r)),
+                  el('td', null, String(r.expert_wins)),
+                  el('td', null, String(r.online_wins)),
+                  el('td', null, r.best_floor ? `F${r.best_floor}` : '—'),
+                  el('td', { class: 'pts' }, String(r.points))))))),
+      el('p', { class: 'hub-note' }, 'Points per win: Easy 1 · Normal 2 · Hard 3 · Expert 5 · a real person 4 · each tower floor 2.'))
+  }
+
   function draw() {
     // Keep a half-typed search across redraws (presence can redraw at any time).
     const active = document.activeElement
     const typing = active && root.contains(active) && active.tagName === 'INPUT' && active.type !== 'checkbox' ? active.placeholder : null
     const sum = study()
-    fill(root, strip(sum), log(sum), watchPanel(), studyPanel(sum), gamesPanel(), crewPanel())
+    fill(root, strip(sum), log(sum), watchPanel(), studyPanel(sum), gamesPanel(), crewPanel(), boardPanel())
     if (typing) {
       const back = [...root.querySelectorAll('input')].find(i => i.placeholder === typing)
       if (back) { back.focus(); const n = back.value.length; try { back.setSelectionRange(n, n) } catch (e) { /* not a text input */ } }
@@ -375,13 +429,14 @@ const Hub = (() => {
       visible = true
       connect()
       draw()
+      loadBoard()
       clearInterval(tick)
       clearInterval(clockTick)
       tick = setInterval(() => { if (visible && !root.contains(document.activeElement)) draw() }, 30000)
       clockTick = setInterval(() => { const c = root.querySelector('.hub-clock'); if (c) c.textContent = clockText() }, 1000)
     },
     hide() { visible = false; clearInterval(tick); clearInterval(clockTick) },
-    refresh() { if (visible) draw() },
+    refresh(scores) { if (scores) loadBoard(true); else if (visible) draw() },
     track,
   }
 })()
