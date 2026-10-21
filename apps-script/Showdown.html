@@ -95,6 +95,29 @@ const SHOWDOWN_TIMER_MS = 150000
 // the CPU takes over for anyone who's gone this long mid-battle.
 const SHOWDOWN_FOUR = ['p1', 'p2', 'p3', 'p4']
 const SHOWDOWN_CPU_NAMES = { p2: 'CPU Kai', p3: 'CPU Mae', p4: 'CPU Zed' }
+
+// How hard the CPU plays (cpuChoice). Easy mostly picks at random and never
+// switches on purpose; Normal goes for super-effective hits; Hard and
+// Expert estimate real damage, go for knockouts, use status moves only when
+// they help and switch to whoever matches up best. Expert never makes a
+// random pick and steers around abilities that absorb its moves.
+const SHOWDOWN_LEVELS = [
+  ['easy', 'Easy', 'Picks moves almost at random and never switches on purpose. Good for learning.'],
+  ['normal', 'Normal', 'Goes for super-effective hits, most of the time.'],
+  ['hard', 'Hard', 'Works out real damage, goes for knockouts, uses status moves when they help and switches smartly.'],
+  ['expert', 'Expert', 'Hard, minus the mistakes: its best move every turn, and it won\'t walk into Levitate or Water Absorb.'],
+]
+const SHOWDOWN_BRAINS = {
+  easy: { skill: 0.3, smart: false, switchy: 0, mech: 0 },
+  normal: { skill: 0.8, smart: false, switchy: 0.6, mech: 0.3 },
+  hard: { skill: 0.92, smart: true, switchy: 0.75, mech: 0.6 },
+  expert: { skill: 1, smart: true, switchy: 0.9, mech: 1, abilities: true },
+}
+// Abilities that soak up a move type, for Expert.
+const SHOWDOWN_ABSORB = {
+  levitate: 'Ground', eartheater: 'Ground', flashfire: 'Fire', wellbakedbody: 'Fire', waterabsorb: 'Water', stormdrain: 'Water',
+  dryskin: 'Water', voltabsorb: 'Electric', lightningrod: 'Electric', motordrive: 'Electric', sapsipper: 'Grass',
+}
 const SHOWDOWN_TAKEOVER_MS = 20000
 let showdownEngine = null
 
@@ -145,6 +168,8 @@ function showdown(host, ctx, opts) {
   let name = storedName() || ''
   let format = pkStore.get('format', 'gen9randombattle')
   let teamId = pkStore.get('team', '')
+  let level = SHOWDOWN_BRAINS[pkStore.get('level', 'normal')] ? pkStore.get('level', 'normal') : 'normal'
+  const levelName = id => (SHOWDOWN_LEVELS.find(l => l[0] === id) || SHOWDOWN_LEVELS[1])[1]
   let dead = false
   let match = null      // the battle on screen
   let net = null        // the online room, if any
@@ -239,6 +264,14 @@ function showdown(host, ctx, opts) {
       err && el('p', { class: 'error' }, err),
       el('label', { class: 'field' }, el('span', null, 'Trainer name'), nameInput),
       el('label', { class: 'field' }, el('span', null, 'Format'), formatSelect),
+      format === 'debrod-tower'
+        ? el('p', { class: 'muted small' }, 'The tower sets its own difficulty: it starts at Normal, plays like Hard from floor 4, and every boss plays at Expert.')
+        : el('div', { class: 'field' }, el('span', null, 'CPU difficulty'),
+          el('div', { class: 'toggle pk-level' }, SHOWDOWN_LEVELS.map(([id, label]) => el('button', {
+            type: 'button', class: level === id ? 'on' : '', 'aria-pressed': level === id ? 'true' : 'false',
+            onClick: () => { level = id; pkStore.set('level', id); menu(err) },
+          }, label))),
+          el('p', { class: 'muted small' }, (SHOWDOWN_LEVELS.find(l => l[0] === level) || [])[2])),
       needsTeam(format) && el('div', { class: 'field' }, el('span', null, 'Your team'),
         el('div', { class: 'row' }, teamSelect, el('button', { type: 'button', onClick: () => builder(teamSelect.value) }, 'Edit'))),
       record && el('p', { class: 'muted small' }, `Your record here: ${record.w} won · ${record.l} lost${record.t ? ` · ${record.t} tied` : ''}`),
@@ -536,7 +569,8 @@ function showdown(host, ctx, opts) {
   function cpuBattle(fid, myTeam, theirTeam, extra = {}) {
     endMatch()
     const foe = extra.foe || 'CPU'
-    const view = viewer('p1', { format: fid, me: name, foe, vsCpu: true, banner: extra.banner }, {
+    const brain = extra.brain || level
+    const view = viewer('p1', { format: fid, me: name, foe, vsCpu: true, banner: extra.banner || `CPU: ${levelName(level)}` }, {
       choose: choice => sim.choose('p1', choice),
       forfeit: () => sim.forfeit('p1'),
       again: extra.again || (() => startCpu()),
@@ -549,7 +583,7 @@ function showdown(host, ctx, opts) {
       p2: chunk => {
         for (const req of requestsIn(chunk)) {
           // A beat before the CPU answers, so it doesn't feel instant.
-          setTimeout(() => { const c = cpuChoice(req, sim.stream.battle, 'p2', extra.skill); if (c) sim.choose('p2', c) }, 400 + Math.random() * 600)
+          setTimeout(() => { const c = cpuChoice(req, sim.stream.battle, 'p2', brain); if (c) sim.choose('p2', c) }, 400 + Math.random() * 600)
         }
       },
     })
@@ -559,7 +593,7 @@ function showdown(host, ctx, opts) {
 
   // A CPU in one seat: answers each request after a beat, and falls back on
   // the default choice if the battle turns its pick down.
-  function cpuSeat(getSim, sideId, skill) {
+  function cpuSeat(getSim, sideId, brain = level) {
     let retried = false
     return chunk => {
       if (/(^|\n)\|error\|/.test(chunk)) {
@@ -569,7 +603,7 @@ function showdown(host, ctx, opts) {
       for (const req of requestsIn(chunk)) {
         if (req.wait) continue
         retried = false
-        setTimeout(() => { const sim = getSim(); const c = cpuChoice(req, sim.stream.battle, sideId, skill); if (c) sim.choose(sideId, c) }, 400 + Math.random() * 600)
+        setTimeout(() => { const sim = getSim(); const c = cpuChoice(req, sim.stream.battle, sideId, brain); if (c) sim.choose(sideId, c) }, 400 + Math.random() * 600)
       }
     }
   }
@@ -580,7 +614,7 @@ function showdown(host, ctx, opts) {
     const names = Object.assign({ p1: name }, SHOWDOWN_CPU_NAMES, isMulti(format) ? { p3: 'Partner Mae' } : {})
     const fid = format
     const T = teams || Object.fromEntries(SHOWDOWN_FOUR.map(x => [x, fourTeam(fid)]))
-    const view = viewer('p1', { format: fid, me: name, foe: 'the CPUs', names, vsCpu: true }, {
+    const view = viewer('p1', { format: fid, me: name, foe: 'the CPUs', names, vsCpu: true, banner: `CPUs: ${levelName(level)}` }, {
       choose: choice => sim.choose('p1', choice),
       forfeit: () => sim.forfeit('p1'),
       again: extra.again || (() => startCpu()),
@@ -644,7 +678,9 @@ function showdown(host, ctx, opts) {
     D.pool.forEach((set, i) => {
       if (taken.has(i)) return
       const types = PS.Dex.species.get(set.species).types
-      const score = bst(set) * ((set.level || 100) / 100) + types.filter(t => !have.has(t)).length * 40 + Math.random() * 90
+      // Easy drafts loosely, Expert barely leaves it to chance.
+      const noise = { easy: 400, normal: 90, hard: 60, expert: 25 }[level] || 90
+      const score = bst(set) * ((set.level || 100) / 100) + types.filter(t => !have.has(t)).length * 40 + Math.random() * noise
       if (score > bestScore) { bestScore = score; best = i }
     })
     return best
@@ -763,7 +799,9 @@ function showdown(host, ctx, opts) {
     let outcome = null
     cpuBattle('debrod-tower', PS.Teams.pack(tower.team), PS.Teams.pack(cpuSets), {
       foe,
-      skill: boss ? 0.97 : Math.min(0.95, 0.62 + floor * 0.04),
+      // Sharper every floor; it thinks like Hard from floor 4, and bosses play at Expert.
+      brain: boss ? SHOWDOWN_BRAINS.expert
+        : Object.assign({}, floor >= 4 ? SHOWDOWN_BRAINS.hard : SHOWDOWN_BRAINS.normal, { skill: Math.min(0.95, 0.62 + floor * 0.04) }),
       banner: `Floor ${floor} · Best ${towerBest()}`,
       onFinish: result => {
         outcome = result
@@ -799,35 +837,115 @@ function showdown(host, ctx, opts) {
     music(false)
   }
 
-  // A CPU that mostly picks its hardest-hitting move (and target), now and
-  // then something else, and switches out when nothing it has will land.
-  function cpuChoice(req, battle, sideId, skill = 0.8) {
+  // The CPU's turn. `brain` is a level ('easy' … 'expert'), a brain from
+  // SHOWDOWN_BRAINS, or (for old callers) a plain skill number.
+  // Normal and Easy score moves by base power, STAB, type and accuracy and
+  // switch at random when nothing lands. Hard and Expert estimate the real
+  // damage from stats and boosts, chase knockouts, weigh status moves by
+  // whether they'd do anything, and switch to the best matchup. Nothing here
+  // touches the battle's own random numbers.
+  function cpuChoice(req, battle, sideId, brain = 'normal') {
     if (!req || req.wait || !battle) return null
     if (req.teamPreview) return 'default'
+    const B = typeof brain === 'number' ? Object.assign({}, SHOWDOWN_BRAINS.normal, { skill: brain })
+      : typeof brain === 'string' ? SHOWDOWN_BRAINS[brain] || SHOWDOWN_BRAINS.normal : brain
     const sideObj = battle[sideId]
     const four = battle.sides.length > 2
     // In four-player battles everyone but your partner is a foe.
     const foeSides = four ? battle.sides.filter(x => x !== sideObj && x !== sideObj.allySide) : [battle[sideId === 'p1' ? 'p2' : 'p1']]
     const team = req.side.pokemon
     const doubles = battle.gameType !== 'singles'
+    const dex = battle.dex
     const taken = new Set()
     const healthy = () => team.map((p, i) => ({ p, i })).filter(({ p, i }) => !p.active && !p.condition.endsWith(' fnt') && !taken.has(i))
+    const liveFoes = () => foeSides.flatMap(x => x.active.map((f, i) => ({ f, i }))).filter(({ f }) => f && !f.fainted)
+
+    // ── Estimates (Hard and Expert) ──
+    const stage = b => (b >= 0 ? (2 + b) / 2 : 2 / (2 - b))
+    const speed = p => p.storedStats.spe * stage(p.boosts.spe || 0) * (p.status === 'par' ? 0.5 : 1)
+    const absorbs = (move, foe) => B.abilities && SHOWDOWN_ABSORB[foe.ability] === move.type
+    // Share of the foe's remaining HP a hit would take: stats, boosts, STAB,
+    // type, burn and multi-hit; no items, crits or damage roll.
+    function hitShare(move, atk, def) {
+      if (!def || move.category === 'Status') return 0
+      const types = def.getTypes()
+      if (!dex.getImmunity(move.type, types) || absorbs(move, def)) return 0
+      let dmg
+      if (move.damage === 'level') dmg = atk.level
+      else if (typeof move.damage === 'number') dmg = move.damage
+      else {
+        const phys = move.category === 'Physical'
+        const a = atk.storedStats[phys ? 'atk' : 'spa'] * stage(atk.boosts[phys ? 'atk' : 'spa'] || 0)
+        const d = def.storedStats[phys ? 'def' : 'spd'] * stage(def.boosts[phys ? 'def' : 'spd'] || 0)
+        dmg = ((2 * atk.level / 5 + 2) * (move.basePower || 0) * a / Math.max(1, d)) / 50 + 2
+        if (atk.hasType(move.type)) dmg *= 1.5
+        dmg *= Math.pow(2, dex.getEffectiveness(move.type, types))
+        if (phys && atk.status === 'brn') dmg *= 0.5
+        if (move.multihit) dmg *= Array.isArray(move.multihit) ? 3 : move.multihit
+      }
+      return dmg / Math.max(1, def.hp)
+    }
+    const accuracy = move => (move.accuracy === true ? 1 : move.accuracy / 100)
+    // How hard a foe's own types hit this Pokémon: 0 (immune) to 4.
+    const threat = (foe, p) => Math.max(...foe.getTypes().map(t => (dex.getImmunity(t, p.getTypes()) ? Math.pow(2, dex.getEffectiveness(t, p.getTypes())) : 0)))
+    // How well a teammate would do against a foe: its best hit, minus the
+    // foe's types against it, plus how healthy it is.
+    function matchup(p, foe) {
+      if (!foe) return p.hp / p.maxhp
+      const best = Math.max(0, ...p.moveSlots.map(m => Math.min(1, hitShare(dex.moves.get(m.id), p, foe)) * accuracy(dex.moves.get(m.id))))
+      return best * 100 - threat(foe, p) * 22 + (p.hp / p.maxhp) * 25
+    }
+    function statusScore(move, mine, foe) {
+      const hp = mine.hp / mine.maxhp
+      const types = foe ? foe.getTypes() : []
+      const foeSide = foe ? foe.side : null
+      if (move.status) {
+        if (!foe || foe.status || foe.volatiles.substitute) return 0
+        if (!dex.getImmunity(move.status, types) || (move.flags.powder && !dex.getImmunity('powder', types))) return 0
+        if (move.id === 'thunderwave' && types.includes('Ground')) return 0
+        if (absorbs(move, foe)) return 0
+        const worth = { slp: 72, par: speed(foe) > speed(mine) ? 62 : 40, brn: foe.storedStats.atk > foe.storedStats.spa ? 64 : 28, tox: 56, psn: 38, frz: 50 }[move.status] || 35
+        return worth * accuracy(move)
+      }
+      if (move.volatileStatus === 'confusion' || move.volatileStatus === 'attract') return foe && !foe.volatiles[move.volatileStatus] ? 22 : 0
+      if (move.heal || move.flags.heal) return hp < 0.4 ? 88 : hp < 0.65 ? 38 : 2
+      if (move.boosts && (move.target === 'self' || move.target === 'adjacentAllyOrSelf')) {
+        const have = Object.keys(move.boosts).reduce((a, k) => a + Math.max(0, mine.boosts[k] || 0), 0)
+        if (have >= 4) return 0
+        return hp > 0.6 ? 62 - have * 14 : 12
+      }
+      if (move.sideCondition && foeSide) return foeSide.sideConditions[move.sideCondition] ? 0 : 48
+      if (move.weather) return battle.field.weather === PS.toID(move.weather) ? 0 : 34
+      if (move.terrain) return battle.field.terrain === PS.toID(move.terrain) ? 0 : 30
+      if (move.volatileStatus === 'substitute') return hp > 0.5 && !mine.volatiles.substitute ? 34 : 0
+      if (move.stallingMove) return 10
+      return 22
+    }
+
+    // ── Who comes in ──
+    function bestSwitch(foe) {
+      const h = healthy()
+      if (!h.length) return null
+      if (!B.smart || !foe) return pick(h)
+      return h.map(c => ({ c, s: matchup(sideObj.pokemon[c.i], foe) })).sort((a, b) => b.s - a.s)[0].c
+    }
     if (req.forceSwitch) {
+      const foe = (liveFoes()[0] || {}).f
       return req.forceSwitch.map(f => {
-        const h = healthy()
-        if (!f || !h.length) return 'pass'
-        const c = pick(h)
+        if (!f) return 'pass'
+        const c = bestSwitch(foe)
+        if (!c) return 'pass'
         taken.add(c.i)
         return `switch ${c.i + 1}`
       }).join(', ')
     }
-    const dex = battle.dex
+
     let mechUsed = false
     return (req.active || []).map((active, slot) => {
       const mon = team[slot]
       if (!active || !mon || mon.condition.endsWith(' fnt') || mon.commanding) return 'pass'
       const mine = sideObj.active[slot]
-      const foes = foeSides.flatMap(x => x.active.map((f, i) => ({ f, i }))).filter(({ f }) => f && !f.fainted)
+      const foes = liveFoes()
       const ally = four && sideObj.allySide ? sideObj.allySide.active.find(a => a && !a.fainted) : null
       // A target's number from where we stand: positive across the field,
       // negative on our own half.
@@ -836,7 +954,7 @@ function showdown(host, ctx, opts) {
         const position = t.position + Math.floor(t.side.n / 2) * t.side.active.length + 1
         return mine.side.n % 2 === t.side.n % 2 ? -position : position
       }
-      const score = (id, foe) => {
+      const simple = (id, foe) => {
         const move = dex.moves.get(id)
         if (move.category === 'Status') return 35 * (0.6 + Math.random() * 0.8)
         let s = move.basePower || 70
@@ -849,23 +967,51 @@ function showdown(host, ctx, opts) {
         if (move.accuracy !== true) s *= move.accuracy / 100
         return s * (0.85 + Math.random() * 0.3)
       }
+      const smart = (id, foe) => {
+        const move = dex.moves.get(id)
+        if (move.category === 'Status') return statusScore(move, mine, foe) * (0.92 + Math.random() * 0.16)
+        const share = hitShare(move, mine, foe)
+        const acc = accuracy(move)
+        let s = Math.min(share, 1) * 100 * acc
+        if (share >= 0.95) s += 45 * acc                      // a knockout
+        if (share >= 0.95 && move.priority > 0) s += 25       // and before they can move
+        if (move.flags.charge) s *= 0.6                       // two-turn moves
+        if (move.self && move.self.volatileStatus === 'mustrecharge') s *= share >= 0.95 ? 0.9 : 0.6
+        if (move.selfdestruct) s *= mine.hp / mine.maxhp < 0.3 ? 1 : 0.25
+        if (move.recoil || move.mindBlownRecoil) s *= 0.92
+        return s * (0.96 + Math.random() * 0.08)
+      }
+      const score = B.smart ? smart : simple
       const options = []
       active.moves.forEach((m, j) => {
         if (m.disabled) return
         if (!foes.length) return options.push({ j, s: 1, t: null })
         if (four && m.target === 'adjacentAlly' && !ally) return
-        for (const { f, i } of foes) options.push({ j, s: score(m.id, f), t: i, foe: f, target: m.target })
+        for (const { f, i } of foes) options.push({ j, s: score(m.id, f), t: i, foe: f, target: m.target, id: m.id })
       })
       options.sort((a, b) => b.s - a.s)
       const trapped = active.trapped || active.maybeTrapped
       const h = healthy()
-      if ((!options.length || options[0].s < 30) && h.length && !trapped && Math.random() < 0.6) {
-        const c = pick(h)
-        taken.add(c.i)
-        return `switch ${c.i + 1}`
+      // Switching out on purpose.
+      if (h.length && !trapped && B.switchy && Math.random() < B.switchy) {
+        const foe = (options[0] && options[0].foe) || (foes[0] || {}).f
+        if (B.smart && mine && foe) {
+          const here = matchup(mine, foe)
+          const c = bestSwitch(foe)
+          const stuck = !options.length || options[0].s < 25
+          const outmatched = threat(foe, mine) >= 2 && speed(foe) > speed(mine) && mine.hp / mine.maxhp < 0.5 && (!options.length || options[0].s < 90)
+          if (c && (stuck || outmatched) && matchup(sideObj.pokemon[c.i], foe) > here + 20) {
+            taken.add(c.i)
+            return `switch ${c.i + 1}`
+          }
+        } else if (!options.length || options[0].s < 30) {
+          const c = pick(h)
+          taken.add(c.i)
+          return `switch ${c.i + 1}`
+        }
       }
       if (!options.length) return 'move 1'
-      const c = Math.random() < skill ? options[0] : pick(options)
+      const c = Math.random() < B.skill ? options[0] : pick(options)
       let target = ''
       if (four && mine) {
         if (['normal', 'any', 'adjacentFoe'].includes(c.target) && c.foe) target = ` ${loc(c.foe)}`
@@ -876,12 +1022,16 @@ function showdown(host, ctx, opts) {
         if (c.target === 'adjacentAlly') target = ` -${(slot ^ 1) + 1}`
         if (c.target === 'adjacentAllyOrSelf') target = ` -${slot + 1}`
       }
+      // Mega always; the smart levels save Tera, Dynamax and Z-Moves for
+      // a strong hit (Tera only in its own type).
       let mech = ''
-      if (!mechUsed) {
+      if (!mechUsed && B.mech) {
+        const move = c.id ? dex.moves.get(c.id) : null
+        const strong = c.s >= 55
         if (active.canMegaEvo) mech = ' mega'
-        else if (active.canTerastallize && Math.random() < 0.3) mech = ' terastallize'
-        else if (active.canDynamax && Math.random() < 0.3) mech = ' dynamax'
-        else if (active.canZMove && active.canZMove[c.j] && Math.random() < 0.3) mech = ' zmove'
+        else if (active.canTerastallize && (B.smart ? move && active.canTerastallize === move.type && strong : Math.random() < B.mech)) mech = ' terastallize'
+        else if (active.canDynamax && (B.smart ? strong && mine.hp / mine.maxhp > 0.6 : Math.random() < B.mech)) mech = ' dynamax'
+        else if (active.canZMove && active.canZMove[c.j] && (B.smart ? strong : Math.random() < B.mech)) mech = ' zmove'
         if (mech) mechUsed = true
       }
       return `move ${c.j + 1}${target}${mech}`
@@ -1237,7 +1387,7 @@ function showdown(host, ctx, opts) {
     const battleId = n.battle
     setTimeout(() => {
       if (net !== n || !match || n.battle !== battleId || !n.awaiting[x] || !n.seats[x].cpu) return
-      const c = cpuChoice(n.lastReq[x], match.sim.stream.battle, x)
+      const c = cpuChoice(n.lastReq[x], match.sim.stream.battle, x, level)
       hostChoice(x, c || 'default')
     }, 400 + Math.random() * 600)
   }
