@@ -231,6 +231,7 @@ const Account = (() => {
     adminChannel = null
     words = null
     if (typeof Chat !== 'undefined') Chat.stop()
+    if (typeof Study !== 'undefined' && Study.disconnect) Study.disconnect()
     if (inRoom) exitRoom()
     S.tab = 'home'
     try { await auth.auth.signOut() } catch (e) { /* already gone */ }

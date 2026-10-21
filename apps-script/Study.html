@@ -8,6 +8,9 @@
 .st-root textarea:focus, .st-root select:focus { outline: none; border-color: var(--magenta); box-shadow: var(--glow-magenta); }
 .st-root input[type="date"] { color-scheme: dark; }
 .st-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.st-sync { font: 12px var(--mono-font); color: var(--muted); }
+.st-sync.error { color: var(--bad); }
+.st-sync:empty { display: none; }
 .st-eyebrow { font: 11px var(--mono-font); letter-spacing: 0.3em; text-transform: uppercase; color: var(--cyan); }
 .st-title { font: 900 28px/1.1 var(--display); letter-spacing: 0.04em; margin: 2px 0 0; }
 .st-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
@@ -321,8 +324,9 @@ body:has(.page.t-study:not([hidden])) { color: #23262b; }
 // only grows, coins you spend in a shop of rewards, and a daily health
 // that misses cost and flawless sets earn back.
 //
-// Everything is kept in this browser (localStorage); Backup exports and
-// imports it as a file. Loaded after App.html, whose el() and randomId()
+// Everything is kept in this browser (localStorage) and, once you're
+// signed in, in your account too (debrod_study), so it follows you between
+// devices. Backup exports and imports it as a file. Loaded after App.html, whose el() and randomId()
 // it uses. App.html shows Study.root on the Study tab.
 
 const Study = (() => {
@@ -418,6 +422,7 @@ const Study = (() => {
     const g = parseInt(raw.goal, 10)
     out.goal = g > 0 ? Math.max(50, Math.min(100000, g)) : DEFAULT_GOAL
     out.status = str(raw.status, 80)
+    out.savedAt = str(raw.savedAt, 40)
     return out
   }
 
@@ -426,9 +431,147 @@ const Study = (() => {
   }
   let D = load()
 
-  function save() {
+  function keep() {
     try { localStorage.setItem(KEY, JSON.stringify(D)); saveFailed = false } catch (e) { saveFailed = true }
+  }
+  function save() {
+    D.savedAt = new Date().toISOString()
+    keep()
+    pushSoon()
     if (typeof hubRefresh === 'function') { try { hubRefresh() } catch (e) { /* the hub's problem */ } }
+  }
+
+  // ── Sync with your account (debrod_study) ──
+  // The whole Study state is one row per person. The newer copy wins; the
+  // first time a browser links to an account the two are merged instead, so
+  // nothing already in either is lost. If someone else signs in on this
+  // browser, their own Study replaces what's here (the previous person's
+  // copy is set aside under its own key, not deleted).
+  const OWNER_KEY = 'ds_study_owner'
+  const sync = { auth: null, user: null, timer: null, busy: false, state: 'off', error: '', at: null, pulledAt: 0 }
+
+  // Two copies of Study, put together: everything from both, and where the
+  // same thing is in both, the further-along one (turned in, redeemed, the
+  // later review date, the bigger deck).
+  function merge(a, b) {
+    const out = clean(a)
+    const byId = (list, extra, better) => {
+      const map = new Map(list.map(x => [x.id, x]))
+      for (const x of extra) map.set(x.id, map.has(x.id) ? better(map.get(x.id), x) : x)
+      return [...map.values()]
+    }
+    out.decks = byId(out.decks, b.decks, (x, y) => {
+      const cards = new Map(x.cards.map(c => [c.id, c]))
+      for (const c of y.cards) if (!cards.has(c.id)) cards.set(c.id, c)
+      return Object.assign({}, x, { cards: [...cards.values()] })
+    })
+    out.assignments = byId(out.assignments, b.assignments, (x, y) => (y.turnedIn && !x.turnedIn ? y : x))
+    out.coupons = byId(out.coupons, b.coupons, (x, y) => (y.redeemed && !x.redeemed ? y : x))
+    for (const [id, p] of Object.entries(b.progress)) if (!out.progress[id] || out.progress[id].due < p.due) out.progress[id] = p
+    const seen = new Set(out.attempts.map(t => `${t.at}|${t.mode}|${t.deckId}`))
+    for (const t of b.attempts) if (!seen.has(`${t.at}|${t.mode}|${t.deckId}`)) out.attempts.push(t)
+    out.attempts.sort((x, y) => x.at.localeCompare(y.at))
+    out.status = out.status || b.status
+    return out
+  }
+
+  // The numbers Home's study leaderboard shows (the data itself stays yours).
+  function boardNumbers() {
+    const s = stats()
+    const weekAgo = Date.now() - 7 * 86400000
+    const week = D.attempts.filter(a => new Date(a.at).getTime() >= weekAgo)
+    return {
+      week_xp: Math.min(1000000, s.weeklyXp),
+      focus_week: Math.min(100000, Math.round(week.filter(a => a.mode === 'focus').reduce((t, a) => t + (a.ms || 0), 0) / 60000)),
+      cards_week: Math.min(1000000, week.filter(a => a.mode === 'review').reduce((t, a) => t + a.total, 0)),
+      streak: Math.min(100000, s.streak),
+      total_xp: Math.min(100000000, s.xp),
+    }
+  }
+
+  function pushSoon() {
+    if (!sync.user) return
+    clearTimeout(sync.timer)
+    sync.timer = setTimeout(push, 1500)
+  }
+
+  async function push() {
+    if (!sync.user || sync.busy) return pushSoon()
+    sync.busy = true
+    sync.state = 'saving'
+    syncBadge()
+    const { error } = await sync.auth.from('debrod_study').upsert(Object.assign({ user_id: sync.user, data: D }, boardNumbers()))
+    sync.busy = false
+    if (error) { sync.state = 'error'; sync.error = error.message } else { sync.state = 'ok'; sync.at = Date.now() }
+    syncBadge()
+  }
+
+  async function pull(first) {
+    const { data, error } = await sync.auth.from('debrod_study').select('data').eq('user_id', sync.user).maybeSingle()
+    if (error) { sync.state = 'error'; sync.error = error.message; return syncBadge() }
+    sync.pulledAt = Date.now()
+    const remote = data ? clean(data.data) : null
+    let owner = null
+    try { owner = localStorage.getItem(OWNER_KEY) } catch (e) { /* private mode */ }
+    let changed = false
+    let send = false
+    if (first && owner && owner !== sync.user) {
+      // Someone else's Study is in this browser: set it aside, load ours.
+      try { localStorage.setItem(`${KEY}_${owner}`, JSON.stringify(D)) } catch (e) { /* full */ }
+      D = remote || blank()
+      changed = true
+    } else if (first && !owner) {
+      // This browser's first time with this account: keep both.
+      if (remote) { D = merge(D, remote); D.savedAt = new Date().toISOString(); changed = true }
+      send = true
+    } else if (!remote) {
+      send = true
+    } else if ((remote.savedAt || '') > (D.savedAt || '')) {
+      D = remote
+      changed = true
+    } else if ((D.savedAt || '') > (remote.savedAt || '')) {
+      send = true
+    }
+    try { localStorage.setItem(OWNER_KEY, sync.user) } catch (e) { /* private mode */ }
+    keep()
+    if (send) push()
+    else { sync.state = 'ok'; sync.at = Date.now(); syncBadge() }
+    if (changed && visible && view.name === 'home') render()
+    if (changed && typeof hubRefresh === 'function') { try { hubRefresh() } catch (e) { /* the hub's problem */ } }
+  }
+
+  // Called once you're signed in and approved (App.html render).
+  function connect() {
+    if (sync.user || typeof Account === 'undefined' || !Account.ready()) return
+    const who = Account.profile()
+    const auth = Account.client()
+    if (!who || !auth) return
+    sync.auth = auth
+    sync.user = who.id
+    sync.state = 'saving'
+    pull(true)
+  }
+  function disconnect() {
+    clearTimeout(sync.timer)
+    sync.user = null
+    sync.auth = null
+    sync.state = 'off'
+    syncBadge()
+  }
+
+  function syncText() {
+    if (sync.state === 'off') return 'Saved in this browser only. Sign in to keep it in your account.'
+    if (sync.state === 'saving') return 'Saving to your account…'
+    if (sync.state === 'error') return `Not synced yet: ${sync.error}. Your work is safe in this browser and will retry.`
+    return 'Saved to your account, on every device you sign in on.'
+  }
+  function syncBadge() {
+    for (const n of root.querySelectorAll('[data-sync]')) {
+      n.textContent = sync.state === 'ok' ? '☁ Synced' : sync.state === 'saving' ? '☁ Saving…' : sync.state === 'error' ? '☁ Not synced' : ''
+      n.title = syncText()
+      n.className = `st-sync ${sync.state}`
+    }
+    for (const n of root.querySelectorAll('[data-sync-text]')) n.textContent = syncText()
   }
 
   // ── Economy (Hiranda's stats.ts and actions.ts) ──
@@ -574,6 +717,7 @@ const Study = (() => {
       // Modes draw themselves; this is only for a fresh start.
       fill(root, view.node)
     }
+    syncBadge()
     if (pendingScroll) {
       const target = root.querySelector(`[data-section="${pendingScroll}"]`)
       pendingScroll = null
@@ -603,6 +747,7 @@ const Study = (() => {
     return el('div', { class: 'st-root-home stack' },
       el('div', { class: 'st-head' },
         el('div', null, el('p', { class: 'st-eyebrow' }, 'Get it done, win coins'), el('h1', { class: 'st-title' }, 'Study')),
+        el('span', { class: 'st-sync', 'data-sync': '' }),
         saveFailed && el('p', { class: 'st-warn' }, 'This browser won’t let Study save (private mode?). Use Backup to keep your work.')),
       el('div', { class: 'st-grid' },
         el('div', { class: 'st-w st-health' },
@@ -653,7 +798,7 @@ const Study = (() => {
           }))),
       el('div', { class: 'st-w st-backup' },
         el('span', { class: 'st-label' }, '💾 Backup'),
-        el('span', { class: 'st-sub grow' }, 'Study is saved in this browser only. Export a file to keep it or move it.'),
+        el('span', { class: 'st-sub grow', 'data-sync-text': '' }, syncText()),
         el('button', { type: 'button', class: 'chip', onClick: exportData }, 'Export'),
         el('button', { type: 'button', class: 'chip', onClick: importData }, 'Import')))
   }
@@ -1427,7 +1572,12 @@ const Study = (() => {
       visible = true
       // Dates move on; the home page recounts when you come back to it.
       if (view.name === 'home') render()
+      syncBadge()
+      // Another device may have studied since.
+      if (sync.user && !sync.busy && Date.now() - sync.pulledAt > 20000) pull(false)
     },
+    connect,
+    disconnect,
     hide() { visible = false },
     summary,
     // 'assignments', 'calendar', 'decks', 'review', 'shop' or 'home'.

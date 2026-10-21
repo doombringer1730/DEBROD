@@ -458,6 +458,7 @@ function render() {
   const hasChat = typeof Chat !== 'undefined'
   const chat = S.tab === 'chat' && hasChat
   if (hasChat) Chat.start()
+  if (typeof Study !== 'undefined' && Study.connect) Study.connect()
   backdrop.hidden = false
   if (!homePage && typeof Hub !== 'undefined') homePage = el('main', { class: 'page mc' }, el('header'), Hub.root)
   if (homePage) {

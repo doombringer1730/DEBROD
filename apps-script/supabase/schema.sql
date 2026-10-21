@@ -523,3 +523,44 @@ revoke all on public.debrod_pk_results from anon;
 revoke execute on function public.debrod_pk_leaderboard() from anon, public;
 grant execute on function public.debrod_pk_leaderboard() to authenticated;
 revoke execute on function public.debrod_pk_guard() from anon, authenticated, public;
+
+-- ══ Study sync and the study leaderboard ═════════════════════════════════
+-- debrod_study (above) holds each person's whole Study state, synced by
+-- Study.html. Next to it, a small summary the sync writes for Home's study
+-- leaderboard; the data itself stays readable only by its owner.
+alter table public.debrod_study
+  add column if not exists week_xp integer not null default 0 check (week_xp between 0 and 1000000),
+  add column if not exists focus_week integer not null default 0 check (focus_week between 0 and 100000),
+  add column if not exists cards_week integer not null default 0 check (cards_week between 0 and 1000000),
+  add column if not exists streak integer not null default 0 check (streak between 0 and 100000),
+  add column if not exists total_xp integer not null default 0 check (total_xp between 0 and 100000000);
+
+create or replace function public.debrod_study_stamp() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  new.updated_at := now();
+  return new;
+end $$;
+create or replace trigger debrod_study_stamp before insert or update on public.debrod_study
+  for each row execute function public.debrod_study_stamp();
+
+-- "This week" numbers count only if they've synced in the last week, and a
+-- streak only if they've studied since yesterday.
+create or replace function public.debrod_study_leaderboard()
+returns table (user_id uuid, display text, avatar text, color text, week_xp integer, focus_week integer, cards_week integer, streak integer, total_xp integer)
+language sql stable security definer set search_path = public as $$
+  select p.id, p.display, p.avatar, p.color,
+    case when s.updated_at > now() - interval '7 days' then s.week_xp else 0 end,
+    case when s.updated_at > now() - interval '7 days' then s.focus_week else 0 end,
+    case when s.updated_at > now() - interval '7 days' then s.cards_week else 0 end,
+    case when s.updated_at > now() - interval '2 days' then s.streak else 0 end,
+    s.total_xp
+  from public.debrod_study s
+  join public.debrod_profiles p on p.id = s.user_id and p.status = 'approved'
+  where public.debrod_approved() and s.total_xp > 0
+  order by 5 desc, 9 desc
+  limit 50
+$$;
+revoke execute on function public.debrod_study_leaderboard() from anon, public;
+grant execute on function public.debrod_study_leaderboard() to authenticated;
+revoke execute on function public.debrod_study_stamp() from anon, authenticated, public;
