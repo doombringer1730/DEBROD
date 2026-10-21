@@ -384,7 +384,7 @@ let homePage = null
 let chatPage = null
 const studyMissing = () => el('div', { class: 'card stack' },
   el('p', { class: 'name' }, 'Study.html is missing'),
-  el('p', { class: 'muted small' }, 'Add it in the Apps Script editor with + → HTML, named Study (no .html), paste in Study.html, and make sure Index has <?!= include(\'Study\') ?> after include(\'App\'). Then save and reload.'))
+  el('p', { class: 'muted small' }, 'Add it in the Apps Script editor with + → HTML, named Study (no .html), paste in Study.html, and make sure Index includes Study right after App. Then save and reload.'))
 
 // ── Boot screens ──
 // Switching tabs plays a few lines of an old terminal loading the page up,
@@ -1181,4 +1181,5 @@ function boot() {
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot)
 else boot()
+//# sourceURL=debrod/App.js
 </script>

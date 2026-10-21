@@ -1331,7 +1331,7 @@ const Arcade = (() => {
         el('p', { class: 'name' }, `${file}.html is missing`),
         el('p', { class: 'muted small' },
           `Add it in the Apps Script editor with + → HTML, named ${file} (no .html), paste in ${file}.html, ` +
-          `and make sure Index has <?!= include('${file}') ?> before include('Games'). Then save and reload.`)))
+          `and make sure Index includes ${file} before Games. Then save and reload.`)))
       return { stop() {} }
     }
   }
@@ -1532,4 +1532,5 @@ const Arcade = (() => {
     },
   }
 })()
+//# sourceURL=debrod/Games.js
 </script>
