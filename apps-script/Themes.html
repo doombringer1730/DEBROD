@@ -321,3 +321,124 @@ html:has(.t-gate) {
   .t-arcade .top { padding: 14px; }
 }
 </style>
+<style>
+/* ═══ Showdown looks (Showdown.html: Look on the menu) ═══════════════════
+   Neon is the arcade's own look. The others re-skin the battle screen by
+   overriding the colour variables it's drawn with (on .pk only), plus the
+   few things with fixed colours: the field, the glassy boxes, buttons and
+   inputs. --pk-accent is the colour picker; each look has its own default,
+   and Game Boy keeps its four greens whatever you pick. */
+.pk { --pk-a: var(--pk-accent, #ff2bd6); --pk-on-accent: #1a0420; }
+.pk:not(.pk-skinned) { --magenta: var(--pk-a); --glow-magenta: 0 0 18px color-mix(in srgb, var(--pk-a) 50%, transparent); --button: linear-gradient(90deg, var(--pk-a), var(--orange)); }
+
+.pk.pk-skinned { color: var(--text); font-family: var(--body); --glow-magenta: none; --glow-cyan: none; --magenta: var(--pk-a); --button: var(--pk-a); }
+.pk-skinned .wordmark { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--pk-title, var(--text)); filter: none; text-shadow: var(--pk-title-shadow, none); font-family: var(--display); }
+.pk-skinned .tagline { color: var(--muted); text-shadow: none; }
+.pk-skinned .card { background: var(--panel); color: var(--text); border: var(--pk-border); box-shadow: var(--pk-shadow); backdrop-filter: none; }
+.pk-skinned .card::before { background: var(--magenta); box-shadow: none; }
+.pk-skinned .pk-field { background: var(--pk-field); border: var(--pk-border); box-shadow: var(--pk-shadow); }
+.pk-skinned .pk-box, .pk-skinned .pk-tip, .pk-skinned .pk-chip, .pk-skinned .pk-tera-used { background: var(--pk-glass); color: var(--text); backdrop-filter: none; border-color: var(--line); }
+.pk-skinned .pk-box.me { border-color: var(--magenta); }
+.pk-skinned .pk-chip { color: var(--magenta); }
+.pk-skinned .pk-banner { background: var(--pk-veil); }
+.pk-skinned .pk-controls, .pk-skinned .pk-log { background: var(--panel); border: var(--pk-border); box-shadow: var(--pk-shadow); }
+.pk-skinned .pk-move { background: color-mix(in srgb, var(--type) 20%, var(--pk-glass)); color: var(--text); }
+.pk-skinned .pk-move:hover:not(:disabled) { box-shadow: 0 0 0 2px color-mix(in srgb, var(--type) 60%, transparent); }
+.pk-skinned .muted, .pk-skinned .pk-move-meta { color: var(--muted); }
+:where(.pk-skinned) button, :where(.pk-skinned) a.chip { background: var(--pk-btn); color: var(--pk-btn-text, var(--text)); border: 1px solid var(--line); border-radius: var(--pk-radius, 6px); }
+:where(.pk-skinned) button:hover:not(:disabled) { border-color: var(--magenta); box-shadow: none; color: var(--pk-btn-text, var(--text)); }
+.pk-skinned .primary, .pk-skinned .primary:hover:not(:disabled) { background: var(--magenta); color: var(--pk-on-accent); border: none; box-shadow: none; font-family: var(--display); }
+.pk-skinned .link, .pk-skinned .link:hover:not(:disabled) { background: none; border: none; color: var(--muted); text-shadow: none; }
+.pk-skinned .link:hover:not(:disabled) { color: var(--magenta); }
+:where(.pk-skinned) input, .pk-skinned .pk-menu select, .pk-skinned .pk-team-meta select, .pk-skinned .pk-slot select, .pk-skinned .pk-speed, :where(.pk-skinned) textarea {
+  background: var(--pk-input); color: var(--text); border: 1px solid var(--line); border-radius: var(--pk-radius, 6px); font-family: var(--body); }
+.pk-skinned input:focus { border-color: var(--magenta); box-shadow: 0 0 0 3px color-mix(in srgb, var(--magenta) 28%, transparent); }
+.pk-skinned input::placeholder { color: var(--muted); }
+.pk-skinned .field span { color: var(--muted); }
+.pk-skinned .toggle { background: var(--pk-input); border: 1px solid var(--line); }
+.pk-skinned .toggle button, .pk-skinned .toggle button:hover:not(:disabled) { background: none; border: none; color: var(--muted); }
+.pk-skinned .toggle button.on, .pk-skinned .toggle button.on:hover:not(:disabled) { background: var(--magenta); color: var(--pk-on-accent); box-shadow: none; }
+.pk-skinned .pk-hp { background: var(--pk-hp-track, rgba(0, 0, 0, 0.15)); }
+.pk-skinned .pk-hp-fill { box-shadow: none; }
+.pk-skinned .pk-code, .pk-skinned .pk-format { color: var(--magenta); text-shadow: none; }
+.pk-skinned .pk-log .pk-chatline { background: color-mix(in srgb, var(--magenta) 10%, transparent); }
+.pk-skinned .error { text-shadow: none; }
+.pk-skinned .pk-emote { filter: none; }
+.pk-skinned .pk-big { text-shadow: 0 3px 0 var(--pk-big-shadow, #000); }
+.pk-skinned .pill { background: var(--pk-glass); color: var(--text); border-color: var(--line); }
+.pk-skinned .pill .mono { color: var(--magenta); }
+.pk-skinned .chip { color: var(--muted); }
+.pk-skinned .chip.on, .pk-skinned .chip.on:hover:not(:disabled) { color: var(--pk-on-accent); background: var(--magenta); border-color: var(--magenta); box-shadow: none; }
+
+/* Pokédex: red casing with a blue lens, a pale screen, clean type. */
+.pk[data-pk-theme="dex"] {
+  --pk-a: var(--pk-accent, #dc0a2d); --pk-on-accent: #fff;
+  --text: #1d1d22; --muted: #5d5d68; --line: rgba(29, 29, 34, 0.22); --panel: #f6f4ef; --panel-solid: #f6f4ef; --bg: #f6f4ef;
+  --pk-glass: rgba(255, 255, 255, 0.92); --pk-input: #fff; --pk-btn: #fff; --pk-veil: rgba(246, 244, 239, 0.82);
+  --good: #23944a; --bad: #d1243a; --yellow: #d49a00; --cyan: #2f6fd0; --orange: #e0662b;
+  --display: 'Jost', system-ui, sans-serif; --body: 'Jost', system-ui, sans-serif; --mono-font: 'DM Mono', ui-monospace, monospace;
+  --pk-border: 2px solid #1d1d22; --pk-shadow: none; --pk-radius: 8px; --pk-big-shadow: rgba(0, 0, 0, 0.25);
+  --pk-field: radial-gradient(ellipse 22% 9% at 74% 50%, rgba(47, 111, 208, 0.22), transparent 70%), radial-gradient(ellipse 26% 10% at 27% 88%, rgba(35, 148, 74, 0.25), transparent 70%), linear-gradient(180deg, #eaf5fd 0%, #d7ecf9 52%, #d6ecd0 52.3%, #bcdcb3 100%);
+  padding: 46px 14px 14px; border-radius: 18px 18px 18px 44px; background: var(--pk-a); box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.22);
+}
+.pk[data-pk-theme="dex"]::before { content: ''; position: absolute; left: 16px; top: 10px; width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #bfe6ff, #2f8fe8 55%, #1559a8); box-shadow: 0 0 0 3px #fff, 0 0 0 5px #1d1d22; }
+.pk[data-pk-theme="dex"]::after { content: ''; position: absolute; left: 56px; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: #f7d02c; box-shadow: 16px 0 0 #6ac35a, 32px 0 0 #1d1d22; }
+.pk[data-pk-theme="dex"] .pk-field { border-radius: 10px; }
+
+/* Stadium: a sunny N64 arena, a mown pitch, bold type and hard shadows. */
+.pk[data-pk-theme="stadium"] {
+  --pk-a: var(--pk-accent, #1f5fbf); --pk-on-accent: #fff;
+  --text: #10243f; --muted: #4b5e78; --line: rgba(16, 36, 63, 0.35); --panel: #fffdf2; --panel-solid: #fffdf2; --bg: #fffdf2;
+  --pk-glass: rgba(255, 253, 242, 0.94); --pk-input: #fff; --pk-btn: #fff; --pk-veil: rgba(255, 253, 242, 0.8);
+  --good: #2f9a3a; --bad: #d8352a; --yellow: #f2b600; --cyan: #1f8fd0; --orange: #ef7d22;
+  --display: 'Archivo Black', system-ui, sans-serif; --body: 'Libre Franklin', system-ui, sans-serif; --mono-font: 'DM Mono', ui-monospace, monospace;
+  --pk-border: 3px solid #10243f; --pk-shadow: 4px 4px 0 #10243f; --pk-radius: 10px; --pk-big-shadow: #10243f;
+  --pk-field: radial-gradient(ellipse 22% 9% at 74% 50%, rgba(255, 255, 255, 0.55), transparent 70%), radial-gradient(ellipse 26% 10% at 27% 88%, rgba(255, 255, 255, 0.45), transparent 70%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.07) 0 48px, transparent 48px 96px) 0 52% / 100% 48% no-repeat,
+    linear-gradient(180deg, #7ccbff 0%, #c8ecff 51%, #f2b600 51% 52.3%, #5fb24a 52.3%, #3d9636 100%);
+}
+.pk[data-pk-theme="stadium"] .wordmark { letter-spacing: 0.02em; text-shadow: 3px 3px 0 #f2b600; }
+
+/* Midnight: quiet and dark, one accent colour, nothing glowing. */
+.pk[data-pk-theme="midnight"] {
+  --pk-a: var(--pk-accent, #7aa2f7); --pk-on-accent: #0d1017;
+  --text: #e6e8ec; --muted: #9399a6; --line: rgba(255, 255, 255, 0.12); --panel: #171a21; --panel-solid: #171a21; --bg: #0f1116;
+  --pk-glass: rgba(23, 26, 33, 0.92); --pk-input: #0f1116; --pk-btn: #20242d; --pk-veil: rgba(15, 17, 22, 0.78); --pk-hp-track: rgba(255, 255, 255, 0.1);
+  --good: #6fcf8a; --bad: #f2727f; --yellow: #e8c46a; --cyan: #7dcfff; --orange: #f0a35e;
+  --display: 'Jost', system-ui, sans-serif; --body: 'Atkinson Hyperlegible', system-ui, sans-serif; --mono-font: 'DM Mono', ui-monospace, monospace;
+  --pk-border: 1px solid rgba(255, 255, 255, 0.1); --pk-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); --pk-radius: 8px;
+  --pk-field: radial-gradient(ellipse 22% 9% at 74% 50%, color-mix(in srgb, var(--pk-a) 22%, transparent), transparent 70%), radial-gradient(ellipse 26% 10% at 27% 88%, color-mix(in srgb, var(--pk-a) 26%, transparent), transparent 70%), linear-gradient(180deg, #1b2130 0%, #222a3b 52%, #1a1f2b 52.3%, #12151d 100%);
+}
+
+/* Game Boy: the four greens, a pixel font, sprites in green, a grey case. */
+.pk[data-pk-theme="gameboy"] {
+  --gb0: #0f380f; --gb1: #306230; --gb2: #8bac0f; --gb3: #9bbc0f;
+  --pk-a: var(--gb0); --magenta: var(--gb0); --pk-on-accent: var(--gb3); --tera: var(--gb0);
+  --text: var(--gb0); --muted: var(--gb1); --line: var(--gb1); --panel: var(--gb3); --panel-solid: var(--gb3); --bg: var(--gb3);
+  --pk-glass: var(--gb3); --pk-input: var(--gb2); --pk-btn: var(--gb2); --pk-veil: rgba(155, 188, 15, 0.86); --pk-hp-track: var(--gb2);
+  --good: var(--gb1); --bad: var(--gb0); --yellow: var(--gb1); --cyan: var(--gb1); --orange: var(--gb1);
+  --display: 'Pixelify Sans', monospace; --body: 'Pixelify Sans', monospace; --mono-font: 'Pixelify Sans', monospace;
+  --pk-border: 3px solid var(--gb0); --pk-shadow: none; --pk-radius: 0; --pk-big-shadow: var(--gb2);
+  --pk-field: radial-gradient(ellipse 22% 9% at 74% 50%, var(--gb2) 0 60%, transparent 62%), radial-gradient(ellipse 26% 10% at 27% 88%, var(--gb2) 0 60%, transparent 62%), var(--gb3);
+  padding: 14px; border-radius: 10px 10px 44px 10px; background: #c4c3bd; box-shadow: inset 0 -5px 0 #a3a29b;
+}
+.pk[data-pk-theme="gameboy"] .pk-sprite, .pk[data-pk-theme="gameboy"] .pk-mon img, .pk[data-pk-theme="gameboy"] .pk-foe-preview img, .pk[data-pk-theme="gameboy"] .pk-draft-card img {
+  filter: grayscale(1) contrast(1.5) sepia(1) hue-rotate(38deg) saturate(2.2) brightness(0.72); }
+.pk[data-pk-theme="gameboy"] .pk-move, .pk[data-pk-theme="gameboy"] .pk-tera { --type: var(--gb1) !important; }
+.pk[data-pk-theme="gameboy"] .pk-type, .pk[data-pk-theme="gameboy"] .pk-status, .pk[data-pk-theme="gameboy"] .pk-boost, .pk[data-pk-theme="gameboy"] .pk-vol, .pk[data-pk-theme="gameboy"] .pk-tera-badge {
+  background: var(--gb1) !important; color: var(--gb3) !important; box-shadow: none; }
+.pk[data-pk-theme="gameboy"] .pk-ball { background: linear-gradient(180deg, var(--gb0) 50%, var(--gb3) 50%); box-shadow: 0 0 0 1px var(--gb0); }
+.pk[data-pk-theme="gameboy"] .pk-ball.out { background: var(--gb2); }
+.pk[data-pk-theme="gameboy"] .pk-field::before, .pk[data-pk-theme="gameboy"] .pk-field::after { display: none; }
+
+/* The Look picker on the menu */
+.pk-looks { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.pk-looks button { padding: 8px 4px; font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.pk-looks button.on { border-color: var(--magenta); box-shadow: 0 0 0 2px var(--magenta); }
+.pk-look-chip { width: 100%; height: 16px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.35); }
+.pk-swatches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pk-swatches button { width: 28px; height: 28px; padding: 0; border-radius: 50%; border: 2px solid rgba(0, 0, 0, 0.35); }
+.pk-swatches button.on { box-shadow: 0 0 0 2px var(--panel, #fff), 0 0 0 4px var(--text, #fff); }
+.pk-swatches .pk-swatch-default { width: auto; padding: 0 10px; border-radius: 999px; font-size: 12px; }
+.pk-swatches input[type="color"] { width: 34px; height: 30px; padding: 0 2px; border-radius: 6px; cursor: pointer; }
+</style>

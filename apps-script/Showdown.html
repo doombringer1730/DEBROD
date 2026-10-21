@@ -113,6 +113,17 @@ const SHOWDOWN_BRAINS = {
   hard: { skill: 0.92, smart: true, switchy: 0.75, mech: 0.6 },
   expert: { skill: 1, smart: true, switchy: 0.9, mech: 1, abilities: true },
 }
+// Looks for the battle screen (styled in Themes.html), and the accent
+// colours on offer. Game Boy keeps its own four greens.
+const SHOWDOWN_LOOKS = [
+  ['neon', 'Neon', 'linear-gradient(90deg, #ff2bd6, #00f0ff)'],
+  ['dex', 'Pokédex', 'linear-gradient(90deg, #dc0a2d 0 60%, #f6f4ef 60%)'],
+  ['stadium', 'Stadium', 'linear-gradient(180deg, #7ccbff 0 50%, #5fb24a 50%)'],
+  ['midnight', 'Midnight', 'linear-gradient(90deg, #171a21 0 60%, #7aa2f7 60%)'],
+  ['gameboy', 'Game Boy', 'linear-gradient(90deg, #0f380f, #306230, #8bac0f, #9bbc0f)'],
+]
+const SHOWDOWN_ACCENTS = ['#ff2bd6', '#dc0a2d', '#ef7d22', '#f2b600', '#2f9a3a', '#2c8783', '#1f5fbf', '#7a4ea3']
+
 // Abilities that soak up a move type, for Expert.
 const SHOWDOWN_ABSORB = {
   levitate: 'Ground', eartheater: 'Ground', flashfire: 'Fire', wellbakedbody: 'Fire', waterabsorb: 'Water', stormdrain: 'Water',
@@ -168,6 +179,8 @@ function showdown(host, ctx, opts) {
   let name = storedName() || ''
   let format = pkStore.get('format', 'gen9randombattle')
   let teamId = pkStore.get('team', '')
+  let look = SHOWDOWN_LOOKS.some(l => l[0] === pkStore.get('look', 'neon')) ? pkStore.get('look', 'neon') : 'neon'
+  let accent = /^#[0-9a-f]{6}$/i.test(pkStore.get('accent', '') || '') ? pkStore.get('accent', '') : ''
   let level = SHOWDOWN_BRAINS[pkStore.get('level', 'normal')] ? pkStore.get('level', 'normal') : 'normal'
   const levelName = id => (SHOWDOWN_LEVELS.find(l => l[0] === id) || SHOWDOWN_LEVELS[1])[1]
   let dead = false
@@ -234,6 +247,37 @@ function showdown(host, ctx, opts) {
     music(on && match && !match.view.over())
   }
 
+  // ── Look ──
+  // The theme goes on the wrapper; the accent is a colour variable, with
+  // dark or light text on it depending on how bright it is.
+  function applyLook() {
+    wrap.dataset.pkTheme = look
+    wrap.classList.toggle('pk-skinned', look !== 'neon')
+    if (accent && look !== 'gameboy') {
+      const [r, g, b] = [1, 3, 5].map(i => parseInt(accent.slice(i, i + 2), 16))
+      wrap.style.setProperty('--pk-accent', accent)
+      wrap.style.setProperty('--pk-on-accent', 0.299 * r + 0.587 * g + 0.114 * b > 150 ? '#111' : '#fff')
+    } else {
+      wrap.style.removeProperty('--pk-accent')
+      wrap.style.removeProperty('--pk-on-accent')
+    }
+  }
+  applyLook()
+
+  function lookPicker(redraw) {
+    const set = (l, a) => { look = l; accent = a; pkStore.set('look', l); pkStore.set('accent', a); applyLook(); redraw() }
+    return el('div', { class: 'field' }, el('span', null, 'Look'),
+      el('div', { class: 'pk-looks' }, SHOWDOWN_LOOKS.map(([id, label, chip]) => el('button', {
+        type: 'button', class: look === id ? 'on' : '', 'aria-pressed': look === id ? 'true' : 'false', onClick: () => set(id, accent),
+      }, el('span', { class: 'pk-look-chip', style: `background: ${chip}` }), label))),
+      look === 'gameboy'
+        ? el('p', { class: 'muted small' }, 'Game Boy keeps its four greens.')
+        : el('div', { class: 'pk-swatches' },
+          el('button', { type: 'button', class: `pk-swatch-default ${accent ? '' : 'on'}`, onClick: () => set(look, '') }, 'Default'),
+          SHOWDOWN_ACCENTS.map(c => el('button', { type: 'button', class: accent === c ? 'on' : '', style: `background: ${c}`, 'aria-label': `Accent ${c}`, title: c, onClick: () => set(look, c) })),
+          el('input', { type: 'color', value: accent || '#ff2bd6', 'aria-label': 'Pick any colour', title: 'Pick any colour', onChange: e => set(look, e.target.value) })))
+  }
+
   // ── Menu ──
   function menu(err) {
     music(false)
@@ -274,6 +318,7 @@ function showdown(host, ctx, opts) {
           el('p', { class: 'muted small' }, (SHOWDOWN_LEVELS.find(l => l[0] === level) || [])[2])),
       needsTeam(format) && el('div', { class: 'field' }, el('span', null, 'Your team'),
         el('div', { class: 'row' }, teamSelect, el('button', { type: 'button', onClick: () => builder(teamSelect.value) }, 'Edit'))),
+      lookPicker(() => menu(err)),
       record && el('p', { class: 'muted small' }, `Your record here: ${record.w} won · ${record.l} lost${record.t ? ` · ${record.t} tied` : ''}`),
       format === 'debrod-tower' && el('p', { class: 'muted small' }, `Climb floor by floor with a rental team; the CPU gets tougher, and after each win you can swap in one of theirs. Best: floor ${pkStore.get('tower', { best: 0 }).best || 0}.`),
       isFour(format) && !isDraft(format) && el('p', { class: 'muted small' }, isMulti(format)

@@ -289,6 +289,12 @@ battle, the guest sends their moves, and anyone else in the room watches.
 [`showdown/`](showdown) and loads from jsDelivr the first time (about 1 MB).
 Sprites and sound come from Showdown's own servers.
 
+**Look** (on the Showdown menu, remembered): Neon (the arcade's own),
+Pokédex (red casing, pale screen), Stadium (a sunny N64 arena), Midnight
+(quiet and dark) or Game Boy (four greens, a pixel font, green sprites),
+plus an accent colour from the swatches or any colour you like. Game Boy
+keeps its greens.
+
 **CPU difficulty** (on the Showdown menu, remembered): Easy picks almost at
 random; Normal goes for super-effective hits; Hard works out real damage,
 goes for knockouts, uses status moves only when they'd help and switches
