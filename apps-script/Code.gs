@@ -10,6 +10,7 @@
  */
 
 const TMDB = 'https://api.themoviedb.org/3'
+const YOUTUBE = 'https://www.googleapis.com/youtube/v3'
 const DEFAULT_TORRENTIO = 'https://torrentio.strem.fun'
 const ROOM_TTL_SECONDS = 6 * 60 * 60 // CacheService's maximum
 
@@ -19,9 +20,14 @@ const ROOM_TTL_SECONDS = 6 * 60 * 60 // CacheService's maximum
 // keep a filled-in copy out of public repos anyway.
 const DEFAULT_SUPABASE_URL = 'https://zppygyfzbwbusidmqlru.supabase.co'
 const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_2VMZtA9aTYsUv9qvFTDA0Q_qFhIHHAD'
-const BUILT_IN = { SUPABASE_URL: DEFAULT_SUPABASE_URL, SUPABASE_ANON_KEY: DEFAULT_SUPABASE_ANON_KEY }
+// Built-in YouTube Data API key for Search, used when Settings leaves it
+// blank, so members never need their own. It stays on the server (the page
+// only learns whether there is one), but unlike the Supabase key it's a real
+// secret: fill it in only in your Apps Script copy, never in a public repo.
+const DEFAULT_YOUTUBE_API_KEY = ''
+const BUILT_IN = { SUPABASE_URL: DEFAULT_SUPABASE_URL, SUPABASE_ANON_KEY: DEFAULT_SUPABASE_ANON_KEY, YOUTUBE_API_KEY: DEFAULT_YOUTUBE_API_KEY }
 
-const SECRET_KEYS = ['TMDB_API_KEY', 'REALDEBRID_API_KEY', 'TORBOX_API_KEY', 'SUPABASE_ANON_KEY']
+const SECRET_KEYS = ['TMDB_API_KEY', 'REALDEBRID_API_KEY', 'TORBOX_API_KEY', 'YOUTUBE_API_KEY', 'SUPABASE_ANON_KEY']
 const PLAIN_KEYS = ['SUPABASE_URL', 'TORRENTIO_URL', 'SITE_NAME']
 
 // ── Menu and dialogs ────────────────────────────────────────────────────────
@@ -141,6 +147,7 @@ function getConfig() {
     siteName: siteName_(),
     hasTmdb: !!prop_('TMDB_API_KEY'),
     hasDebrid: !!(prop_('REALDEBRID_API_KEY') || prop_('TORBOX_API_KEY')),
+    hasYoutube: !!(prop_('YOUTUBE_API_KEY') || DEFAULT_YOUTUBE_API_KEY),
     supabaseUrl: prop_('SUPABASE_URL') || DEFAULT_SUPABASE_URL,
     supabaseKey: prop_('SUPABASE_ANON_KEY') || DEFAULT_SUPABASE_ANON_KEY,
     appUrl: appUrl_(),
@@ -190,6 +197,43 @@ function getEpisodes(showId, season) {
   return (data.episodes || []).map(e => ({ number: e.episode_number, name: e.name }))
 }
 
+// ── YouTube ─────────────────────────────────────────────────────────────────
+
+// The Data API sends titles HTML-escaped; the page sets them as text.
+function unescape_(s) {
+  return String(s || '')
+    .replace(/&#(\d+);/g, (m, n) => String.fromCharCode(Number(n)))
+    .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+}
+
+// Embeddable videos only, since they play inside DEBROD. Each search costs
+// 100 of the key's 10,000 daily quota units.
+function searchYouTube(query) {
+  const q = String(query || '').trim()
+  if (!q) return []
+  const key = prop_('YOUTUBE_API_KEY') || DEFAULT_YOUTUBE_API_KEY
+  if (!key) throw new Error('YOUTUBE_API_KEY is not set. Open DEBROD → Settings.')
+  const params = { part: 'snippet', type: 'video', videoEmbeddable: 'true', maxResults: 24, safeSearch: 'moderate', q, key }
+  const qs = Object.keys(params).map(k => `${k}=${encodeURIComponent(params[k])}`).join('&')
+  const res = UrlFetchApp.fetch(`${YOUTUBE}/search?${qs}`, { muteHttpExceptions: true })
+  let data = {}
+  try { data = JSON.parse(res.getContentText()) } catch (e) { /* not JSON */ }
+  if (res.getResponseCode() >= 400) {
+    throw new Error((data.error && data.error.message) || `YouTube error ${res.getResponseCode()}`)
+  }
+  return (data.items || []).filter(r => r.id && r.id.videoId).map(r => {
+    const sn = r.snippet || {}
+    const th = sn.thumbnails || {}
+    return {
+      id: r.id.videoId,
+      name: unescape_(sn.title) || 'Untitled',
+      channel: unescape_(sn.channelTitle),
+      year: (sn.publishedAt || '').slice(0, 4),
+      thumb: (th.high || th.medium || th.default || {}).url || null,
+    }
+  })
+}
+
 // Torrentio sits behind Cloudflare, which blocks many server IPs (Google's
 // included), so the page fetches the streams itself. This only hands it the
 // URLs to ask.
@@ -219,14 +263,22 @@ function getStreamSources(kind, tmdbId, season, episode) {
 
 const isHttps_ = u => typeof u === 'string' && u.indexOf('https://') === 0
 
+const isYoutubeId_ = id => typeof id === 'string' && /^[\w-]{11}$/.test(id)
+
 function createRoom(source) {
+  if (source && isYoutubeId_(source.youtube)) {
+    return putRoom_({ title: String(source.title || 'Watching together').slice(0, 200), poster: null, youtube: source.youtube, src: '', fallbacks: [] })
+  }
   if (!source || !isHttps_(source.src)) throw new Error('That stream link is not usable.')
-  const clean = {
+  return putRoom_({
     title: String(source.title || 'Watching together').slice(0, 200),
     poster: source.poster && /^\/[\w./-]+$/.test(source.poster) ? source.poster : null,
     src: source.src,
     fallbacks: (source.fallbacks || []).filter(isHttps_).slice(0, 5),
-  }
+  })
+}
+
+function putRoom_(clean) {
   const id = Utilities.getUuid().replace(/-/g, '').slice(0, 8).toUpperCase()
   CacheService.getScriptCache().put(`room:${id}`, JSON.stringify(clean), ROOM_TTL_SECONDS)
   return id

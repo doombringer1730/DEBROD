@@ -35,7 +35,8 @@ keys live in the script's properties instead of environment variables.
    "appsscript.json" manifest file in editor**.
 3. Save, reload the doc, and open **DEBROD → Settings**. Approve the
    permissions, then add your TMDB key, a Real-Debrid and/or TorBox key, and
-   the Supabase URL and anon key if you want watch together.
+   the Supabase URL and anon key if you want watch together. A YouTube Data
+   API key adds YouTube to Search.
 4. Open **DEBROD → Open**.
 
 Or push it with [clasp](https://github.com/google/clasp): run
@@ -61,6 +62,21 @@ nothing stored; flip **Show me** off to hide (you then see nobody either).
 
 Every tab opens with a second of an old terminal booting it up; a click or
 any key skips it, and it's off for anyone with reduced motion turned on.
+
+## YouTube
+
+**Search** has a **YouTube** tab next to Movies and TV shows. Pick a video
+to play it right there, or **Watch together** to open a room for it: the
+same room, chat and invite code as a stream, kept in sync through
+YouTube's own player.
+
+It needs a YouTube Data API key (enable **YouTube Data API v3** in Google
+Cloud, then make a key under **Credentials**). Put it in **DEBROD →
+Settings**, or in `DEFAULT_YOUTUBE_API_KEY` at the top of `Code.gs` so
+everyone on your DEBROD can search without one. The key stays on the
+server either way. It's empty here because this repo is public; keep a
+filled-in `Code.gs` out of GitHub. Each search uses 100 of the key's
+10,000 free daily units, so about 100 searches a day.
 
 ## The arcade
 

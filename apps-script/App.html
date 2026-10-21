@@ -167,11 +167,13 @@ async function loadStreams(...args) {
 function onSearch(e) {
   e.preventDefault()
   if (!S.query.trim()) return
-  load(call('searchTitles', S.kind, S.query), v => { S.results = v })
+  if (S.kind === 'youtube') load(call('searchYouTube', S.query), v => { S.results = v })
+  else load(call('searchTitles', S.kind, S.query), v => { S.results = v })
 }
 
 function pickTitle(t) {
   S.title = t
+  if (S.kind === 'youtube') return render()
   S.streams = null
   S.playing = null
   if (S.kind === 'movie') loadStreams('movie', t.id)
@@ -194,7 +196,9 @@ function pickEpisode(ep) {
 function back() {
   S.error = null
   S.playing = null
-  if (S.streams !== null) {
+  if (S.kind === 'youtube') {
+    S.title = null
+  } else if (S.streams !== null) {
     S.streams = null
     if (S.kind === 'movie') S.title = null
     else S.episode = null
@@ -228,6 +232,26 @@ async function watchTogether(s, list) {
     src: s.url,
     fallbacks: list.filter(o => o.url !== s.url).slice(0, 5).map(o => o.url),
   }
+  S.loading = true
+  render()
+  try {
+    const id = await call('createRoom', source)
+    S.loading = false
+    enterRoom(id, source)
+  } catch (e) {
+    S.loading = false
+    S.error = e.message
+    render()
+  }
+}
+
+// YouTube rooms carry the video id instead of stream links.
+async function watchYouTube(t) {
+  if (!S.cfg.supabaseUrl || !S.cfg.supabaseKey) {
+    S.error = 'Set SUPABASE_URL and SUPABASE_ANON_KEY in DEBROD → Settings to watch together.'
+    return render()
+  }
+  const source = { title: t.name, poster: null, youtube: t.id, src: '', fallbacks: [] }
   S.loading = true
   render()
   try {
@@ -310,6 +334,19 @@ function player(s) {
   return playerEl
 }
 
+let youtubeEl = null
+
+function youtubePlayer(id) {
+  if (!youtubeEl || youtubeEl.dataset.id !== id) {
+    youtubeEl = el('iframe', {
+      src: `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0`,
+      allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: true,
+      title: 'YouTube video', 'data-id': id,
+    })
+  }
+  return youtubeEl
+}
+
 // The arcade page stays in the document while you're on Search, only
 // hidden, so a game carries on (Scribble keeps you in your room) and is
 // just as you left it when you come back.
@@ -386,6 +423,7 @@ function render() {
     bootScreen(S.tab, first)
   }
   if (!S.playing) playerEl = null
+  if (!(S.kind === 'youtube' && S.title)) youtubeEl = null
   const arcade = S.tab === 'arcade'
   const study = S.tab === 'study'
   const home = S.tab === 'home' && typeof Hub !== 'undefined'
@@ -424,15 +462,17 @@ function view() {
   if (!t) {
     return el('div', { class: 'stack' },
       el('div', { class: 'toggle' },
-        ['movie', 'tv'].map(k => el('button', {
+        ['movie', 'tv', 'youtube'].map(k => el('button', {
           type: 'button',
           class: S.kind === k ? 'on' : '',
           onClick: () => { S.kind = k; S.results = []; render() },
-        }, k === 'movie' ? 'Movies' : 'TV shows'))),
+        }, { movie: 'Movies', tv: 'TV shows', youtube: 'YouTube' }[k]))),
+      S.kind === 'youtube' && !S.cfg.hasYoutube &&
+        el('p', { class: 'muted small' }, 'YouTube search needs a YouTube Data API key. Add YOUTUBE_API_KEY in DEBROD → Settings.'),
       el('form', { class: 'row', onSubmit: onSearch },
         el('input', {
           type: 'search', value: S.query, autofocus: true,
-          placeholder: S.kind === 'movie' ? 'Search movies…' : 'Search TV shows…',
+          placeholder: { movie: 'Search movies…', tv: 'Search TV shows…', youtube: 'Search YouTube…' }[S.kind],
           onInput: e => { S.query = e.target.value },
         }),
         el('button', { type: 'submit', class: 'primary', disabled: S.loading }, 'Search')),
@@ -443,13 +483,35 @@ function view() {
         }),
         el('button', { type: 'submit', disabled: S.loading }, 'Join')),
       status('Scanning the airwaves…'),
-      el('div', { class: 'grid' },
-        S.results.map(r => el('button', { type: 'button', class: 'poster', onClick: () => pickTitle(r) },
-          r.poster
-            ? el('img', { src: `${IMG}/w342${r.poster}`, alt: '', loading: 'lazy' })
-            : el('span', { class: 'noposter' }, r.name),
-          el('span', { class: 'name' }, r.name),
-          el('span', { class: 'muted' }, r.year)))))
+      S.kind === 'youtube'
+        ? el('div', { class: 'grid wide' },
+          S.results.map(r => el('button', { type: 'button', class: 'poster', onClick: () => pickTitle(r) },
+            r.thumb
+              ? el('img', { src: r.thumb, alt: '', loading: 'lazy' })
+              : el('span', { class: 'noposter' }, r.name),
+            el('span', { class: 'name' }, r.name),
+            el('span', { class: 'muted' }, [r.channel, r.year].filter(Boolean).join(' · ')))))
+        : el('div', { class: 'grid' },
+          S.results.map(r => el('button', { type: 'button', class: 'poster', onClick: () => pickTitle(r) },
+            r.poster
+              ? el('img', { src: `${IMG}/w342${r.poster}`, alt: '', loading: 'lazy' })
+              : el('span', { class: 'noposter' }, r.name),
+            el('span', { class: 'name' }, r.name),
+            el('span', { class: 'muted' }, r.year)))))
+  }
+
+  // ── YouTube ──
+  if (S.kind === 'youtube') {
+    return el('div', { class: 'stack' },
+      el('button', { type: 'button', class: 'link back', onClick: back }, '‹ Back'),
+      el('div', { class: 'player' }, youtubePlayer(t.id)),
+      el('div', null,
+        el('p', { class: 'name' }, t.name),
+        el('p', { class: 'muted' }, [t.channel, t.year].filter(Boolean).join(' · '))),
+      status('Opening a room…'),
+      el('div', { class: 'actions' },
+        el('button', { type: 'button', class: 'together', disabled: S.loading, onClick: () => watchYouTube(t) }, 'Watch together'),
+        el('a', { href: `https://www.youtube.com/watch?v=${encodeURIComponent(t.id)}`, target: '_blank', rel: 'noreferrer' }, 'Open on YouTube')))
   }
 
   const heading = el('div', { class: 'heading' },
@@ -570,6 +632,101 @@ function storeName(n) {
 
 let leaveRoom = null
 
+// YouTube's IFrame API dressed up as a <video>, so the room's sync code
+// drives it unchanged: paused, currentTime, src, play(), pause(), and play,
+// pause, seeked and error events. YouTube has no seek event, so a jump in
+// its clock between polls counts as one.
+let youtubeApi = null
+
+function loadYouTubeApi() {
+  if (!youtubeApi) {
+    youtubeApi = new Promise((resolve, reject) => {
+      if (window.YT && window.YT.Player) return resolve(window.YT)
+      window.onYouTubeIframeAPIReady = () => resolve(window.YT)
+      const script = el('script', { src: 'https://www.youtube.com/iframe_api' })
+      script.onerror = () => { youtubeApi = null; reject(new Error('Could not load YouTube.')) }
+      document.head.append(script)
+    })
+  }
+  return youtubeApi
+}
+
+function youtubeVideo() {
+  const box = el('div', { class: 'yt' }, el('div'))
+  let yt = null
+  let ready = false
+  let gone = false
+  let wantTime = null
+  let wantPlay = false
+  let lastTime = 0
+  let lastAt = 0
+  let quietUntil = 0
+  const emit = type => box.dispatchEvent(new Event(type))
+  const state = () => (ready ? yt.getPlayerState() : -1)
+
+  const poll = setInterval(() => {
+    if (!ready) return
+    const t = yt.getCurrentTime()
+    const at = Date.now()
+    const expected = lastTime + (state() === 1 ? (at - lastAt) / 1000 : 0)
+    if (lastAt && at > quietUntil && Math.abs(t - expected) > 1.5) emit('seeked')
+    lastTime = t
+    lastAt = at
+  }, 500)
+
+  Object.defineProperties(box, {
+    paused: { get: () => { const st = state(); return st !== 1 && st !== 3 } },
+    currentTime: {
+      get: () => (ready ? yt.getCurrentTime() : wantTime || 0),
+      set: v => {
+        quietUntil = Date.now() + 1000
+        if (ready) yt.seekTo(v, true)
+        else wantTime = v
+        setTimeout(() => emit('seeked'), 300)
+      },
+    },
+    src: {
+      set: id => {
+        if (yt || gone) return
+        loadYouTubeApi().then(YT => {
+          if (gone) return
+          yt = new YT.Player(box.firstChild, {
+            videoId: id, width: '100%', height: '100%',
+            playerVars: { playsinline: 1, rel: 0, origin: location.origin },
+            events: {
+              onReady: () => {
+                ready = true
+                if (wantTime) yt.seekTo(wantTime, true)
+                if (wantPlay) yt.playVideo()
+              },
+              onStateChange: e => {
+                if (e.data === YT.PlayerState.PLAYING) emit('play')
+                else if (e.data === YT.PlayerState.PAUSED) emit('pause')
+              },
+              onError: () => emit('error'),
+            },
+          })
+        }).catch(() => emit('error'))
+      },
+    },
+  })
+  box.play = () => {
+    if (ready) yt.playVideo()
+    else wantPlay = true
+    return Promise.resolve()
+  }
+  box.pause = () => {
+    if (ready) yt.pauseVideo()
+    else wantPlay = false
+  }
+  box.destroy = () => {
+    gone = true
+    clearInterval(poll)
+    if (yt) yt.destroy()
+  }
+  return box
+}
+
 function enterRoom(room, source) {
   inRoom = true
   if (typeof hubActivity === 'function') hubActivity({ game: 'watch', code: room, label: `watch together: ${source.title}`, joinable: true })
@@ -613,7 +770,9 @@ function startPlayer(room, source, initialName) {
   let name = initialName
   const sb = window.supabase.createClient(S.cfg.supabaseUrl, S.cfg.supabaseKey)
   const clientId = randomId()
-  const urls = [source.src, ...source.fallbacks.filter(f => f !== source.src)]
+  // A YouTube room's one "link" is its video id.
+  const first = source.youtube || source.src
+  const urls = [first, ...source.fallbacks.filter(f => f !== first)]
 
   let channel = null
   let subscribed = false
@@ -626,7 +785,7 @@ function startPlayer(room, source, initialName) {
   let viewers = []
   let names = {}
   let partner = null
-  let currentUrl = source.src
+  let currentUrl = first
   let aloneTimer
 
   const rttSamples = []
@@ -634,7 +793,7 @@ function startPlayer(room, source, initialName) {
   let clockOffset = 0 // localTime - serverTime
 
   // ── DOM ──
-  const video = el('video', { controls: true, playsinline: true, preload: 'auto' })
+  const video = source.youtube ? youtubeVideo() : el('video', { controls: true, playsinline: true, preload: 'auto' })
   const viewersEl = el('div', { class: 'viewers' })
   const statusEl = el('div', { class: 'sync-status' })
   const fallbackEl = el('p', { class: 'pill fallback', hidden: true })
@@ -681,7 +840,7 @@ function startPlayer(room, source, initialName) {
   }
 
   function renderFallback() {
-    fallbackEl.hidden = currentUrl === source.src
+    fallbackEl.hidden = currentUrl === first
     fallbackEl.textContent = `That link died, trying backup ${urls.indexOf(currentUrl)}/${urls.length - 1}…`
   }
 
@@ -806,7 +965,7 @@ function startPlayer(room, source, initialName) {
     if (next) return switchSource(next) // others follow via our next heartbeat or action
     fallbackEl.hidden = true
     overlay(el('div', { class: 'overlay' },
-      el('p', null, 'None of the links for this one play in the browser.'),
+      el('p', null, source.youtube ? 'YouTube won\'t play this video here.' : 'None of the links for this one play in the browser.'),
       el('button', { type: 'button', class: 'link', onClick: exitRoom }, '‹ Pick another stream')))
   })
 
@@ -937,6 +1096,7 @@ function startPlayer(room, source, initialName) {
     channel = null
     video.pause()
     video.removeAttribute('src')
+    if (video.destroy) video.destroy()
     ch.untrack()
     sb.removeChannel(ch)
   }
