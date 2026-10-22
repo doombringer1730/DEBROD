@@ -664,8 +664,8 @@ const Study = (() => {
   }
   // XP and coins come once ever, on the first turn-in, so undo and redo
   // can't farm them.
-  function toggleTurnIn(a) {
-    if (!a.turnedIn && !a.xpAwarded && !confirm(`Turn in “${a.title}”? You only earn the XP once.`)) return
+  async function toggleTurnIn(a) {
+    if (!a.turnedIn && !a.xpAwarded && !(await ask(`Turn in “${a.title}”? You only earn the XP once.`, 'Turn in'))) return
     a.turnedIn = !a.turnedIn
     a.turnedInAt = a.turnedIn ? new Date().toISOString() : null
     if (a.turnedIn && !a.xpAwarded) {
@@ -676,12 +676,12 @@ const Study = (() => {
     save()
     render()
   }
-  function deleteAssignment(a) {
+  async function deleteAssignment(a) {
     if (a.classWorkId) {
       // A class's assignment: hide it from your list; it stays in the class.
-      if (!confirm(`Hide “${a.title}” from your list? It stays posted in ${a.className || 'the class'}.`)) return
+      if (!(await ask(`Hide “${a.title}” from your list? It stays posted in ${a.className || 'the class'}.`, 'Hide'))) return
       D.hiddenWork.push(a.classWorkId)
-    } else if (!confirm(`Delete “${a.title}”?`)) return
+    } else if (!(await ask(`Delete “${a.title}”?`, 'Delete'))) return
     D.assignments = D.assignments.filter(x => x !== a)
     save()
     render()
@@ -1176,8 +1176,8 @@ const Study = (() => {
       importBox,
       add,
       el('div', { class: 'st-cards' }, deck.cards.map(row)),
-      el('button', { type: 'button', class: 'link st-back', style: 'margin-top: 10px', onClick: () => {
-        if (!confirm('Delete this set and all its cards? This can’t be undone.')) return
+      el('button', { type: 'button', class: 'link st-back', style: 'margin-top: 10px', onClick: async () => {
+        if (!(await ask('Delete this set and all its cards? This can’t be undone.', 'Delete'))) return
         for (const c of deck.cards) delete D.progress[c.id]
         D.decks = D.decks.filter(d => d !== deck)
         save()
@@ -1579,16 +1579,16 @@ const Study = (() => {
           owned.map(c => el('div', { class: 'st-item' },
             el('span', { style: 'font-size: 20px' }, c.emoji),
             el('div', { class: 'main' }, el('p', null, c.title), el('p', { class: 'st-due st-coin' }, `🪙 ${c.cost} · bought ${ago(c.at)} ago`.replace('now ago', 'just now'))),
-            el('button', { type: 'button', class: 'chip', onClick: () => {
-              if (!confirm(`Use “${c.title}” now? Enjoy it!`)) return
+            el('button', { type: 'button', class: 'chip', onClick: async () => {
+              if (!(await ask(`Use “${c.title}” now? Enjoy it!`, 'Use it'))) return
               c.redeemed = true
               c.redeemedAt = new Date().toISOString()
               save()
               pop(`${c.emoji} Enjoy!`)
               render()
             } }, 'Use'),
-            el('button', { type: 'button', class: 'st-icon', title: 'Refund', onClick: () => {
-              if (!confirm(`Refund “${c.title}” for 🪙 ${c.cost}?`)) return
+            el('button', { type: 'button', class: 'st-icon', title: 'Refund', onClick: async () => {
+              if (!(await ask(`Refund “${c.title}” for 🪙 ${c.cost}?`, 'Refund'))) return
               D.coupons = D.coupons.filter(x => x !== c)
               save()
               render()
@@ -1620,13 +1620,13 @@ const Study = (() => {
       input.remove()
       if (!f) return
       const r = new FileReader()
-      r.onload = () => {
+      r.onload = async () => {
         let raw
-        try { raw = JSON.parse(String(r.result)) } catch (e) { return alert('That file isn’t a Study backup.') }
+        try { raw = JSON.parse(String(r.result)) } catch (e) { return tell('That file isn’t a Study backup.') }
         const next = clean(raw)
         const n = next.decks.length + next.assignments.length + next.attempts.length + next.coupons.length
-        if (!n && !confirm('That backup is empty. Replace your Study with it anyway?')) return
-        if (n && !confirm(`Replace your Study with this backup? (${next.decks.length} sets, ${next.assignments.length} assignments)`)) return
+        if (!n && !(await ask('That backup is empty. Replace your Study with it anyway?', 'Replace'))) return
+        if (n && !(await ask(`Replace your Study with this backup? (${next.decks.length} sets, ${next.assignments.length} assignments)`, 'Replace'))) return
         D = next
         save()
         go({ name: 'home' })

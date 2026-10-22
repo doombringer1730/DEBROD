@@ -331,6 +331,11 @@ a { color: var(--cyan); }
 .viewer.me { border-color: var(--magenta); color: var(--text); cursor: pointer; font: 12px var(--mono-font); background: none; }
 .viewer.me:hover:not(:disabled) { box-shadow: var(--glow-magenta); }
 .rename { z-index: 4; }
+/* ask(), tell() and showText() (App.html): the page's own confirm box */
+.ask { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(5, 1, 15, 0.6); }
+.ask .card { width: min(400px, 100%); }
+.ask-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ask-buttons { justify-content: flex-end; flex-wrap: wrap; }
 .rename .card { text-align: left; }
 .grow { flex: 1; }
 

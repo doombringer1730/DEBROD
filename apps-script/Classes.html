@@ -69,7 +69,7 @@ const Classes = (() => {
   const canEdit = row => row && me && (row.created_by === me.id || isAdmin())
   const who = id => people.get(id) || { display: 'Former member', avatar: '👤', color: '#bbbbbb' }
   const av = p => el('span', { class: 'cl-av', style: `background: ${safe(p.color)}` }, p.avatar || '🙂')
-  const rich = text => text.split(/(https?:\/\/[^\s]+)/).map(part => (/^https?:\/\//.test(part) ? el('a', { href: part, target: '_blank', rel: 'noopener noreferrer' }, part) : part))
+  const rich = text => text.split(/(https?:\/\/[^\s]+)/).map(part => (/^https?:[/][/]/.test(part) ? el('a', { href: part, target: '_blank', rel: 'noopener noreferrer' }, part) : part))
   const fmtDay = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) }
   const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
@@ -118,7 +118,7 @@ const Classes = (() => {
 
   async function run(promise, after) {
     const { error: e } = await promise
-    if (e) { alert(e.message); return false }
+    if (e) { tell(e.message); return false }
     await load()
     if (after) after()
     return true
@@ -212,8 +212,8 @@ const Classes = (() => {
           inIt
             ? el('button', { type: 'button', class: 'primary', onClick: () => ui.go({ name: 'post', classId: id }) }, '+ Post assignment')
             : el('button', { type: 'button', class: 'primary', onClick: () => run(auth.from('debrod_class_members').insert({ class_id: id, user_id: me.id }), () => ui.pop(`🏫 Joined ${c.name}`)) }, 'Join class'),
-          inIt && el('button', { type: 'button', onClick: () => { if (confirm(`Leave ${c.name}? Its assignments leave your list (ones you turned in stay).`)) run(auth.from('debrod_class_members').delete().eq('class_id', id).eq('user_id', me.id)) } }, 'Leave'),
-          canEdit(c) && el('button', { type: 'button', onClick: () => { if (confirm(`Delete ${c.name} and everything posted in it, for everyone?`)) run(auth.from('debrod_classes').delete().eq('id', id), () => ui.go({ name: 'classes' })) } }, 'Delete class'))),
+          inIt && el('button', { type: 'button', onClick: async () => { if (await ask(`Leave ${c.name}? Its assignments leave your list (ones you turned in stay).`, 'Leave')) run(auth.from('debrod_class_members').delete().eq('class_id', id).eq('user_id', me.id)) } }, 'Leave'),
+          canEdit(c) && el('button', { type: 'button', onClick: async () => { if (await ask(`Delete ${c.name} and everything posted in it, for everyone?`, 'Delete')) run(auth.from('debrod_classes').delete().eq('id', id), () => ui.go({ name: 'classes' })) } }, 'Delete class'))),
       el('div', { class: 'st-w' },
         el('h2', null, `👥 Members (${list.length})`),
         el('div', { class: 'cl-people' }, list.map(p => el('span', { class: 'cl-person' }, av(p), p.display)))),
@@ -249,7 +249,7 @@ const Classes = (() => {
         el('div', { class: 'cl-row' },
           av(poster), el('span', { class: 'st-sub grow' }, `Posted by ${poster.display}${w.updated_at && w.updated_at !== w.created_at ? ' · edited' : ''}`),
           canEdit(w) && el('button', { type: 'button', onClick: () => ui.go({ name: 'post', classId: w.class_id, id: w.id }) }, 'Edit'),
-          canEdit(w) && el('button', { type: 'button', onClick: () => { if (confirm(`Take down “${w.title}” for everyone in the class?`)) run(auth.from('debrod_class_work').delete().eq('id', w.id), () => ui.go(c ? { name: 'class', id: c.id } : { name: 'classes' })) } }, 'Take down')),
+          canEdit(w) && el('button', { type: 'button', onClick: async () => { if (await ask(`Take down “${w.title}” for everyone in the class?`, 'Take down')) run(auth.from('debrod_class_work').delete().eq('id', w.id), () => ui.go(c ? { name: 'class', id: c.id } : { name: 'classes' })) } }, 'Take down')),
         el('button', { type: 'button', class: done ? '' : 'primary', onClick: () => { ui.toggle(w.id); ui.go({ name: 'work', id: w.id }) } }, done ? 'Undo turn-in' : '✅ Turn it in')))
   }
 
@@ -263,13 +263,13 @@ const Classes = (() => {
       e.preventDefault()
       if (!d.title.trim() || !d.due) return
       const link = d.link.trim()
-      if (link && !/^https?:\/\//i.test(link)) { alert('Links start with https:// (or http://).'); return }
+      if (link && !/^https?:[/][/]/i.test(link)) { tell('Links start with https:/\/ (or http:/\/).'); return }
       const row = { title: d.title.trim(), kind: d.kind, due: d.due, details: d.details.trim(), link: link || null }
       const q = w
         ? auth.from('debrod_class_work').update(row).eq('id', w.id).select('id').single()
         : auth.from('debrod_class_work').insert(Object.assign(row, { class_id: classId, created_by: me.id })).select('id').single()
       const { data, error: err } = await q
-      if (err) { alert(err.message); return }
+      if (err) { tell(err.message); return }
       await load()
       ui.pop(w ? '✏️ Saved' : `📌 Posted to ${c.name}`)
       ui.go({ name: 'work', id: data.id })

@@ -518,7 +518,7 @@ function showdown(host, ctx, opts) {
           el('button', { type: 'button', onClick: () => newTeam() }, '+ New team'),
           el('button', { type: 'button', onClick: () => pasteDialog('Import a team (Showdown text)', '', text => {
             const imported = PS.Teams.import(text)
-            if (!imported || !imported.length) return alert('That doesn\'t look like a Showdown team.')
+            if (!imported || !imported.length) return tell('That doesn\'t look like a Showdown team.')
             newTeam(imported.slice(0, 6), 'Imported team')
           }, 'Import') }, 'Import')),
         el('div', { class: 'pk-builder-body' },
@@ -549,8 +549,8 @@ function showdown(host, ctx, opts) {
                   render()
                 } }, 'Random team'),
                 el('button', { type: 'button', onClick: () => { flushSave(); const copy = Object.assign({}, current, { id: randomId(), name: `${current.name} (copy)` }); saveTeams(loadTeams().concat(copy)); current = copy; render() } }, 'Copy'),
-                el('button', { type: 'button', class: 'link', onClick: () => {
-                  if (!confirm(`Delete ${current.name}?`)) return
+                el('button', { type: 'button', class: 'link', onClick: async () => {
+                  if (!(await ask(`Delete ${current.name}?`, 'Delete'))) return
                   saveTeams(loadTeams().filter(t => t.id !== current.id))
                   current = loadTeams()[0] || null
                   sets = current ? PS.Teams.unpack(current.packed) || [] : []
@@ -1185,7 +1185,7 @@ function showdown(host, ctx, opts) {
       el('p', { class: 'muted small' }, `${link ? 'Send the link, or have' : 'Have'} them open Arcade → Pokémon Showdown and enter the code. Anyone else who joins can watch.`),
       el('button', { type: 'button', class: 'primary', onClick: async () => {
         const ok = await copyText(link || n.code)
-        if (!ok) window.prompt('Send this:', link || n.code)
+        if (!ok) showText('Send this:', link || n.code)
       } }, link ? 'Copy invite link' : 'Copy code'),
       el('button', { type: 'button', class: 'link', onClick: () => { leaveNet(); menu() } }, '‹ Cancel')))
   }
@@ -1313,7 +1313,7 @@ function showdown(host, ctx, opts) {
       el('p', { class: 'muted small' }, `${link ? 'Send the link, or have' : 'Have'} friends open Arcade → Pokémon Showdown and enter the code. Up to three can play; the CPU takes any empty seat, and anyone after that watches.`),
       el('button', { type: 'button', onClick: async () => {
         const ok = await copyText(link || n.code)
-        if (!ok) window.prompt('Send this:', link || n.code)
+        if (!ok) showText('Send this:', link || n.code)
       } }, link ? 'Copy invite link' : 'Copy code'),
       multi && filled > 0 && el('button', { type: 'button', onClick: fourRotate }, 'Change partners'),
       el('button', { type: 'button', class: 'primary', onClick: () => (isDraft(n.format) ? fourDraft() : fourStart()) },
@@ -2311,8 +2311,8 @@ function showdown(host, ctx, opts) {
           return s
         })(),
         el('button', { type: 'button', class: 'chip', onClick: downloadReplay }, 'Replay ⤓'),
-        !spectator && !result && io.forfeit && el('button', { type: 'button', class: 'chip pk-forfeit', onClick: () => {
-          if (!confirm('Forfeit this battle?')) return
+        !spectator && !result && io.forfeit && el('button', { type: 'button', class: 'chip pk-forfeit', onClick: async () => {
+          if (!(await ask('Forfeit this battle?', 'Forfeit'))) return
           io.forfeit()
           // In a free-for-all the other three play on without you.
           if (four && !multi) finish('lose', null, 'You forfeited')
@@ -2323,7 +2323,7 @@ function showdown(host, ctx, opts) {
     // player plays it back.
     function downloadReplay() {
       const names = four ? SHOWDOWN_FOUR.map(nameOf).join(multi ? ' & ' : ' vs. ').replace(/^(.*?) & (.*?) & (.*?) & (.*)$/, '$1 & $3 vs. $2 & $4') : `${info.me} vs. ${info.foe}`
-      const data = rawLog.join('\n').replace(/<\//g, '<\\/')
+      const data = rawLog.join('\n').replace(/<[/]/g, '<\\/')
       const html = `<!DOCTYPE html>\n<meta charset="utf-8" />\n<title>${showdownFormatName(info.format)} replay: ${names}</title>\n` +
         '<div class="wrapper replay-wrapper" style="max-width:1180px;margin:0 auto">\n<input type="hidden" name="replayid" value="debrod" />\n' +
         '<div class="battle"></div><div class="battle-log"></div><div class="replay-controls"></div><div class="replay-controls-2"></div>\n' +

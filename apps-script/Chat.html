@@ -250,7 +250,7 @@ const Chat = (() => {
   // Links and @mentions, without ever setting HTML.
   function rich(text) {
     return text.split(/(https?:\/\/[^\s]+|@[a-z0-9_]{3,20})/i).map(part => {
-      if (/^https?:\/\//i.test(part)) return el('a', { href: part, target: '_blank', rel: 'noopener noreferrer' }, part)
+      if (/^https?:[/][/]/i.test(part)) return el('a', { href: part, target: '_blank', rel: 'noopener noreferrer' }, part)
       if (/^@[a-z0-9_]{3,20}$/i.test(part)) return el('span', { class: 'ch-at' }, part)
       return part
     })
@@ -490,7 +490,7 @@ const Chat = (() => {
 
   async function remove(m) {
     const mine = m.sender === me.id
-    if (!confirm(mine ? 'Delete this message?' : `Delete ${who(m.sender).display}'s message?`)) return
+    if (!(await ask(mine ? 'Delete this message?' : `Delete ${who(m.sender).display}'s message?`, 'Delete'))) return
     const { error } = await auth.from('debrod_chat').delete().eq('id', m.id)
     if (error) { errEl.textContent = readable(error.message); return }
     messages = messages.filter(x => x.id !== m.id)
@@ -610,7 +610,7 @@ const Chat = (() => {
       open(data.id)
     }
     async function drop() {
-      if (!confirm(`Delete #${c.slug} and every message in it? This can't be undone.`)) return
+      if (!(await ask(`Delete #${c.slug} and every message in it? This can't be undone.`, 'Delete'))) return
       const { error } = await auth.from('debrod_channels').delete().eq('id', c.id)
       if (error) { err.textContent = error.message; return }
       closeModal()

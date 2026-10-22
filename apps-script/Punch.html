@@ -1774,7 +1774,7 @@ function punchline(host, ctx, opts) {
         }))))
         parts.push(el('div', { class: 'pl-bar' },
           canPlay && el('button', { type: 'button', class: 'primary', disabled: chosen.length !== pick || hold, onClick: () => { move({ type: 'submit', cards: chosen.slice() }) } }, chosen.length === pick ? 'Play it' : `Pick ${pick - chosen.length} more`),
-          k >= 0 && !G.seats[k].swapped && !mine && el('button', { type: 'button', disabled: hold, title: 'Once per game: throw your whole hand back for ten new cards', onClick: () => { if (confirm('Swap your whole hand for ten new cards? You can do this once per game.')) move({ type: 'swap' }) } }, '↻ Swap hand (once)')))
+          k >= 0 && !G.seats[k].swapped && !mine && el('button', { type: 'button', disabled: hold, title: 'Once per game: throw your whole hand back for ten new cards', onClick: async () => { if (await ask('Swap your whole hand for ten new cards? You can do this once per game.', 'Swap')) move({ type: 'swap' }) } }, '↻ Swap hand (once)')))
       } else if (judging) {
         parts.push(el('p', { class: 'pl-note' }, 'You\'re on lunch duty. The answers show up here once everyone has played.'))
       }

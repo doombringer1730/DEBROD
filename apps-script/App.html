@@ -71,6 +71,36 @@ function formatSize(bytes) {
   return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`
 }
 
+// The browser's own confirm, alert and prompt boxes often don't show inside
+// Apps Script's sandboxed frame (confirm just answers "no"), so DEBROD asks
+// on the page instead. Each returns a promise: ask() resolves true or false,
+// tell() and showText() resolve when closed.
+function dialog(message, buttons, extra) {
+  return new Promise(resolve => {
+    const prev = document.activeElement
+    const close = value => {
+      box.remove()
+      removeEventListener('keydown', key, true)
+      if (prev && prev.focus) try { prev.focus() } catch (e) { /* gone */ }
+      resolve(value)
+    }
+    const key = e => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(buttons.length > 1 ? false : true) }
+    }
+    const btns = buttons.map(([label, value, primary]) => el('button', { type: 'button', class: primary ? 'primary' : '', onClick: () => close(value) }, label))
+    const box = el('div', { class: 'ask', role: 'dialog', 'aria-modal': 'true', onClick: e => { if (e.target === box) close(buttons.length > 1 ? false : true) } },
+      el('div', { class: 'card stack' }, el('p', { class: 'ask-text' }, message), extra || null, el('div', { class: 'row ask-buttons' }, btns)))
+    document.body.append(box)
+    addEventListener('keydown', key, true)
+    const f = box.querySelector('input') || btns[btns.length - 1]
+    setTimeout(() => { f.focus(); if (f.select) f.select() }, 0)
+  })
+}
+const ask = (message, yes = 'Yes', no = 'Cancel') => dialog(message, [[no, false], [yes, true, true]])
+const tell = message => dialog(message, [['OK', true, true]])
+const showText = (message, text) => dialog(message, [['Done', true, true]],
+  el('input', { value: text, readonly: true, onFocus: e => e.target.select() }))
+
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text)
@@ -363,7 +393,7 @@ let youtubeEl = null
 function youtubePlayer(id) {
   if (!youtubeEl || youtubeEl.dataset.id !== id) {
     youtubeEl = el('iframe', {
-      src: `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0`,
+      src: `https:/\/www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0`,
       allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: true,
       title: 'YouTube video', 'data-id': id,
     })
@@ -408,7 +438,7 @@ function bootLines(tab, first) {
     arcade: ['HOME VIDEO COMPUTER SYSTEM', 'cartridge seated ......... ok', `${games || 'all'} games in the drawer`, 'difficulty switches ...... A / B', 'PRESS GAME RESET'],
     chat: ['Welcome to DEBROD.', 'opening "Bulletin Board" ... ok', 'dialling everyone in ...... ok', 'say hi.'],
     admin: ['TELETYPE 33 · PERSONNEL OFFICE', 'unlocking the cabinet ...... ok', `files awaiting clearance ... ${typeof Account !== 'undefined' ? Account.pendingCount() : 0}`, 'READY.'],
-    study: ['//STUDY    JOB (DEBROD),CLASS=A', '//STEP1    EXEC PGM=NOTEBOOK', sum ? `//ASSIGN   DD DUE=${(sum.open || []).length}${sum.overdue ? `,LATE=${sum.overdue}` : ''}` : '//DECKS    DD DSN=FLASH.CARDS', sum && sum.cardsDue ? `//REVIEW   DD CARDS=${sum.cardsDue}` : '//REVIEW   DD SPACED=YES', 'IEF142I STUDY - STEP WAS EXECUTED'],
+    study: ['/\/STUDY    JOB (DEBROD),CLASS=A', '/\/STEP1    EXEC PGM=NOTEBOOK', sum ? `/\/ASSIGN   DD DUE=${(sum.open || []).length}${sum.overdue ? `,LATE=${sum.overdue}` : ''}` : '/\/DECKS    DD DSN=FLASH.CARDS', sum && sum.cardsDue ? `/\/REVIEW   DD CARDS=${sum.cardsDue}` : '/\/REVIEW   DD SPACED=YES', 'IEF142I STUDY - STEP WAS EXECUTED'],
   }
   return power.concat(by[tab] || by.search)
 }
@@ -553,7 +583,7 @@ function view() {
       status('Opening a room…'),
       el('div', { class: 'actions' },
         el('button', { type: 'button', class: 'together', disabled: S.loading, onClick: () => watchYouTube(t) }, 'Watch together'),
-        el('a', { href: `https://www.youtube.com/watch?v=${encodeURIComponent(t.id)}`, target: '_blank', rel: 'noreferrer' }, 'Open on YouTube')))
+        el('a', { href: `https:/\/www.youtube.com/watch?v=${encodeURIComponent(t.id)}`, target: '_blank', rel: 'noreferrer' }, 'Open on YouTube')))
   }
 
   const heading = el('div', { class: 'heading' },

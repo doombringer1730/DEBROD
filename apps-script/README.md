@@ -353,6 +353,21 @@ backup file and **Import** loads one.
 - **Study leaderboard** on Home: XP this week, focus time, cards reviewed,
   streak and all-time XP for everyone, from what their Study sync reports.
 
+## Apps Script gotchas
+
+Two things about how Google serves these pages, learned the hard way:
+
+- **Google strips comments from the served page, badly.** Its stripper
+  understands `'…'` and `"…"` strings but not backtick strings or regexes,
+  so a `//` inside either looks like a comment and the rest of the line is
+  deleted, breaking the script. Inside backticks write `/\/` (it means
+  `//`); in a regex write `[/]` for `/`. The source still reads fine; only
+  the served copy breaks, so test the deployed page.
+- **The browser's `confirm()`, `alert()` and `prompt()` often don't show**
+  inside Google's sandboxed frame, and `confirm()` quietly answers no. Use
+  `ask()`, `tell()` and `showText()` from App.html instead; they draw the
+  box on the page.
+
 ## How it differs from the site
 
 - **No site password.** Whoever can edit the doc, or reach the web app

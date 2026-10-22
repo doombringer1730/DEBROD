@@ -26,7 +26,7 @@ async function partyInvite(game, code, label) {
   const link = cfg.appUrl ? `${cfg.appUrl}?${game}=${code}` : code
   const ok = await copyText(link)
   if (ok) return cfg.appUrl ? 'Invite link copied. Friends sign in and land right in the room.' : `Room code ${code} copied. Friends open Arcade → ${label} and enter it.`
-  window.prompt('Send this to your friends:', link)
+  showText('Send this to your friends:', link)
   return `Send friends this: ${link}`
 }
 

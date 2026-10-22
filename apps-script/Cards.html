@@ -909,7 +909,7 @@ function colorClash(host, ctx, opts) {
       room && el('span', { class: 'pill' }, 'Room ', el('span', { class: 'mono' }, room.code)),
       el('span', { class: 'grow' }),
       room && el('button', { type: 'button', class: 'chip', onClick: async () => { ctx.toast(await partyInvite('cards', room.code, 'Color Clash')) } }, 'Invite'),
-      el('button', { type: 'button', class: 'chip', onClick: () => { if (mode !== 'online' || G.phase !== 'play' || confirm('Leave this game? The CPU will play your seat.')) menu() } }, 'Leave'))
+      el('button', { type: 'button', class: 'chip', onClick: async () => { if (mode !== 'online' || G.phase !== 'play' || await ask('Leave this game? The CPU will play your seat.', 'Leave')) menu() } }, 'Leave'))
     fill(wrap, bar, table())
     renderClock()
   }

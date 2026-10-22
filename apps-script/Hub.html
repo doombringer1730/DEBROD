@@ -382,7 +382,7 @@ const Hub = (() => {
       party.length && el('div', { class: 'hub-chips' }, party.map(g => el('button', { type: 'button', onClick: () => toArcade(g.id) }, `${g.icon} ${g.name}`))),
       S.cfg && S.cfg.appUrl && el('button', { type: 'button', class: 'link', onClick: async () => {
         const ok = await copyText(S.cfg.appUrl)
-        if (!ok) window.prompt('Your DEBROD link:', S.cfg.appUrl)
+        if (!ok) showText('Your DEBROD link. Copy it and send it to friends:', S.cfg.appUrl)
       } }, 'Copy DEBROD link for friends'))
   }
 

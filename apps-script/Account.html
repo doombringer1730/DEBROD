@@ -295,8 +295,8 @@ const Account = (() => {
     if (error) throw new Error(error.message)
   })
 
-  const remove = p => {
-    if (!confirm(`Remove ${p.display} (@${p.username})? Their account and everything saved with it is deleted.`)) return
+  const remove = async p => {
+    if (!(await ask(`Remove ${p.display} (@${p.username})? Their account and everything saved with it is deleted.`, 'Delete'))) return
     act(p.id, () => desk({ action: 'remove', user_id: p.id }))
   }
 
