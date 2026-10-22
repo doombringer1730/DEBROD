@@ -1356,6 +1356,7 @@ const Arcade = (() => {
     { id: 'groups', name: 'Groups', icon: '🟨', blurb: 'Sixteen words, four hidden groups of four. Four mistakes and you\'re out.', hint: 'Pick four that belong together, then Submit.', start: fromFile(typeof wordGroups === 'function' ? wordGroups : null, 'Words'), noScore: true, noRestart: true },
     { id: 'hive', name: 'Hive', icon: '🐝', blurb: 'Make words from seven letters. Every word needs the centre one.', hint: 'Words are 4+ letters. Use all seven for a big bonus.', start: fromFile(typeof wordHive === 'function' ? wordHive : null, 'Words'), noScore: true, noRestart: true },
     { id: 'box', name: 'Letter Box', icon: '🔲', blurb: 'Use every letter around the box. Each word starts with the last one\'s final letter.', hint: 'No two letters in a row from the same side.', start: fromFile(typeof wordBox === 'function' ? wordBox : null, 'Words'), noScore: true, noRestart: true },
+    { id: 'mini', name: 'Mini', icon: '🧩', blurb: 'A pocket crossword: a new one every day, plus practice ones. Beat your time.', hint: 'Type to fill; click a square twice or press Space to switch Across and Down. Tab jumps to the next clue.', start: fromFile(typeof wordMini === 'function' ? wordMini : null, 'Words'), noScore: true, noRestart: true },
     { id: 'tictactoe', name: 'Tic-tac-toe', icon: '⭕', blurb: 'Beat the CPU as many rounds in a row as you can.', hint: 'You\'re ✕. Turns alternate who goes first.', start: tictactoe },
   ]
 

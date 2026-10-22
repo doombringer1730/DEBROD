@@ -108,6 +108,35 @@
 .wg .wg-square button { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; padding: 0; border-radius: 50%; border: 2px solid #8a7558; background: #241d17; color: var(--wg-ink); font: 400 18px 'Righteous', sans-serif; letter-spacing: 0; z-index: 1; box-shadow: 0 2px 0 #0a0807; }
 .wg .wg-square button.used { background: #4a2a17; border-color: var(--wg-orange); color: #ffb27a; }
 .wg .wg-square button.last, .wg .wg-square button.last:hover:not(:disabled) { background: var(--wg-gold); border-color: #ffc457; color: #1a1208; box-shadow: 0 0 12px rgba(243, 165, 33, 0.6); }
+/* Mini */
+.wg-mini-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wg-clock { font: 500 18px 'DM Mono', monospace; color: var(--wg-gold); text-shadow: 0 0 8px rgba(243, 165, 33, 0.5); min-width: 60px; }
+.wg-cluebar { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 8px 10px; border-left: 4px solid var(--wg-gold); border-radius: 4px; background: #2a2017; box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.4); }
+.wg-cluebar p { flex: 1; margin: 0; font-size: 18px; line-height: 1.25; letter-spacing: 0.03em; }
+.wg-cluebar b { color: var(--wg-gold); margin-right: 6px; font-family: 'DM Mono', monospace; font-weight: 500; }
+.wg .wg-cluebar button { padding: 4px 10px; font-size: 18px; letter-spacing: 0; }
+.wg-mini-grid { display: grid; grid-template-columns: repeat(var(--n), 1fr); gap: 3px; width: min(100%, 320px); margin: 0 auto; padding: 3px; background: #050403; border-radius: 4px; box-shadow: 0 0 0 1px #3d342b, 0 0 18px rgba(243, 165, 33, 0.12); }
+.wg-cell { position: relative; aspect-ratio: 1; display: grid; place-items: center; background: var(--wg-glass); border-radius: 2px; font: 400 clamp(22px, 7vw, 32px)/1 'Righteous', sans-serif; text-transform: uppercase; color: var(--wg-ink); cursor: pointer; user-select: none; -webkit-user-select: none; }
+.wg-cell.black { background: transparent; cursor: default; }
+.wg-cell.word { background: #3a2c1c; }
+.wg-cell.cur { background: var(--wg-gold); color: #1a1208; box-shadow: 0 0 14px rgba(243, 165, 33, 0.55); }
+.wg-cell.bad { color: var(--wg-orange); text-shadow: 0 0 8px rgba(232, 105, 30, 0.7); }
+.wg-cell.bad::before { content: ''; position: absolute; left: 12%; right: 12%; top: 50%; height: 2px; background: var(--wg-orange); transform: rotate(-35deg); }
+.wg-cell.rev::after { content: ''; position: absolute; right: 0; top: 0; border: 7px solid transparent; border-top-color: #5b8fd9; border-right-color: #5b8fd9; }
+.wg-cell.solved { animation: wg-glow 0.6s ease-out both; }
+@keyframes wg-glow { 40% { background: var(--wg-green); color: #04140a; box-shadow: 0 0 16px rgba(63, 174, 106, 0.7); } }
+.wg-num { position: absolute; left: 3px; top: 2px; font: 500 10px/1 'DM Mono', monospace; color: var(--wg-soft); }
+.wg-cell.cur .wg-num { color: #5a3d08; }
+.wg-clues { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.wg-clues h4 { margin: 0 0 4px; font: 400 15px 'Righteous', sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: var(--wg-gold); }
+.wg-clues ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.wg-clues li { display: flex; gap: 6px; padding: 3px 6px; border-radius: 3px; font-size: 15px; line-height: 1.25; letter-spacing: 0.02em; cursor: pointer; }
+.wg-clues li b { font: 500 13px 'DM Mono', monospace; color: var(--wg-soft); min-width: 14px; }
+.wg-clues li:hover { background: #241d17; }
+.wg-clues li.on { background: #3a2c1c; box-shadow: inset 3px 0 0 var(--wg-gold); }
+.wg-clues li.filled { color: #8f8270; }
+.wg .wg-keys.mini button { height: 46px; }
+@media (max-width: 480px) { .wg-clues { grid-template-columns: 1fr; } }
 </style>
 <script>
 // The word games, in the spirit of the newspaper's puzzle page (dressed as
@@ -116,12 +145,13 @@
 // - Groups: sort sixteen words into four groups of four.
 // - Hive: make words from seven letters, always using the centre one.
 // - Letter Box: link words around a square until every letter is used.
+// - Mini: a pocket crossword, clues written out below.
 // Each has a daily puzzle (the same for everyone, so you can compare in
 // chat) and practice puzzles, keeps your progress and stats in this
 // browser, and copies a spoiler-free result to share.
 // Five, Hive and Letter Box read their word lists from words.json (built by
 // words/build.py from SCOWL), loaded once from jsDelivr like the Showdown
-// engine. Groups' puzzles are written out below.
+// engine. Groups' and Mini's puzzles are written out below.
 // Careful: Apps Script strips comments from the served page and its stripper
 // doesn't understand backtick strings or regexes, so no double slash goes in
 // either here.
@@ -709,6 +739,313 @@ function wordBox(host, ctx) {
       return false
     },
     stop() {},
+  }
+}
+// ── Mini ────────────────────────────────────────────────────────────────────
+// A pocket crossword. Each puzzle: its rows (# is a black square) and a clue
+// for every answer, keyed by the answer. Numbering works itself out.
+const WG_MINIS = [
+  ["##via #pens worth also# see##", {"via": "By way of", "pens": "Ink holders", "worth": "Value", "also": "Too", "see": "Look", "was": "Existed", "pole": "Flag holder", "verse": "Song part", "into": "Inside of", "ash": "Fire residue"}],
+  ["##god #menu pence rare# one##", {"god": "Zeus, for one", "menu": "List at a restaurant", "pence": "British coins", "rare": "Like a barely cooked steak", "one": "Single", "pro": "Expert", "mean": "Not nice", "genre": "Category of music", "once": "One time", "due": "Like homework on Monday"}],
+  ["#daft hello alias items lane#", {"daft": "Silly, to a Brit", "hello": "Phone greeting", "alias": "Fake name", "items": "Things on a list", "lane": "Bowling alley strip", "hail": "Icy storm", "delta": "River's mouth, or an airline", "alien": "E.T., for one", "flame": "Candle's glow", "toss": "Coin flip"}],
+  ["##vat #care dogma opus# eye##", {"vat": "Big tub", "care": "Concern", "dogma": "Rigid belief", "opus": "Masterpiece", "eye": "Hurricane's center", "doe": "Female deer", "copy": "Duplicate", "vague": "Unclear", "arms": "Limbs", "tea": "Earl Grey, e.g."}],
+  ["sand# claim alive novel #west", {"sand": "Beach stuff", "claim": "Assert", "alive": "Living", "novel": "Long book", "west": "Wild ___", "scan": "Look over quickly", "allow": "Permit", "naive": "Innocent", "dives": "Pool jumps", "melt": "What ice does in the sun"}],
+  ["#when phone lords asset need#", {"when": "\"At what time?\"", "phone": "It's always in your pocket", "lords": "Nobles", "asset": "Valuable thing", "need": "Require", "plan": "Strategy", "whose": "\"___ turn is it?\"", "horse": "Stable animal", "ended": "Finished", "nest": "Empty ___"}],
+  ["dust# incur stone hires #lest", {"dust": "What a duster removes", "incur": "Bring on oneself, as a fee", "stone": "Pebble", "hires": "Employs", "lest": "So that not", "dish": "Plate", "until": "Till", "score": "Final tally", "tunes": "Songs", "rest": "Nap"}],
+  ["#debt genre alter steam park#", {"debt": "Money owed", "genre": "Fiction or nonfiction", "alter": "Modify", "steam": "Kettle output", "park": "Place with swings", "gasp": "Sharp breath of shock", "delta": "Triangle of land at a river's mouth", "enter": "Key above Shift", "break": "Recess", "term": "School semester"}],
+  ["##mum #nose given acid# see##", {"mum": "Keep ___ (stay quiet)", "nose": "Smeller", "given": "Granted", "acid": "Sour substance", "see": "Watch", "gas": "Fuel", "nice": "Kind", "movie": "Film", "used": "Secondhand", "men": "Chess pieces, collectively"}],
+  ["flaw rare ones meat", {"flaw": "Imperfection", "rare": "Uncommon", "ones": "Single bills", "meat": "Burger patty", "from": "Gift tag word", "lane": "Highway division", "area": "Region", "west": "Compass direction"}],
+  ["#grew brave eater scene test#", {"grew": "Got taller", "brave": "Fearless", "eater": "Picky ___", "scene": "Part of a movie", "test": "Exam", "best": "Top", "grace": "Elegance", "rates": "Gives stars to, as a movie", "event": "Happening", "were": "\"If I ___ you...\""}],
+  ["glad# roman acute bases #lest", {"glad": "Happy", "roman": "Like the numerals in Super Bowl names", "acute": "Angle under 90°", "bases": "They're loaded before a grand slam", "lest": "For fear that", "grab": "Snatch", "local": "Nearby, as news", "amuse": "Make laugh", "dates": "Sweet fruit from palms", "nest": "Bird's home"}],
+  ["##cat #rage risen uses# bed##", {"cat": "Meowing pet", "rage": "Fury", "risen": "Gotten up", "uses": "Employs", "bed": "Place to sleep", "rub": "Massage", "rise": "Go up", "cased": "Scoped out, like a bank", "ages": "Forever", "ten": "Number of fingers"}],
+  ["idea# drama liter event #ends", {"idea": "Bright thought", "drama": "Theater class", "liter": "Soda bottle size", "event": "Track meet race", "ends": "Wraps up", "idle": "Not working", "drive": "Get behind the wheel", "eaten": "Consumed", "amend": "Change, as the Constitution", "arts": "Painting and music"}],
+  ["bar## owes# basis #yeti ##ten", {"bar": "Chocolate ___", "owes": "Has a debt", "basis": "Foundation", "yeti": "Abominable Snowman", "ten": "A decade", "bob": "Float up and down", "away": "Not home", "reset": "Restart", "site": "Web address", "sin": "Wrongdoing"}],
+  ["#dark movie ozone reign ends#", {"dark": "Without light", "movie": "Night at the theater", "ozone": "Layer that blocks UV", "reign": "A king's rule", "ends": "Stops", "more": "Extra", "dozen": "Twelve", "avoid": "Steer clear of", "rings": "Lord of the ___", "keen": "Eager"}],
+  ["##map #wake merit earn# try##", {"map": "Road guide", "wake": "Stop sleeping", "merit": "Deserve", "earn": "Make, as money", "try": "Give it a shot", "met": "Got to know", "wear": "Have on", "marry": "Tie the knot", "akin": "Similar", "pet": "Goldfish, perhaps"}],
+  ["loss# atlas whale seven #rest", {"loss": "Win's opposite", "atlas": "Book of maps", "whale": "Biggest animal in the sea", "seven": "Days in a week", "rest": "Take a break", "laws": "Rules passed by Congress", "other": "Not this one", "slave": "Work like a ___", "sales": "Black Friday events", "sent": "Mailed"}],
+  ["sail# error erase notes #west", {"sail": "Boat's canvas", "error": "Oops", "erase": "Wipe off a whiteboard", "notes": "What you take in class", "west": "Where the sun sets", "seen": "Spotted", "arrow": "Cupid's shot", "irate": "Furious", "loses": "Misplaces", "rest": "Remainder"}],
+  ["arms coat idle deem", {"arms": "They give hugs", "coat": "Winter jacket", "idle": "Doing nothing", "deem": "Consider", "acid": "Lemon juice, chemically", "rode": "Took the bus", "male": "Not female", "stem": "Flower's stalk"}],
+  ["##arm #true twist wish# one##", {"arm": "Limb with an elbow", "true": "Not false", "twist": "Surprise ending", "wish": "It's made over birthday candles", "one": "Loneliest number", "two": "Sides to a coin", "twin": "Identical sibling", "arise": "Come up", "rush": "Hurry", "met": "Ran into"}],
+  ["gear# orbit arose loves #rent", {"gear": "Bike part with teeth", "orbit": "Path around the sun", "arose": "Got out of bed", "loves": "Adores", "rent": "Monthly apartment payment", "goal": "What a striker wants", "error": "Mistake", "above": "Overhead", "risen": "Up, like bread dough", "test": "Pop quiz, for one"}],
+  ["ego## rich# areas #late ##net", {"ego": "Self-esteem", "rich": "Wealthy", "areas": "Regions", "late": "Tardy", "net": "Tennis divider", "era": "Time period", "girl": "Young woman", "ocean": "Pacific, e.g.", "hate": "Despise", "set": "Volleyball move"}],
+  ["sat## axis# delta #seen ##spy", {"sat": "Took a seat", "axis": "Line on a graph", "delta": "Greek letter for change", "seen": "Witnessed", "spy": "Secret agent", "sad": "Blue", "axes": "Lumberjacks' tools", "tiles": "Scrabble pieces", "step": "Stair", "any": "Got ___ gum?"}],
+  ["rest# alpha tires stark #eyes", {"rest": "Relax", "alpha": "First Greek letter", "tires": "Wheels' rubber", "stark": "Bare", "eyes": "Windows to the soul", "rats": "\"Darn it!\"", "elite": "Top-tier", "spray": "Hose output", "there": "Not here", "asks": "Questions"}],
+  ["##got #time brain aunt# yet##", {"got": "Received", "time": "What a clock tells", "brain": "Thinking organ", "aunt": "Mom's sister", "yet": "Still", "bay": "Body of water by the coast", "true": "Accurate", "giant": "Jack's beanstalk foe", "omit": "Leave out", "ten": "Perfect score"}],
+  ["##ate #plug suing urge# men##", {"ate": "Had lunch", "plug": "It goes in an outlet", "suing": "Taking to court", "urge": "Strong desire", "men": "Guys", "sum": "Addition answer", "pure": "Unmixed", "align": "Line up", "tune": "Melody", "egg": "Omelet ingredient"}],
+  ["evil dire icon tens", {"evil": "Villainous", "dire": "Dreadful", "icon": "App picture", "tens": "Perfect scores", "edit": "Revise", "vice": "___ president", "iron": "Wrinkle remover", "lens": "Glasses part"}],
+  ["acts tore open meet", {"acts": "Plays have them", "tore": "Ripped", "open": "Not closed", "meet": "Track ___", "atom": "Tiny building block", "cope": "Deal (with)", "tree": "Pine, e.g.", "sent": "Shipped"}],
+  ["#mere level ideas since path#", {"mere": "Just a", "level": "Game stage", "ideas": "Brainstorm results", "since": "Ever ___", "path": "Trail", "lisp": "Speech impediment", "media": "News outlets", "event": "Olympic race", "reach": "Stretch for", "else": "Otherwise"}],
+  ["#asks prone agree cured keys#", {"asks": "Raises a question", "prone": "Likely (to)", "agree": "See eye to eye", "cured": "Healed", "keys": "A piano's 88", "pack": "Get ready for a trip", "argue": "Debate", "sorry": "\"My bad!\"", "knees": "Leg joints", "seed": "Tournament ranking"}],
+  ["##bye #tray share hand# end##", {"bye": "\"See ya!\"", "tray": "Cafeteria carrier", "share": "Split with a friend", "hand": "What you raise with a question", "end": "Finish", "she": "Her, as a subject", "than": "Taller ___ me", "brand": "Nike or Adidas", "yard": "Three feet", "eye": "Organ of sight"}],
+  ["hut## opus# total #none ##red", {"hut": "Small shack", "opus": "Musical work", "total": "Sum", "none": "Not one", "red": "Stop sign color", "hot": "Like summer days", "upon": "Once ___ a time", "tutor": "Homework helper", "sane": "Of sound mind", "led": "Was in front"}],
+  ["#guts metro until creed herd#", {"guts": "Courage, slangily", "metro": "Subway, in Paris", "until": "Up to the time that", "creed": "Set of beliefs", "herd": "Group of cattle", "much": "A lot", "genre": "Horror or sci-fi, e.g.", "utter": "Say", "tried": "Gave it a shot", "sold": "\"___!\" (auctioneer's cry)"}],
+  ["#fast honor argue scene held#", {"fast": "Speedy", "honor": "___ roll", "argue": "Bicker", "scene": "Make a ___ (cause a fuss)", "held": "Kept", "hash": "The # symbol", "force": "\"May the ___ be with you\"", "angel": "Halo wearer", "sound": "Noise", "tree": "Oak or maple"}],
+  ["#seem slave notes opens went#", {"seem": "Appear", "slave": "Toil", "notes": "Musical symbols", "opens": "Unlocks", "went": "Left", "snow": "Winter flakes", "slope": "Ski hill", "eaten": "Gobbled up", "event": "Occasion", "mess": "Untidy room"}],
+  ["cold area rant else", {"cold": "Like ice", "area": "Length times width", "rant": "Angry tirade", "else": "\"Or ___!\"", "care": "Give a hoot", "oral": "Kind of exam that's spoken", "lens": "Camera part", "date": "Calendar square"}],
+  ["##her #taxi rabid omit# wet##", {"her": "That woman", "taxi": "Yellow cab", "rabid": "Fanatical, as a fan", "omit": "Skip", "wet": "Soaked", "row": "Paddle a boat", "tame": "Not wild", "habit": "Routine", "exit": "Way out", "rid": "Free (of)"}],
+  ["#sets apart ratio creep herd#", {"sets": "Tennis match parts", "apart": "Separated", "ratio": "Proportion", "creep": "Move slowly", "herd": "Group of sheep", "arch": "McDonald's golden symbol", "spare": "Extra tire", "eater": "One at the table", "tried": "Attempted", "stop": "Halt"}],
+  ["dare# alarm metro prior #tore", {"dare": "Truth or ___", "alarm": "Morning wake-up", "metro": "City subway", "prior": "Earlier", "tore": "Ripped", "damp": "Slightly wet", "alert": "Wide awake", "ratio": "3:1, e.g.", "error": "Bug in the code", "more": "\"Seconds, please!\""}],
+  ["##big #were pilot upon# new##", {"big": "Large", "were": "Used to be", "pilot": "Plane flyer", "upon": "On top of", "new": "Brand-___", "pun": "Wordplay joke", "wipe": "Clean the counter", "below": "Under", "iron": "Metal in steel", "get": "Understand"}]
+]
+
+function wordMini(host, ctx) {
+  const ui = wgShell(host, 'Mini', 'a pocket crossword')
+  const KEYS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm']
+  let mode = 'daily'
+  let index = 0
+  let P = null          // the puzzle: { n, sol, slots, at }
+  let fills = []        // what you've typed, row by row
+  let bad = new Set()   // cells Check found wrong, as "r,c"
+  let rev = new Set()   // cells revealed
+  let cur = { r: 0, c: 0 }
+  let dir = 'A'
+  let done = false
+  let helped = false
+  let base = 0          // ms on the clock before `since`
+  let since = 0
+  let ticker = 0
+  const clock = el('span', { class: 'wg-clock' })
+
+  function build(rows, clues) {
+    const sol = rows.split(' ').map(r => [...r])
+    const n = sol.length
+    const open = (r, c) => r >= 0 && c >= 0 && r < n && c < n && sol[r][c] !== '#'
+    const slots = []
+    const at = {} // "r,c" → { A: slot, D: slot }
+    let num = 0
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+      if (!open(r, c)) continue
+      const a = !open(r, c - 1) && open(r, c + 1)
+      const d = !open(r - 1, c) && open(r + 1, c)
+      if (!a && !d) continue
+      num++
+      for (const [go, dr, dc, k] of [[a, 0, 1, 'A'], [d, 1, 0, 'D']]) {
+        if (!go) continue
+        const cells = []
+        for (let i = 0; open(r + dr * i, c + dc * i); i++) cells.push([r + dr * i, c + dc * i])
+        const word = cells.map(([y, x]) => sol[y][x]).join('')
+        const slot = { dir: k, num, cells, word, clue: clues[word] || '' }
+        slots.push(slot)
+        for (const [y, x] of cells) (at[`${y},${x}`] = at[`${y},${x}`] || {})[k] = slot
+      }
+    }
+    slots.sort((x, y) => (x.dir === y.dir ? x.num - y.num : x.dir === 'A' ? -1 : 1))
+    return { n, sol, slots, at, open }
+  }
+
+  const key = () => `mini_${wgDay()}`
+  const elapsed = () => base + (since ? Date.now() - since : 0)
+  const fmt = ms => { const t = Math.floor(ms / 1000); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}` }
+  const slotAt = (r, c, d) => (P.at[`${r},${c}`] || {})[d]
+  const curSlot = () => slotAt(cur.r, cur.c, dir) || slotAt(cur.r, cur.c, dir === 'A' ? 'D' : 'A')
+
+  function save() {
+    if (mode !== 'daily') return
+    wgStore.set(key(), { fills: fills.map(r => r.join('')), bad: [...bad], rev: [...rev], done, helped, ms: elapsed() })
+  }
+
+  function setMode(m) {
+    stopClock()
+    mode = m
+    if (!WG_MINIS.length) return wgFill(ui.body, el('p', { class: 'wg-loading' }, 'No puzzles yet.'))
+    const today = ((wgDay() % WG_MINIS.length) + WG_MINIS.length) % WG_MINIS.length
+    if (m === 'daily') index = today
+    else {
+      let i = Math.floor(Math.random() * WG_MINIS.length)
+      if (WG_MINIS.length > 1) while (i === today || i === index) i = Math.floor(Math.random() * WG_MINIS.length)
+      index = i
+    }
+    P = build(WG_MINIS[index][0], WG_MINIS[index][1])
+    const saved = m === 'daily' ? wgStore.get(key(), null) : null
+    fills = P.sol.map((row, r) => row.map((ch, c) => (ch === '#' ? '#' : (saved && saved.fills[r] && saved.fills[r][c] !== ' ' && saved.fills[r][c]) || '')))
+    bad = new Set(saved ? saved.bad : [])
+    rev = new Set(saved ? saved.rev : [])
+    done = !!(saved && saved.done)
+    helped = !!(saved && saved.helped)
+    base = saved ? saved.ms || 0 : 0
+    since = 0
+    dir = 'A'
+    const first = P.slots[0]
+    cur = { r: first.cells[0][0], c: first.cells[0][1] }
+    jumpTo(first)
+    if (!done) startClock()
+    draw()
+  }
+
+  function startClock() {
+    if (since || done) return
+    since = Date.now()
+    clearInterval(ticker)
+    ticker = setInterval(() => { clock.textContent = fmt(elapsed()) }, 500)
+  }
+  function stopClock() {
+    if (since) { base = elapsed(); since = 0 }
+    clearInterval(ticker)
+    if (P && mode === 'daily') save()
+  }
+
+  // Put the cursor on a slot's first empty square (or its first square).
+  function jumpTo(slot) {
+    dir = slot.dir
+    const empty = slot.cells.find(([r, c]) => !fills[r][c])
+    const [r, c] = empty || slot.cells[0]
+    cur = { r, c }
+  }
+  function nextSlot(step) {
+    const s = curSlot()
+    const i = P.slots.indexOf(s)
+    // Skip ahead to a slot that still has an empty square, if any do.
+    for (let k = 1; k <= P.slots.length; k++) {
+      const t = P.slots[(i + step * k + P.slots.length * 2) % P.slots.length]
+      if (t.cells.some(([r, c]) => !fills[r][c])) return jumpTo(t)
+    }
+    jumpTo(P.slots[(i + step + P.slots.length) % P.slots.length])
+  }
+
+  function type(ch) {
+    if (done) return
+    startClock()
+    const s = curSlot()
+    if (!s) return
+    const k = `${cur.r},${cur.c}`
+    if (!rev.has(k)) { fills[cur.r][cur.c] = ch; bad.delete(k) } // revealed squares stay put
+    // On to the next empty square in this answer, else the next answer.
+    const i = s.cells.findIndex(([r, c]) => r === cur.r && c === cur.c)
+    const later = s.cells.slice(i + 1).find(([r, c]) => !fills[r][c])
+    if (later) cur = { r: later[0], c: later[1] }
+    else if (s.cells.some(([r, c]) => !fills[r][c])) { const e = s.cells.find(([r, c]) => !fills[r][c]); cur = { r: e[0], c: e[1] } }
+    else nextSlot(1)
+    finishCheck()
+    save()
+    draw()
+  }
+
+  function back() {
+    if (done) return
+    const s = curSlot()
+    if (!s) return
+    const k = `${cur.r},${cur.c}`
+    if (fills[cur.r][cur.c] && !rev.has(k)) { fills[cur.r][cur.c] = ''; bad.delete(k) } else {
+      const i = s.cells.findIndex(([r, c]) => r === cur.r && c === cur.c)
+      if (i > 0) {
+        const [r, c] = s.cells[i - 1]
+        cur = { r, c }
+        if (!rev.has(`${r},${c}`)) { fills[r][c] = ''; bad.delete(`${r},${c}`) }
+      }
+    }
+    save()
+    draw()
+  }
+
+  function move(dr, dc) {
+    const want = dr ? 'D' : 'A'
+    if (dir !== want && slotAt(cur.r, cur.c, want)) { dir = want; return draw() }
+    let r = cur.r + dr
+    let c = cur.c + dc
+    while (r >= 0 && c >= 0 && r < P.n && c < P.n && !P.open(r, c)) { r += dr; c += dc }
+    if (r >= 0 && c >= 0 && r < P.n && c < P.n) cur = { r, c }
+    if (!slotAt(cur.r, cur.c, dir)) dir = dir === 'A' ? 'D' : 'A'
+    draw()
+  }
+
+  function pick(r, c) {
+    if (!P.open(r, c)) return
+    if (cur.r === r && cur.c === c) { const o = dir === 'A' ? 'D' : 'A'; if (slotAt(r, c, o)) dir = o }
+    else { cur = { r, c }; if (!slotAt(r, c, dir)) dir = dir === 'A' ? 'D' : 'A' }
+    draw()
+  }
+
+  function full() { return P.sol.every((row, r) => row.every((ch, c) => ch === '#' || fills[r][c])) }
+  function right() { return P.sol.every((row, r) => row.every((ch, c) => ch === '#' || fills[r][c] === ch)) }
+  function finishCheck() {
+    if (!full()) return
+    if (!right()) { ui.say('Not quite. Something\'s off.', 2200); return }
+    done = true
+    stopClock()
+    if (mode === 'daily') wgRecord('mini', !helped, null)
+    ui.say(helped ? 'Done (with a little help)' : `Solved in ${fmt(elapsed())}!`, 0)
+    save()
+  }
+
+  function check(cells) {
+    let wrong = 0
+    for (const [r, c] of cells) if (fills[r][c] && fills[r][c] !== P.sol[r][c]) { bad.add(`${r},${c}`); wrong++ }
+    if (wrong) helped = true
+    ui.say(wrong ? `${wrong} wrong` : 'All good so far')
+    save()
+    draw()
+  }
+  function reveal(cells) {
+    for (const [r, c] of cells) if (fills[r][c] !== P.sol[r][c]) { fills[r][c] = P.sol[r][c]; rev.add(`${r},${c}`); bad.delete(`${r},${c}`) }
+    helped = true
+    finishCheck()
+    save()
+    draw()
+  }
+  const allCells = () => P.slots.filter(s => s.dir === 'A').flatMap(s => s.cells)
+
+  function share() {
+    wgShare(`DEBROD Mini ${mode === 'daily' ? `#${wgDay()}` : '(practice)'} ⏱ ${fmt(elapsed())}${helped ? ' (with help)' : ''} 🧩`, ctx)
+  }
+
+  function draw() {
+    ui.head(mode, wgDay(), setMode)
+    clock.textContent = fmt(elapsed())
+    const s = curSlot()
+    const inWord = new Set(s ? s.cells.map(([r, c]) => `${r},${c}`) : [])
+    const numAt = {}
+    for (const t of P.slots) numAt[`${t.cells[0][0]},${t.cells[0][1]}`] = t.num
+    const cells = []
+    for (let r = 0; r < P.n; r++) for (let c = 0; c < P.n; c++) {
+      const k = `${r},${c}`
+      if (!P.open(r, c)) { cells.push(el('div', { class: 'wg-cell black' })); continue }
+      const cls = ['wg-cell', !done && r === cur.r && c === cur.c ? 'cur' : !done && inWord.has(k) ? 'word' : '', bad.has(k) ? 'bad' : '', rev.has(k) ? 'rev' : '', done ? 'solved' : ''].join(' ')
+      cells.push(el('div', { class: cls, style: done ? `animation-delay: ${(r + c) * 0.06}s` : null, onClick: () => pick(r, c) },
+        numAt[k] && el('span', { class: 'wg-num' }, String(numAt[k])), fills[r][c] || ''))
+    }
+    const list = d => el('div', null, el('h4', null, d === 'A' ? 'Across' : 'Down'), el('ol', null, P.slots.filter(t => t.dir === d).map(t => el('li', {
+      class: `${t === s ? 'on' : ''} ${t.cells.every(([r, c]) => fills[r][c]) ? 'filled' : ''}`, onClick: () => { if (!done) { jumpTo(t); draw() } },
+    }, el('b', null, String(t.num)), el('span', null, t.clue)))))
+    const stats = wgStore.get('mini_stats', null)
+    wgFill(ui.body,
+      el('div', { class: 'wg-mini-top' }, clock,
+        !done && el('div', { class: 'wg-row' },
+          el('button', { type: 'button', onClick: () => check(s.cells) }, 'Check word'),
+          el('button', { type: 'button', onClick: () => check(allCells()) }, 'Check all'),
+          el('button', { type: 'button', onClick: async () => { if (await ask('Reveal the whole puzzle?', 'Reveal')) reveal(allCells()) } }, 'Reveal'))),
+      !done && s && el('div', { class: 'wg-cluebar' },
+        el('button', { type: 'button', 'aria-label': 'Previous clue', onClick: () => { nextSlot(-1); draw() } }, '‹'),
+        el('p', null, el('b', null, `${s.num}${s.dir === 'A' ? 'A' : 'D'}`), s.clue),
+        el('button', { type: 'button', 'aria-label': 'Next clue', onClick: () => { nextSlot(1); draw() } }, '›')),
+      el('div', { class: 'wg-mini-grid', style: `--n: ${P.n}` }, cells),
+      done && el('div', { class: 'wg-end' },
+        el('h3', null, helped ? 'Finished!' : `Solved in ${fmt(elapsed())}`),
+        mode === 'daily' && stats && wgStatsBlock(stats, null, null),
+        el('div', { class: 'wg-row' },
+          el('button', { type: 'button', class: 'dark', onClick: share }, 'Share'),
+          el('button', { type: 'button', onClick: () => setMode('practice') }, 'Play a practice one'))),
+      !done && el('div', { class: 'wg-keys mini' }, KEYS.map((row, i) => el('div', { class: 'r' },
+        [...row].map(k => el('button', { type: 'button', onClick: () => type(k) }, k)),
+        i === 2 && el('button', { type: 'button', class: 'wide', 'aria-label': 'Delete', onClick: back }, '⌫')))),
+      el('div', { class: 'wg-clues' }, list('A'), list('D')))
+  }
+
+  setMode('daily')
+
+  return {
+    key(e, down) {
+      if (!down || !P || done || e.ctrlKey || e.metaKey || e.altKey) return false
+      if (/^[a-zA-Z]$/.test(e.key)) { type(e.key.toLowerCase()); return true }
+      if (e.key === 'Backspace' || e.key === 'Delete') { back(); return true }
+      if (e.key === 'ArrowLeft') { move(0, -1); return true }
+      if (e.key === 'ArrowRight') { move(0, 1); return true }
+      if (e.key === 'ArrowUp') { move(-1, 0); return true }
+      if (e.key === 'ArrowDown') { move(1, 0); return true }
+      if (e.key === 'Tab' || e.key === 'Enter') { nextSlot(e.shiftKey ? -1 : 1); draw(); return true }
+      if (e.key === ' ') { pick(cur.r, cur.c); return true }
+      return false
+    },
+    stop() { stopClock() },
   }
 }
 </script>

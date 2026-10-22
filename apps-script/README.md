@@ -27,7 +27,7 @@ keys live in the script's properties instead of environment variables.
 | `Showdown.html` | Pokémon Showdown battles, on Showdown's own simulator. |
 | `Notify.html` | Sitewide notifications: pop-ups and the 🔔 bell (mentions, class work, new boards, sign-ups, Huddy's announcements). |
 | `Boards.html` | Group whiteboards in Study, live over Supabase Realtime. |
-| `Words.html` | Word games in the arcade: Five, Groups, Hive and Letter Box. Their word lists load from `words/words.json` on jsDelivr. |
+| `Words.html` | Word games in the arcade: Five, Groups, Hive, Letter Box and the Mini crossword. Their word lists load from `words/words.json` on jsDelivr. |
 | `StarSling.html` | Star Sling, a memorial to Angry Birds Star Wars. |
 | `Settings.html` | The keys form. |
 | `Styles.html` | `app/globals.css`, wrapped in `<style>`. |
