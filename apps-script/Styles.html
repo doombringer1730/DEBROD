@@ -426,14 +426,19 @@ a { color: var(--cyan); }
     radial-gradient(ellipse 22% 9% at 74% 50%, rgba(0, 240, 255, 0.35), transparent 70%),
     radial-gradient(ellipse 26% 10% at 27% 88%, rgba(255, 43, 214, 0.4), transparent 70%),
     linear-gradient(180deg, #1a0b3d 0%, #2b0f57 52%, #3a1162 52.3%, #160934 100%); }
-.pk-sprite { position: absolute; image-rendering: pixelated; transition: opacity 0.4s, filter 0.4s; pointer-events: none; }
+/* Every Pokémon gets its own box and is scaled to fit inside it, standing on
+   the platform, so big sprites can't spill over each other or the HP boxes
+   (sizing by height alone let wide ones like Dondozo cover the field). The
+   boxes never overlap: yours on the left, theirs on the right, and the HP
+   boxes on the opposite side from the Pokémon they belong to. */
+.pk-sprite { position: absolute; image-rendering: pixelated; transition: opacity 0.4s, filter 0.4s; pointer-events: none; object-fit: contain; object-position: 50% 100%; }
 .pk-sprite[hidden] { display: none; }
-.pk-sprite.foe { right: 16%; top: 14%; height: 40%; }
-.pk-sprite.me { left: 12%; bottom: 4%; height: 50%; }
-.pk-field.doubles .pk-sprite.foe.slot0 { right: 30%; top: 13%; height: 34%; }
-.pk-field.doubles .pk-sprite.foe.slot1 { right: 7%; top: 19%; height: 34%; }
-.pk-field.doubles .pk-sprite.me.slot0 { left: 5%; bottom: 3%; height: 44%; }
-.pk-field.doubles .pk-sprite.me.slot1 { left: 30%; bottom: 6%; height: 44%; }
+.pk-sprite.foe { right: 14%; top: 10%; width: 26%; height: 40%; }
+.pk-sprite.me { left: 10%; bottom: 6%; width: 30%; height: 46%; }
+.pk-field.doubles .pk-sprite.foe.slot0 { right: 29%; top: 10%; width: 20%; height: 34%; }
+.pk-field.doubles .pk-sprite.foe.slot1 { right: 6%; top: 15%; width: 20%; height: 34%; }
+.pk-field.doubles .pk-sprite.me.slot0 { left: 3%; bottom: 4%; width: 23%; height: 42%; }
+.pk-field.doubles .pk-sprite.me.slot1 { left: 27%; bottom: 7%; width: 23%; height: 42%; }
 .pk-sprite.fainted { opacity: 0.15; filter: grayscale(1); }
 /* Terastallized: a glow, a badge and a ringed ball, all in the Tera type's colour. */
 .pk-sprite.tera:not(.fainted) { filter: drop-shadow(0 0 3px var(--tera)) drop-shadow(0 0 10px var(--tera)) brightness(1.08); animation: pk-tera-glow 1.8s ease-in-out infinite alternate; }
