@@ -1,93 +1,117 @@
 <style>
-/* ── Word games: Five, Groups, Hive, Letter Box (the newspaper puzzle page) ──
-   Plain newsprint and ink inside the arcade's TV, with the familiar tile
-   colours: green for right, gold for close, grey for not in it. */
+/* ── Word games: Five, Groups, Hive, Letter Box ──
+   A 1977 "word computer" cartridge: a dark phosphor screen set in the
+   arcade's woodgrain console, amber glow, chunky key-switch buttons and a
+   faint scanline. Tile colours keep their meaning: green is right, amber is
+   close, dim is not in it. */
 .game-stage:has(.wg) { width: min(100%, 540px); touch-action: auto; user-select: auto; -webkit-user-select: auto; }
-.wg { --wg-paper: #fbfaf6; --wg-ink: #1d1d1f; --wg-soft: #6e6e73; --wg-line: #d3d3cf; --wg-key: #e2e2de; --wg-green: #5a9a52; --wg-gold: #c9a227; --wg-grey: #7b7b7e;
-  --wg-y: #f2d35b; --wg-g: #9bc46a; --wg-b: #9cb8e2; --wg-p: #b996d6;
-  background: var(--wg-paper); color: var(--wg-ink); font-family: 'Libre Franklin', 'Helvetica Neue', Arial, sans-serif; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-height: 420px; }
-.wg button { font: 600 14px 'Libre Franklin', 'Helvetica Neue', Arial, sans-serif; color: var(--wg-ink); background: #fff; border: 1px solid var(--wg-ink); border-radius: 999px; padding: 8px 16px; box-shadow: none; text-transform: none; letter-spacing: 0; cursor: pointer; }
-.wg button:hover:not(:disabled) { background: #f0efea; color: var(--wg-ink); border-color: var(--wg-ink); box-shadow: none; transform: none; }
-.wg button:disabled { opacity: 0.4; }
-.wg button.dark, .wg button.dark:hover:not(:disabled) { background: var(--wg-ink); color: #fff; }
-.wg-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--wg-line); padding-bottom: 8px; }
-.wg-title { font: 700 24px/1 'Archivo Black', 'Libre Franklin', sans-serif; letter-spacing: -0.01em; }
-.wg-sub { font-size: 13px; color: var(--wg-soft); }
+.wg { --wg-paper: #14110e; --wg-ink: #f4e7cb; --wg-soft: #b8a88a; --wg-line: #3d342b; --wg-key: #2b241e; --wg-green: #3fae6a; --wg-gold: #f3a521; --wg-grey: #3a332d;
+  --wg-orange: #e8691e; --wg-glass: #1b1713;
+  --wg-y: #f3a521; --wg-g: #3fb68a; --wg-b: #5b8fd9; --wg-p: #c25ec2;
+  position: relative; isolation: isolate; color: var(--wg-ink); font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-size: 16px; letter-spacing: 0.02em;
+  border-radius: 18px / 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 420px;
+  background: radial-gradient(120% 90% at 50% 40%, #221c16 0%, var(--wg-paper) 70%, #0b0907 100%);
+  box-shadow: inset 0 0 0 2px #050403, inset 0 0 40px rgba(0, 0, 0, 0.7), inset 0 0 90px rgba(243, 165, 33, 0.05); }
+/* Scanlines and a little glass glare. */
+.wg::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px),
+    radial-gradient(60% 35% at 30% 8%, rgba(255, 240, 210, 0.06), transparent 70%); }
+.wg button { font: 600 15px 'Barlow Condensed', sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: var(--wg-gold); background: var(--wg-key);
+  border: 1px solid #4a3f34; border-radius: 4px; padding: 7px 14px; box-shadow: 0 3px 0 #0a0807, inset 0 1px 0 rgba(255, 255, 255, 0.06); cursor: pointer; transition: transform 0.05s; }
+.wg button:hover:not(:disabled) { background: #362d25; color: #ffc457; border-color: #5a4c3e; box-shadow: 0 3px 0 #0a0807, 0 0 12px rgba(243, 165, 33, 0.18); transform: none; }
+.wg button:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #0a0807; }
+.wg button:disabled { opacity: 0.35; }
+.wg button.dark, .wg button.dark:hover:not(:disabled) { background: var(--wg-orange); border-color: #ff8a43; color: #1a0e05; box-shadow: 0 3px 0 #7a320b, 0 0 14px rgba(232, 105, 30, 0.35); }
+.wg-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding-bottom: 10px;
+  border-bottom: 3px solid transparent; border-image: linear-gradient(90deg, #f3c46b 0 33%, #f3a521 33% 66%, #e8691e 66%) 1; }
+.wg-title { font: 400 28px/1 'Righteous', sans-serif; letter-spacing: 0.04em; color: var(--wg-gold); text-shadow: 0 0 10px rgba(243, 165, 33, 0.45), 2px 2px 0 #36210f; }
+.wg-sub { font-size: 14px; color: var(--wg-soft); letter-spacing: 0.06em; }
+.wg .wg-sub { text-transform: none; }
 .wg-modes { display: flex; gap: 6px; }
-.wg-modes button { padding: 4px 12px; font-size: 12px; }
-.wg-modes button.on { background: var(--wg-ink); color: #fff; }
-.wg-msg { min-height: 22px; text-align: center; font-weight: 600; font-size: 14px; }
+.wg-modes button { padding: 4px 11px; font-size: 13px; }
+.wg-modes button.on, .wg-modes button.on:hover:not(:disabled) { background: var(--wg-gold); border-color: #ffc457; color: #1a1208; box-shadow: 0 3px 0 #7a5208, 0 0 12px rgba(243, 165, 33, 0.35); }
+.wg-msg { min-height: 22px; text-align: center; font: 600 16px 'DM Mono', monospace; letter-spacing: 0.04em; color: var(--wg-gold); text-shadow: 0 0 8px rgba(243, 165, 33, 0.5); }
 .wg-msg:not(:empty) { animation: wg-pop 0.2s ease-out; }
 @keyframes wg-pop { from { transform: scale(0.9); opacity: 0; } }
 .wg-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
-.wg-end { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--wg-line); border-radius: 10px; background: #fff; text-align: center; }
-.wg-end h3 { margin: 0; font: 700 20px 'Archivo Black', sans-serif; }
-.wg-stats { display: flex; gap: 16px; justify-content: center; }
-.wg-stats div { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: var(--wg-soft); }
-.wg-stats b { font-size: 22px; color: var(--wg-ink); }
-.wg-dist { width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+.wg-end { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px; border: 1px solid var(--wg-line); border-radius: 6px; background: var(--wg-glass); text-align: center; box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5); }
+.wg-end h3 { margin: 0; font: 400 22px 'Righteous', sans-serif; color: var(--wg-gold); text-shadow: 0 0 10px rgba(243, 165, 33, 0.4); }
+.wg-stats { display: flex; gap: 18px; justify-content: center; }
+.wg-stats div { display: flex; flex-direction: column; align-items: center; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--wg-soft); }
+.wg-stats b { font: 500 26px 'DM Mono', monospace; color: var(--wg-ink); text-shadow: 0 0 8px rgba(244, 231, 203, 0.35); }
+.wg-dist { width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 3px; font: 13px 'DM Mono', monospace; }
 .wg-dist div { display: flex; gap: 6px; align-items: center; }
-.wg-dist span:last-child { background: var(--wg-grey); color: #fff; padding: 1px 6px; text-align: right; min-width: 18px; }
-.wg-dist .now span:last-child { background: var(--wg-green); }
-.wg-loading { text-align: center; color: var(--wg-soft); padding: 40px 0; }
+.wg-dist span:last-child { background: var(--wg-grey); color: var(--wg-ink); padding: 1px 6px; text-align: right; min-width: 18px; }
+.wg-dist .now span:last-child { background: var(--wg-green); color: #04140a; box-shadow: 0 0 10px rgba(63, 174, 106, 0.5); }
+.wg-loading { text-align: center; color: var(--wg-soft); padding: 40px 0; font-family: 'DM Mono', monospace; }
 
 /* Five */
 .wg-board { display: grid; grid-template-rows: repeat(6, 1fr); gap: 6px; width: min(100%, 300px); margin: 0 auto; }
 .wg-line { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .wg-line.shake { animation: wg-shake 0.4s; }
 @keyframes wg-shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
-.wg-tile { aspect-ratio: 1; display: grid; place-items: center; font: 700 clamp(20px, 6vw, 30px) 'Libre Franklin', sans-serif; text-transform: uppercase; border: 2px solid var(--wg-line); background: #fff; }
-.wg-tile.full { border-color: #888; }
-.wg-tile.g, .wg-tile.y, .wg-tile.x { color: #fff; border-color: transparent; animation: wg-flip 0.4s ease-out both; }
-.wg-tile.g { background: var(--wg-green); } .wg-tile.y { background: var(--wg-gold); } .wg-tile.x { background: var(--wg-grey); }
+.wg-tile { aspect-ratio: 1; display: grid; place-items: center; font: 400 clamp(22px, 6.5vw, 32px) 'Righteous', sans-serif; text-transform: uppercase; color: var(--wg-ink);
+  border: 2px solid var(--wg-line); border-radius: 3px; background: var(--wg-glass); box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.6); }
+.wg-tile.full { border-color: #8a7558; text-shadow: 0 0 8px rgba(244, 231, 203, 0.5); }
+.wg-tile.g, .wg-tile.y, .wg-tile.x { border-color: transparent; animation: wg-flip 0.4s ease-out both; }
+.wg-tile.g { background: var(--wg-green); color: #04140a; box-shadow: 0 0 14px rgba(63, 174, 106, 0.55); }
+.wg-tile.y { background: var(--wg-gold); color: #1a1208; box-shadow: 0 0 14px rgba(243, 165, 33, 0.5); }
+.wg-tile.x { background: var(--wg-grey); color: #8f8270; box-shadow: none; }
 @keyframes wg-flip { from { transform: rotateX(90deg); } }
 .wg-keys { display: flex; flex-direction: column; gap: 6px; }
 .wg-keys .r { display: flex; gap: 5px; justify-content: center; }
-.wg .wg-keys button { flex: 1 1 0; max-width: 44px; min-width: 0; height: 52px; padding: 0; border: none; border-radius: 5px; background: var(--wg-key); font-size: 15px; text-transform: uppercase; }
-.wg .wg-keys button.wide { max-width: 68px; flex: 1.5 1 0; font-size: 12px; }
-.wg .wg-keys button.g { background: var(--wg-green); color: #fff; } .wg .wg-keys button.y { background: var(--wg-gold); color: #fff; } .wg .wg-keys button.x { background: var(--wg-grey); color: #fff; }
+.wg .wg-keys button { flex: 1 1 0; max-width: 44px; min-width: 0; height: 52px; padding: 0; letter-spacing: 0; font: 600 18px 'Barlow Condensed', sans-serif; color: var(--wg-ink); }
+.wg .wg-keys button.wide { max-width: 68px; flex: 1.5 1 0; font-size: 13px; letter-spacing: 0.08em; color: var(--wg-gold); }
+.wg .wg-keys button.g { background: var(--wg-green); color: #04140a; border-color: #5fd18a; }
+.wg .wg-keys button.y { background: var(--wg-gold); color: #1a1208; border-color: #ffc457; }
+.wg .wg-keys button.x { background: #1a1612; color: #5d5246; border-color: #2a241e; }
 
 /* Groups */
 .wg-solved { display: flex; flex-direction: column; gap: 8px; }
-.wg-band { border-radius: 8px; padding: 10px; text-align: center; animation: wg-pop 0.3s ease-out; }
-.wg-band b { display: block; text-transform: uppercase; font-size: 14px; letter-spacing: 0.04em; }
-.wg-band span { font-size: 13px; text-transform: uppercase; }
-.wg-band.c0 { background: var(--wg-y); } .wg-band.c1 { background: var(--wg-g); } .wg-band.c2 { background: var(--wg-b); } .wg-band.c3 { background: var(--wg-p); }
+.wg-band { border-radius: 4px; padding: 10px; text-align: center; animation: wg-pop 0.3s ease-out; color: #120d08; box-shadow: 0 0 16px color-mix(in srgb, currentColor 0%, transparent), inset 0 -3px 0 rgba(0, 0, 0, 0.25); }
+.wg-band b { display: block; text-transform: uppercase; font: 400 16px 'Righteous', sans-serif; letter-spacing: 0.06em; }
+.wg-band span { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; }
+.wg-band.c0 { background: var(--wg-y); box-shadow: 0 0 16px rgba(243, 165, 33, 0.4); }
+.wg-band.c1 { background: var(--wg-g); box-shadow: 0 0 16px rgba(63, 182, 138, 0.4); }
+.wg-band.c2 { background: var(--wg-b); box-shadow: 0 0 16px rgba(91, 143, 217, 0.4); }
+.wg-band.c3 { background: var(--wg-p); box-shadow: 0 0 16px rgba(194, 94, 194, 0.4); }
 .wg-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.wg .wg-grid button { aspect-ratio: 1.4; padding: 4px; border: none; border-radius: 8px; background: #ecebe4; font-weight: 700; font-size: clamp(10px, 2.8vw, 14px); text-transform: uppercase; overflow-wrap: anywhere; }
-.wg .wg-grid button.on, .wg .wg-grid button.on:hover:not(:disabled) { background: #5a594e; color: #fff; }
-.wg-dots { display: flex; gap: 6px; justify-content: center; align-items: center; font-size: 13px; color: var(--wg-soft); }
-.wg-dots i { width: 12px; height: 12px; border-radius: 50%; background: #5a594e; display: inline-block; }
+.wg .wg-grid button { aspect-ratio: 1.4; padding: 4px; color: var(--wg-ink); font-size: clamp(11px, 3vw, 15px); letter-spacing: 0.06em; overflow-wrap: anywhere; }
+.wg .wg-grid button.on, .wg .wg-grid button.on:hover:not(:disabled) { background: var(--wg-orange); border-color: #ff8a43; color: #1a0e05; box-shadow: 0 3px 0 #7a320b, 0 0 14px rgba(232, 105, 30, 0.45); }
+.wg-dots { display: flex; gap: 6px; justify-content: center; align-items: center; font-size: 14px; letter-spacing: 0.08em; color: var(--wg-soft); }
+.wg-dots i { width: 12px; height: 12px; border-radius: 50%; background: var(--wg-orange); box-shadow: 0 0 8px rgba(232, 105, 30, 0.7); display: inline-block; }
 
 /* Hive */
 .wg-hive-top { display: grid; grid-template-columns: 1fr; gap: 6px; }
-.wg-rank { display: flex; align-items: center; gap: 10px; font-size: 13px; }
-.wg-rank b { min-width: 90px; }
-.wg-rankbar { flex: 1; height: 4px; background: var(--wg-line); position: relative; }
-.wg-rankbar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--wg-gold); }
-.wg .wg-sub { text-transform: none; }
-.wg-found { min-height: 38px; max-height: 120px; overflow-y: auto; border: 1px solid var(--wg-line); border-radius: 8px; padding: 8px 10px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 4px 12px; text-transform: capitalize; background: #fff; }
-.wg-found .pan { font-weight: 800; }
-.wg-entry { text-align: center; font: 700 26px 'Libre Franklin', sans-serif; text-transform: uppercase; min-height: 36px; letter-spacing: 0.04em; }
+.wg-rank { display: flex; align-items: center; gap: 10px; font-size: 14px; letter-spacing: 0.06em; }
+.wg-rank b { min-width: 90px; color: var(--wg-gold); text-transform: uppercase; }
+.wg-rankbar { flex: 1; height: 5px; background: var(--wg-line); position: relative; border-radius: 3px; }
+.wg-rankbar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--wg-gold); box-shadow: 0 0 8px rgba(243, 165, 33, 0.7); }
+.wg-found { min-height: 38px; max-height: 120px; overflow-y: auto; border: 1px solid var(--wg-line); border-radius: 4px; padding: 8px 10px; font: 14px 'DM Mono', monospace; display: flex; flex-wrap: wrap; gap: 4px 12px; text-transform: capitalize; background: var(--wg-glass); box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.5); }
+.wg-found .pan { font-weight: 500; color: var(--wg-gold); text-shadow: 0 0 6px rgba(243, 165, 33, 0.6); }
+.wg-entry { text-align: center; font: 400 30px 'Righteous', sans-serif; text-transform: uppercase; min-height: 38px; letter-spacing: 0.08em; text-shadow: 0 0 10px rgba(244, 231, 203, 0.4); }
 .wg-entry .c { color: var(--wg-gold); }
-.wg-entry::after { content: ''; display: inline-block; width: 2px; height: 26px; margin-left: 2px; background: var(--wg-gold); vertical-align: -3px; animation: wg-blink 1s steps(2, start) infinite; }
+.wg-entry::after { content: ''; display: inline-block; width: 12px; height: 4px; margin-left: 3px; background: var(--wg-gold); vertical-align: 0; box-shadow: 0 0 6px var(--wg-gold); animation: wg-blink 1s steps(2, start) infinite; }
 @keyframes wg-blink { to { visibility: hidden; } }
 .wg-comb { position: relative; width: 240px; height: 250px; margin: 0 auto; }
-.wg .wg-comb button { position: absolute; width: 84px; height: 74px; padding: 0; border: none; border-radius: 0; background: #e6e6e3; font: 700 24px 'Libre Franklin', sans-serif; text-transform: uppercase; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
-.wg .wg-comb button.mid, .wg .wg-comb button.mid:hover:not(:disabled) { background: var(--wg-gold); }
+.wg .wg-comb button { position: absolute; width: 84px; height: 74px; padding: 0; border: none; border-radius: 0; background: #2f2721; color: var(--wg-ink); font: 400 26px 'Righteous', sans-serif; letter-spacing: 0; box-shadow: none;
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
+.wg .wg-comb button:hover:not(:disabled) { background: #3d3229; box-shadow: none; }
+.wg .wg-comb button.mid, .wg .wg-comb button.mid:hover:not(:disabled) { background: var(--wg-gold); color: #1a1208; }
 
 /* Letter Box */
-.wg-box-entry { text-align: center; font: 700 24px 'Libre Franklin', sans-serif; text-transform: uppercase; min-height: 34px; border-bottom: 2px solid var(--wg-ink); width: min(100%, 300px); margin: 0 auto; }
-.wg-box-words { text-align: center; font-size: 14px; color: var(--wg-soft); text-transform: uppercase; min-height: 20px; }
+.wg-box-entry { text-align: center; font: 400 26px 'Righteous', sans-serif; text-transform: uppercase; letter-spacing: 0.08em; min-height: 36px; border-bottom: 2px solid var(--wg-gold); width: min(100%, 300px); margin: 0 auto; text-shadow: 0 0 10px rgba(244, 231, 203, 0.4); }
+.wg-box-words { text-align: center; font-size: 15px; letter-spacing: 0.06em; color: var(--wg-soft); text-transform: uppercase; min-height: 20px; }
 .wg-square { position: relative; width: min(100%, 340px); aspect-ratio: 1; margin: 6px auto 24px; }
-.wg-square svg { position: absolute; inset: 14%; width: 72%; height: 72%; overflow: visible; }
-.wg-square .frame { position: absolute; inset: 14%; border: 2px solid var(--wg-ink); background: #fff; }
-.wg .wg-square button { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; padding: 0; border-radius: 50%; border: 2px solid var(--wg-ink); background: #fff; font: 700 17px 'Libre Franklin', sans-serif; text-transform: uppercase; z-index: 1; }
-.wg .wg-square button.used { background: #f4c7b6; }
-.wg .wg-square button.last, .wg .wg-square button.last:hover:not(:disabled) { background: var(--wg-ink); color: #fff; }
+.wg-square svg { position: absolute; inset: 14%; width: 72%; height: 72%; overflow: visible; filter: drop-shadow(0 0 3px rgba(232, 105, 30, 0.8)); }
+.wg-square .frame { position: absolute; inset: 14%; border: 2px solid #8a7558; background: var(--wg-glass); box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.6), 0 0 10px rgba(243, 165, 33, 0.12); }
+.wg .wg-square button { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; padding: 0; border-radius: 50%; border: 2px solid #8a7558; background: #241d17; color: var(--wg-ink); font: 400 18px 'Righteous', sans-serif; letter-spacing: 0; z-index: 1; box-shadow: 0 2px 0 #0a0807; }
+.wg .wg-square button.used { background: #4a2a17; border-color: var(--wg-orange); color: #ffb27a; }
+.wg .wg-square button.last, .wg .wg-square button.last:hover:not(:disabled) { background: var(--wg-gold); border-color: #ffc457; color: #1a1208; box-shadow: 0 0 12px rgba(243, 165, 33, 0.6); }
 </style>
 <script>
-// The word games, in the spirit of the newspaper's puzzle page:
+// The word games, in the spirit of the newspaper's puzzle page (dressed as
+// a 1977 word-computer cartridge to match the arcade):
 // - Five: guess the five-letter word in six tries.
 // - Groups: sort sixteen words into four groups of four.
 // - Hive: make words from seven letters, always using the centre one.
@@ -643,7 +667,7 @@ function wordBox(host, ctx) {
       const line = document.createElementNS('http:\x2f\x2fwww.w3.org/2000/svg', 'polyline')
       line.setAttribute('points', pts.map(svgPt).join(' '))
       line.setAttribute('fill', 'none')
-      line.setAttribute('stroke', '#e0806a')
+      line.setAttribute('stroke', '#e8691e')
       line.setAttribute('stroke-width', '1.6')
       line.setAttribute('stroke-dasharray', entry && !over ? '0' : '0')
       svg.append(line)
