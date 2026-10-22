@@ -25,6 +25,7 @@ keys live in the script's properties instead of environment variables.
 | `Games.html` | The arcade's games. |
 | `Scribble.html` | Scribble, the multiplayer draw-and-guess game. |
 | `Showdown.html` | Pokémon Showdown battles, on Showdown's own simulator. |
+| `Words.html` | Word games in the arcade: Five, Groups, Hive and Letter Box. Their word lists load from `words/words.json` on jsDelivr. |
 | `StarSling.html` | Star Sling, a memorial to Angry Birds Star Wars. |
 | `Settings.html` | The keys form. |
 | `Styles.html` | `app/globals.css`, wrapped in `<style>`. |
@@ -35,7 +36,7 @@ keys live in the script's properties instead of environment variables.
 
 1. Create a Google Doc, then open **Extensions → Apps Script**.
 2. Replace `Code.gs` with the one here. Add the HTML files with **+ → HTML**,
-   named `Index`, `App`, `Account`, `Chat`, `Themes`, `Hub`, `Study`, `Classes`, `Focus`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
+   named `Index`, `App`, `Account`, `Chat`, `Themes`, `Hub`, `Study`, `Classes`, `Focus`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Words`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
    one in. To edit `appsscript.json`, turn on **Project Settings → Show
    "appsscript.json" manifest file in editor**.
 3. Save, reload the doc, and open **DEBROD → Settings**. Approve the

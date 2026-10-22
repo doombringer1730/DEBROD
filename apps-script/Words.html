@@ -1,0 +1,690 @@
+<style>
+/* ── Word games: Five, Groups, Hive, Letter Box (the newspaper puzzle page) ──
+   Plain newsprint and ink inside the arcade's TV, with the familiar tile
+   colours: green for right, gold for close, grey for not in it. */
+.game-stage:has(.wg) { width: min(100%, 540px); touch-action: auto; user-select: auto; -webkit-user-select: auto; }
+.wg { --wg-paper: #fbfaf6; --wg-ink: #1d1d1f; --wg-soft: #6e6e73; --wg-line: #d3d3cf; --wg-key: #e2e2de; --wg-green: #5a9a52; --wg-gold: #c9a227; --wg-grey: #7b7b7e;
+  --wg-y: #f2d35b; --wg-g: #9bc46a; --wg-b: #9cb8e2; --wg-p: #b996d6;
+  background: var(--wg-paper); color: var(--wg-ink); font-family: 'Libre Franklin', 'Helvetica Neue', Arial, sans-serif; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-height: 420px; }
+.wg button { font: 600 14px 'Libre Franklin', 'Helvetica Neue', Arial, sans-serif; color: var(--wg-ink); background: #fff; border: 1px solid var(--wg-ink); border-radius: 999px; padding: 8px 16px; box-shadow: none; text-transform: none; letter-spacing: 0; cursor: pointer; }
+.wg button:hover:not(:disabled) { background: #f0efea; color: var(--wg-ink); border-color: var(--wg-ink); box-shadow: none; transform: none; }
+.wg button:disabled { opacity: 0.4; }
+.wg button.dark, .wg button.dark:hover:not(:disabled) { background: var(--wg-ink); color: #fff; }
+.wg-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--wg-line); padding-bottom: 8px; }
+.wg-title { font: 700 24px/1 'Archivo Black', 'Libre Franklin', sans-serif; letter-spacing: -0.01em; }
+.wg-sub { font-size: 13px; color: var(--wg-soft); }
+.wg-modes { display: flex; gap: 6px; }
+.wg-modes button { padding: 4px 12px; font-size: 12px; }
+.wg-modes button.on { background: var(--wg-ink); color: #fff; }
+.wg-msg { min-height: 22px; text-align: center; font-weight: 600; font-size: 14px; }
+.wg-msg:not(:empty) { animation: wg-pop 0.2s ease-out; }
+@keyframes wg-pop { from { transform: scale(0.9); opacity: 0; } }
+.wg-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.wg-end { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--wg-line); border-radius: 10px; background: #fff; text-align: center; }
+.wg-end h3 { margin: 0; font: 700 20px 'Archivo Black', sans-serif; }
+.wg-stats { display: flex; gap: 16px; justify-content: center; }
+.wg-stats div { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: var(--wg-soft); }
+.wg-stats b { font-size: 22px; color: var(--wg-ink); }
+.wg-dist { width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+.wg-dist div { display: flex; gap: 6px; align-items: center; }
+.wg-dist span:last-child { background: var(--wg-grey); color: #fff; padding: 1px 6px; text-align: right; min-width: 18px; }
+.wg-dist .now span:last-child { background: var(--wg-green); }
+.wg-loading { text-align: center; color: var(--wg-soft); padding: 40px 0; }
+
+/* Five */
+.wg-board { display: grid; grid-template-rows: repeat(6, 1fr); gap: 6px; width: min(100%, 300px); margin: 0 auto; }
+.wg-line { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.wg-line.shake { animation: wg-shake 0.4s; }
+@keyframes wg-shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+.wg-tile { aspect-ratio: 1; display: grid; place-items: center; font: 700 clamp(20px, 6vw, 30px) 'Libre Franklin', sans-serif; text-transform: uppercase; border: 2px solid var(--wg-line); background: #fff; }
+.wg-tile.full { border-color: #888; }
+.wg-tile.g, .wg-tile.y, .wg-tile.x { color: #fff; border-color: transparent; animation: wg-flip 0.4s ease-out both; }
+.wg-tile.g { background: var(--wg-green); } .wg-tile.y { background: var(--wg-gold); } .wg-tile.x { background: var(--wg-grey); }
+@keyframes wg-flip { from { transform: rotateX(90deg); } }
+.wg-keys { display: flex; flex-direction: column; gap: 6px; }
+.wg-keys .r { display: flex; gap: 5px; justify-content: center; }
+.wg .wg-keys button { flex: 1 1 0; max-width: 44px; min-width: 0; height: 52px; padding: 0; border: none; border-radius: 5px; background: var(--wg-key); font-size: 15px; text-transform: uppercase; }
+.wg .wg-keys button.wide { max-width: 68px; flex: 1.5 1 0; font-size: 12px; }
+.wg .wg-keys button.g { background: var(--wg-green); color: #fff; } .wg .wg-keys button.y { background: var(--wg-gold); color: #fff; } .wg .wg-keys button.x { background: var(--wg-grey); color: #fff; }
+
+/* Groups */
+.wg-solved { display: flex; flex-direction: column; gap: 8px; }
+.wg-band { border-radius: 8px; padding: 10px; text-align: center; animation: wg-pop 0.3s ease-out; }
+.wg-band b { display: block; text-transform: uppercase; font-size: 14px; letter-spacing: 0.04em; }
+.wg-band span { font-size: 13px; text-transform: uppercase; }
+.wg-band.c0 { background: var(--wg-y); } .wg-band.c1 { background: var(--wg-g); } .wg-band.c2 { background: var(--wg-b); } .wg-band.c3 { background: var(--wg-p); }
+.wg-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.wg .wg-grid button { aspect-ratio: 1.4; padding: 4px; border: none; border-radius: 8px; background: #ecebe4; font-weight: 700; font-size: clamp(10px, 2.8vw, 14px); text-transform: uppercase; overflow-wrap: anywhere; }
+.wg .wg-grid button.on, .wg .wg-grid button.on:hover:not(:disabled) { background: #5a594e; color: #fff; }
+.wg-dots { display: flex; gap: 6px; justify-content: center; align-items: center; font-size: 13px; color: var(--wg-soft); }
+.wg-dots i { width: 12px; height: 12px; border-radius: 50%; background: #5a594e; display: inline-block; }
+
+/* Hive */
+.wg-hive-top { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.wg-rank { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.wg-rank b { min-width: 90px; }
+.wg-rankbar { flex: 1; height: 4px; background: var(--wg-line); position: relative; }
+.wg-rankbar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--wg-gold); }
+.wg .wg-sub { text-transform: none; }
+.wg-found { min-height: 38px; max-height: 120px; overflow-y: auto; border: 1px solid var(--wg-line); border-radius: 8px; padding: 8px 10px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 4px 12px; text-transform: capitalize; background: #fff; }
+.wg-found .pan { font-weight: 800; }
+.wg-entry { text-align: center; font: 700 26px 'Libre Franklin', sans-serif; text-transform: uppercase; min-height: 36px; letter-spacing: 0.04em; }
+.wg-entry .c { color: var(--wg-gold); }
+.wg-entry::after { content: ''; display: inline-block; width: 2px; height: 26px; margin-left: 2px; background: var(--wg-gold); vertical-align: -3px; animation: wg-blink 1s steps(2, start) infinite; }
+@keyframes wg-blink { to { visibility: hidden; } }
+.wg-comb { position: relative; width: 240px; height: 250px; margin: 0 auto; }
+.wg .wg-comb button { position: absolute; width: 84px; height: 74px; padding: 0; border: none; border-radius: 0; background: #e6e6e3; font: 700 24px 'Libre Franklin', sans-serif; text-transform: uppercase; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
+.wg .wg-comb button.mid, .wg .wg-comb button.mid:hover:not(:disabled) { background: var(--wg-gold); }
+
+/* Letter Box */
+.wg-box-entry { text-align: center; font: 700 24px 'Libre Franklin', sans-serif; text-transform: uppercase; min-height: 34px; border-bottom: 2px solid var(--wg-ink); width: min(100%, 300px); margin: 0 auto; }
+.wg-box-words { text-align: center; font-size: 14px; color: var(--wg-soft); text-transform: uppercase; min-height: 20px; }
+.wg-square { position: relative; width: min(100%, 340px); aspect-ratio: 1; margin: 6px auto 24px; }
+.wg-square svg { position: absolute; inset: 14%; width: 72%; height: 72%; overflow: visible; }
+.wg-square .frame { position: absolute; inset: 14%; border: 2px solid var(--wg-ink); background: #fff; }
+.wg .wg-square button { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; padding: 0; border-radius: 50%; border: 2px solid var(--wg-ink); background: #fff; font: 700 17px 'Libre Franklin', sans-serif; text-transform: uppercase; z-index: 1; }
+.wg .wg-square button.used { background: #f4c7b6; }
+.wg .wg-square button.last, .wg .wg-square button.last:hover:not(:disabled) { background: var(--wg-ink); color: #fff; }
+</style>
+<script>
+// The word games, in the spirit of the newspaper's puzzle page:
+// - Five: guess the five-letter word in six tries.
+// - Groups: sort sixteen words into four groups of four.
+// - Hive: make words from seven letters, always using the centre one.
+// - Letter Box: link words around a square until every letter is used.
+// Each has a daily puzzle (the same for everyone, so you can compare in
+// chat) and practice puzzles, keeps your progress and stats in this
+// browser, and copies a spoiler-free result to share.
+// Five, Hive and Letter Box read their word lists from words.json (built by
+// words/build.py from SCOWL), loaded once from jsDelivr like the Showdown
+// engine. Groups' puzzles are written out below.
+// Careful: Apps Script strips comments from the served page and its stripper
+// doesn't understand backtick strings or regexes, so no double slash goes in
+// either here.
+
+const WORDS_URL = 'https://cdn.jsdelivr.net/gh/doombringer1730/DEBROD@0ef6e207f9c73f01d59f449c8597a159ee0b1c56/apps-script/words/words.json'
+let wordsData = null
+function loadWords() {
+  if (!wordsData) {
+    wordsData = fetch(WORDS_URL).then(r => {
+      if (!r.ok) throw new Error(`The word list didn't load (${r.status}).`)
+      return r.json()
+    }).catch(e => { wordsData = null; throw e })
+  }
+  return wordsData
+}
+
+// Puzzle numbers count days from 1 January 2026, in your own time zone.
+const wgDay = () => {
+  const now = new Date()
+  return Math.floor((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(2026, 0, 1)) / 86400000)
+}
+const wgStore = {
+  get(key, fallback) { try { const v = localStorage.getItem(`ds_wg_${key}`); return v === null ? fallback : JSON.parse(v) } catch (e) { return fallback } },
+  set(key, value) { try { localStorage.setItem(`ds_wg_${key}`, JSON.stringify(value)) } catch (e) { /* private mode */ } },
+}
+const wgFill = (node, ...kids) => { node.replaceChildren(...kids.flat(Infinity).filter(k => k != null && k !== false)); return node }
+const wgShuffle = (arr, rand = Math.random) => { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]] } return a }
+// A seeded random, so a day's shuffle is the same for everyone.
+const wgRand = seed => () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296 }
+
+// Streaks and wins per game, for daily puzzles only.
+function wgRecord(game, won, extra) {
+  const s = wgStore.get(`${game}_stats`, { played: 0, won: 0, streak: 0, best: 0, last: null, dist: {} })
+  const day = wgDay()
+  if (s.last === day) return s
+  s.played++
+  if (won) {
+    s.won++
+    s.streak = s.last === day - 1 ? s.streak + 1 : 1
+    s.best = Math.max(s.best, s.streak)
+  } else s.streak = 0
+  if (extra != null) s.dist[extra] = (s.dist[extra] || 0) + 1
+  s.last = day
+  wgStore.set(`${game}_stats`, s)
+  return s
+}
+
+async function wgShare(text, ctx) {
+  const ok = await copyText(text)
+  if (ok) ctx.toast('Result copied. Paste it in chat!')
+  else showText('Copy your result:', text)
+}
+
+function wgShell(host, title, sub, modes) {
+  const root = el('div', { class: 'wg' })
+  const head = el('div', { class: 'wg-head' })
+  const msg = el('p', { class: 'wg-msg', role: 'status' })
+  const body = el('div', { class: 'stack' })
+  root.append(head, msg, body)
+  host.append(root)
+  let msgTimer
+  return {
+    root, body,
+    head(mode, number, setMode) {
+      wgFill(head,
+        el('div', null, el('p', { class: 'wg-title' }, title), el('p', { class: 'wg-sub' }, mode === 'daily' ? `Daily #${number} · ${sub}` : `Practice · ${sub}`)),
+        el('div', { class: 'wg-modes' },
+          el('button', { type: 'button', class: mode === 'daily' ? 'on' : '', onClick: () => setMode('daily') }, 'Daily'),
+          el('button', { type: 'button', class: mode === 'practice' ? 'on' : '', onClick: () => setMode('practice') }, mode === 'practice' ? 'New' : 'Practice')))
+    },
+    say(text, ms = 1600) {
+      msg.textContent = text
+      clearTimeout(msgTimer)
+      if (ms) msgTimer = setTimeout(() => { msg.textContent = '' }, ms)
+    },
+  }
+}
+
+function wgStatsBlock(s, distRows, current) {
+  return [
+    el('div', { class: 'wg-stats' },
+      el('div', null, el('b', null, String(s.played)), 'Played'),
+      el('div', null, el('b', null, s.played ? `${Math.round((s.won / s.played) * 100)}` : '0'), 'Win %'),
+      el('div', null, el('b', null, String(s.streak)), 'Streak'),
+      el('div', null, el('b', null, String(s.best)), 'Best')),
+    distRows && el('div', { class: 'wg-dist' }, distRows.map(k => {
+      const n = s.dist[k] || 0
+      const max = Math.max(1, ...distRows.map(x => s.dist[x] || 0))
+      return el('div', { class: String(k) === String(current) ? 'now' : '' }, el('span', null, String(k)), el('span', { style: `width: ${8 + (n / max) * 92}%` }, String(n)))
+    })),
+  ]
+}
+
+// ── Five ────────────────────────────────────────────────────────────────────
+function wordFive(host, ctx) {
+  const ui = wgShell(host, 'Five', 'six tries')
+  let W = null
+  let valid = null
+  let mode = 'daily'
+  let answer = ''
+  let guesses = []
+  let draft = ''
+  let over = false
+  let busy = false
+
+  const KEYS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm']
+  function score(guess, target) {
+    const out = Array(5).fill('x')
+    const left = {}
+    for (let i = 0; i < 5; i++) { if (guess[i] === target[i]) out[i] = 'g'; else left[target[i]] = (left[target[i]] || 0) + 1 }
+    for (let i = 0; i < 5; i++) if (out[i] !== 'g' && left[guess[i]]) { out[i] = 'y'; left[guess[i]]-- }
+    return out.join('')
+  }
+  const keyState = () => {
+    const best = {}
+    const rank = { g: 3, y: 2, x: 1 }
+    for (const g of guesses) { const s = score(g, answer); for (let i = 0; i < 5; i++) if (!best[g[i]] || rank[s[i]] > rank[best[g[i]]]) best[g[i]] = s[i] }
+    return best
+  }
+  const saveKey = () => `five_${wgDay()}`
+
+  function setMode(m) {
+    mode = m
+    draft = ''
+    over = false
+    if (m === 'daily') {
+      const list = W.five.answers.split(' ')
+      answer = list[((wgDay() % list.length) + list.length) % list.length]
+      guesses = wgStore.get(saveKey(), [])
+      over = guesses.includes(answer) || guesses.length >= 6
+    } else {
+      const list = W.five.answers.split(' ')
+      answer = list[Math.floor(Math.random() * list.length)]
+      guesses = []
+    }
+    draw()
+  }
+
+  function submit() {
+    if (over || busy) return
+    if (draft.length < 5) { ui.say('Not enough letters'); shake(); return }
+    if (!valid.has(draft)) { ui.say('Not in word list'); shake(); return }
+    guesses.push(draft)
+    draft = ''
+    if (mode === 'daily') wgStore.set(saveKey(), guesses)
+    const won = guesses[guesses.length - 1] === answer
+    if (won || guesses.length >= 6) {
+      over = true
+      if (mode === 'daily') wgRecord('five', won, won ? guesses.length : 'X')
+      ui.say(won ? ['Genius', 'Magnificent', 'Impressive', 'Splendid', 'Great', 'Phew'][guesses.length - 1] : answer.toUpperCase(), 0)
+    }
+    draw()
+  }
+  function shake() {
+    const row = ui.body.querySelectorAll('.wg-line')[guesses.length]
+    if (row) { row.classList.remove('shake'); void row.offsetWidth; row.classList.add('shake') }
+  }
+  function type(k) {
+    if (over) return
+    if (k === 'enter') return submit()
+    if (k === 'back') { draft = draft.slice(0, -1); return draw() }
+    if (/^[a-z]$/.test(k) && draft.length < 5) { draft += k; draw() }
+  }
+
+  function share() {
+    const rows = guesses.map(g => [...score(g, answer)].map(c => ({ g: '🟩', y: '🟨', x: '⬜' })[c]).join(''))
+    const won = guesses.includes(answer)
+    wgShare(`DEBROD Five ${mode === 'daily' ? `#${wgDay()}` : '(practice)'} ${won ? guesses.length : 'X'}/6\n${rows.join('\n')}`, ctx)
+  }
+
+  function draw() {
+    ui.head(mode, wgDay(), setMode)
+    const ks = keyState()
+    const rows = []
+    for (let r = 0; r < 6; r++) {
+      const g = guesses[r]
+      const s = g ? score(g, answer) : ''
+      const text = g || (r === guesses.length ? draft : '')
+      rows.push(el('div', { class: 'wg-line' }, Array.from({ length: 5 }, (_, i) => el('div', {
+        class: `wg-tile ${g ? s[i] : text[i] ? 'full' : ''}`, style: g ? `animation-delay: ${i * 0.12}s` : null,
+      }, text[i] || ''))))
+    }
+    const s = wgStore.get('five_stats', null)
+    wgFill(ui.body,
+      el('div', { class: 'wg-board' }, rows),
+      over && el('div', { class: 'wg-end' },
+        el('h3', null, guesses.includes(answer) ? 'Solved!' : `The word was ${answer.toUpperCase()}`),
+        mode === 'daily' && s && wgStatsBlock(s, [1, 2, 3, 4, 5, 6, 'X'], guesses.includes(answer) ? guesses.length : 'X'),
+        el('div', { class: 'wg-row' },
+          el('button', { type: 'button', class: 'dark', onClick: share }, 'Share'),
+          el('button', { type: 'button', onClick: () => setMode('practice') }, 'Play a practice one'))),
+      !over && el('div', { class: 'wg-keys' }, KEYS.map((row, i) => el('div', { class: 'r' },
+        i === 2 && el('button', { type: 'button', class: 'wide', onClick: () => type('enter') }, 'Enter'),
+        [...row].map(k => el('button', { type: 'button', class: ks[k] || '', onClick: () => type(k) }, k)),
+        i === 2 && el('button', { type: 'button', class: 'wide', 'aria-label': 'Delete', onClick: () => type('back') }, '⌫')))))
+  }
+
+  ui.body.append(el('p', { class: 'wg-loading' }, 'Loading the word list…'))
+  loadWords().then(data => {
+    W = data
+    valid = new Set([...data.five.answers.split(' '), ...data.five.extra.split(' ')])
+    setMode('daily')
+  }).catch(e => wgFill(ui.body, el('p', { class: 'wg-loading' }, e.message)))
+
+  return {
+    key(e, down) {
+      if (!down || !W || e.ctrlKey || e.metaKey || e.altKey) return false
+      if (e.key === 'Enter') { type('enter'); return true }
+      if (e.key === 'Backspace') { type('back'); return true }
+      if (/^[a-zA-Z]$/.test(e.key)) { type(e.key.toLowerCase()); return true }
+      return false
+    },
+    stop() { busy = true },
+  }
+}
+
+// ── Groups ──────────────────────────────────────────────────────────────────
+// Each puzzle: four groups, easiest (yellow) to trickiest (purple).
+const WG_GROUPS = [
+  [['Shades of red', 'CRIMSON SCARLET MAROON RUBY'], ['Kitchen tools', 'WHISK LADLE SPATULA TONGS'], ['Card games', 'POKER BRIDGE HEARTS RUMMY'], ['___cake', 'CUP PAN CHEESE SPONGE']],
+  [['Planets', 'EARTH SATURN JUPITER URANUS'], ['Greek gods', 'ZEUS APOLLO HERMES ATHENA'], ['Metals', 'MERCURY IRON GOLD TIN'], ['___shine', 'SUN MOON SHOE OUT']],
+  [['Dog breeds', 'POODLE BEAGLE BOXER PUG'], ['In a wallet', 'CASH CARD RECEIPT LICENSE'], ['Played with a net', 'TENNIS SOCCER HOCKEY VOLLEYBALL'], ['___fish', 'SWORD STAR JELLY CAT']],
+  [['Weather', 'RAIN SNOW HAIL SLEET'], ['Instruments', 'FLUTE VIOLIN TUBA HARP'], ['Chess pieces', 'KING QUEEN BISHOP KNIGHT'], ['Things with keys', 'PIANO KEYBOARD MAP LOCK']],
+  [['Fruits', 'MANGO PEACH PLUM KIWI'], ['Trees', 'OAK MAPLE BIRCH WILLOW'], ['Pasta', 'PENNE FUSILLI RIGATONI ORZO'], ['Baby ___', 'SHOWER FACE TOOTH BOOM']],
+  [['Rainbow colours', 'RED ORANGE INDIGO VIOLET'], ['Coffee drinks', 'LATTE MOCHA ESPRESSO CAPPUCCINO'], ['Shapes', 'CIRCLE SQUARE TRIANGLE OVAL'], ['Things you cross', 'FINGERS BRIDGE ROAD PATHS']],
+  [['Bodies of water', 'LAKE RIVER OCEAN POND'], ['Furniture', 'COUCH TABLE DRESSER STOOL'], ['Units of time', 'SECOND MINUTE DECADE CENTURY'], ['Kinds of bear', 'POLAR GRIZZLY PANDA TEDDY']],
+  [['Breakfast', 'PANCAKE WAFFLE BAGEL OMELET'], ['School subjects', 'HISTORY BIOLOGY ALGEBRA GEOGRAPHY'], ['Board games', 'CHESS CHECKERS GO BACKGAMMON'], ['___ball', 'BASKET FOOT SNOW MEAT']],
+  [['Birds', 'ROBIN EAGLE SPARROW HAWK'], ['US coins', 'PENNY NICKEL DIME QUARTER'], ['Gems', 'OPAL PEARL JADE TOPAZ'], ['___fly', 'BUTTER DRAGON FIRE HOUSE']],
+  [['Oceans', 'PACIFIC ATLANTIC INDIAN ARCTIC'], ['Capital cities', 'PARIS ROME TOKYO CAIRO'], ['Desserts', 'PIE TART CAKE PUDDING'], ['___ship', 'FRIEND LEADER OWNER CHAMPION']],
+  [['Vegetables', 'CARROT CELERY ONION POTATO'], ['In the sky', 'CLOUD STAR MOON KITE'], ['Footwear', 'BOOT SANDAL SLIPPER SNEAKER'], ['Have shells', 'EGG TURTLE TACO NUT']],
+  [['Insects', 'ANT BEETLE WASP MOTH'], ['Sports', 'GOLF BASEBALL RUGBY BOWLING'], ['Dances', 'TANGO SALSA WALTZ POLKA'], ['___ jam', 'TRAFFIC TOE PAPER STRAWBERRY']],
+  [['In a toolbox', 'HAMMER WRENCH PLIERS SCREWDRIVER'], ['Cheeses', 'CHEDDAR BRIE GOUDA FETA'], ['Months', 'MARCH MAY JUNE APRIL'], ['___ache', 'HEAD TOOTH STOMACH BACK']],
+  [['Clothing', 'SHIRT SKIRT JACKET SCARF'], ['Farm animals', 'GOAT SHEEP PIG COW'], ['Card suits', 'SPADES CLUBS DIAMONDS HEARTS'], ['Grand ___', 'PIANO CANYON SLAM FINALE']],
+  [['Herbs', 'BASIL MINT DILL SAGE'], ['Fish', 'SALMON TUNA COD TROUT'], ['Bones', 'SKULL RIB SPINE FEMUR'], ['Rhymes with time', 'LIME CHIME CLIMB RHYME']],
+  [['Feelings', 'HAPPY ANGRY SAD SCARED'], ['Kitchen appliances', 'TOASTER BLENDER OVEN KETTLE'], ['Shades of blue', 'NAVY TEAL COBALT AZURE'], ['___ward', 'FOR BACK HOME AWK']],
+  [['Pizza toppings', 'PEPPERONI MUSHROOM OLIVE SAUSAGE'], ['Sea animals', 'WHALE SHARK DOLPHIN OCTOPUS'], ['Hairstyles', 'BUN BRAID PONYTAIL MOHAWK'], ['___stone', 'KIDNEY MILE CORNER STEPPING']],
+  [['Hats', 'BERET FEDORA BEANIE BONNET'], ['Flowers', 'ROSE TULIP DAISY LILY'], ['In space', 'COMET NEBULA GALAXY ASTEROID'], ['Snow___', 'FLAKE MAN STORM BOARD']],
+  [['Cat breeds', 'SIAMESE RAGDOLL SPHYNX BENGAL'], ['Languages', 'SPANISH GERMAN HINDI FRENCH'], ['Tastes', 'SWEET SOUR SALTY BITTER'], ['Can be sharp', 'KNIFE CHEDDAR TURN MIND']],
+  [['Shellfish', 'CRAB LOBSTER SHRIMP CLAM'], ['Buildings', 'CASTLE BARN TOWER CABIN'], ['Party things', 'BALLOON CONFETTI STREAMER CAKE'], ['Have scales', 'FISH MAP PIANO DRAGON']],
+  [['Breads', 'RYE SOURDOUGH BAGUETTE PITA'], ['Winter wear', 'MITTENS PARKA EARMUFFS SCARF'], ['Superpowers', 'FLIGHT STRENGTH INVISIBILITY TELEPATHY'], ['Things you break', 'RECORD ICE NEWS LEG']],
+  [['Music genres', 'JAZZ ROCK BLUES COUNTRY'], ['In a forest', 'MOSS FERN PINECONE MUSHROOM'], ['Measurements', 'INCH FOOT YARD MILE'], ['Rock ___', 'BOTTOM CANDY SALT STAR']],
+  [['Red fruits', 'CHERRY STRAWBERRY RASPBERRY POMEGRANATE'], ['Sports gear', 'BAT RACKET HELMET PUCK'], ['Halloween', 'GHOST WITCH PUMPKIN BROOM'], ['___light', 'FLASH SPOT MOON DAY']],
+  [['At the gym', 'TREADMILL DUMBBELL KETTLEBELL BARBELL'], ['Rivers', 'NILE AMAZON THAMES DANUBE'], ['Spices', 'CINNAMON PAPRIKA CUMIN NUTMEG'], ['Silent K', 'KNIFE KNEE KNOT KNIGHT']],
+  [['Pets', 'HAMSTER PARROT GOLDFISH RABBIT'], ['Playground', 'SLIDE SWING SEESAW SANDBOX'], ['Jobs', 'NURSE PILOT CHEF PLUMBER'], ['Golf scores', 'EAGLE BIRDIE PAR BOGEY']],
+  [['Vehicles', 'TRUCK VAN TRAIN BICYCLE'], ['At the beach', 'SAND SHELL TOWEL UMBRELLA'], ['Nuts', 'ALMOND CASHEW PECAN WALNUT'], ['Christmas ___', 'TREE CAROL EVE LIGHTS']],
+  [['Baby animals', 'PUPPY KITTEN CALF FOAL'], ['On a desk', 'STAPLER LAMP PEN NOTEBOOK'], ['Volcanoes', 'LAVA MAGMA CRATER ASH'], ['___ code', 'ZIP DRESS MORSE AREA']],
+  [['Wild cats', 'LION TIGER CHEETAH LEOPARD'], ['In a bathroom', 'TOWEL SOAP MIRROR TOOTHBRUSH'], ['A whole lot', 'TONS HEAPS LOADS PILES'], ['Have trunks', 'ELEPHANT CAR TREE SWIMMER']],
+  [['Sea mammals', 'SEAL WALRUS OTTER MANATEE'], ['For drawing', 'PENCIL CRAYON MARKER CHALK'], ['Rooms', 'KITCHEN ATTIC CELLAR GARAGE'], ['___fall', 'WATER RAIN LAND NIGHT']],
+  [['Containers', 'BOX JAR BASKET CRATE'], ['Animal sounds', 'BARK MOO HISS OINK'], ['Composers', 'MOZART BACH CHOPIN HANDEL'], ['___board', 'SKATE SURF KEY BILL']],
+  [['Joints', 'ELBOW KNEE ANKLE WRIST'], ['Green vegetables', 'SPINACH KALE PEA BROCCOLI'], ['At the circus', 'CLOWN ACROBAT JUGGLER RINGMASTER'], ['___pad', 'NOTE LAUNCH KEY LILY']],
+  [['Yellow things', 'BANANA LEMON CANARY SUNFLOWER'], ['Keyboard keys', 'SHIFT ENTER TAB SPACE'], ['Teas', 'GREEN BLACK HERBAL CHAI'], ['___berry', 'STRAW BLUE RASP GOOSE']],
+  [['Pirate things', 'TREASURE PARROT PLANK CANNON'], ['Mountains', 'EVEREST KILIMANJARO DENALI FUJI'], ['Fabrics', 'COTTON SILK DENIM WOOL'], ['Have eyes', 'NEEDLE POTATO STORM HURRICANE']],
+  [['Pies', 'APPLE PUMPKIN PECAN CHERRY'], ['In a library', 'SHELF CATALOG LIBRARIAN BOOKMARK'], ['Olympic sports', 'FENCING ROWING DIVING ARCHERY'], ['Things you pick', 'LOCK FIGHT NOSE TEAM']],
+  [['Cold things', 'ICE SNOW FROST GLACIER'], ['Soups', 'TOMATO MINESTRONE CHOWDER BROTH'], ['Boats', 'CANOE YACHT FERRY SUBMARINE'], ['___work', 'HOME TEAM FIRE CLOCK']],
+  [['Garden tools', 'RAKE HOE SHOVEL TROWEL'], ['Frozen treats', 'GELATO SORBET POPSICLE SUNDAE'], ['Constellations', 'ORION LYRA DRACO PEGASUS'], ['Can be drawn', 'BATH CURTAINS CONCLUSION SWORD']],
+]
+
+function wordGroups(host, ctx) {
+  const ui = wgShell(host, 'Groups', 'four groups of four')
+  const COLORS = ['🟨', '🟩', '🟦', '🟪']
+  let mode = 'daily'
+  let P = null       // [[name, words[]] x4]
+  let order = []     // the words, in their shuffled spots
+  let picked = []
+  let solved = []    // group indexes, in the order you found them
+  let tries = []     // each guess, as the group index of every word
+  let mistakes = 0
+  let over = false
+  const saveKey = () => `groups_${wgDay()}`
+  const groupOf = w => P.findIndex(g => g[1].includes(w))
+
+  function setMode(m, idx) {
+    mode = m
+    const n = WG_GROUPS.length
+    const i = m === 'daily' ? ((wgDay() % n) + n) % n : idx != null ? idx : Math.floor(Math.random() * n)
+    P = WG_GROUPS[i].map(([name, words]) => [name, words.split(' ')])
+    const saved = m === 'daily' ? wgStore.get(saveKey(), null) : null
+    solved = saved ? saved.solved : []
+    tries = saved ? saved.tries : []
+    mistakes = saved ? saved.mistakes : 0
+    over = solved.length === 4 || mistakes >= 4
+    picked = []
+    order = wgShuffle(P.flatMap(g => g[1]), wgRand(m === 'daily' ? wgDay() + 7 : Date.now()))
+    draw()
+  }
+  function save() { if (mode === 'daily') wgStore.set(saveKey(), { solved, tries, mistakes }) }
+
+  function toggle(w) {
+    if (over) return
+    if (picked.includes(w)) picked = picked.filter(x => x !== w)
+    else if (picked.length < 4) picked.push(w)
+    draw()
+  }
+  function submit() {
+    if (picked.length !== 4 || over) return
+    const key = picked.slice().sort().join(' ')
+    if (tries.some(t => t.key === key)) { ui.say('Already guessed!'); return }
+    const gs = picked.map(groupOf)
+    tries.push({ key, gs })
+    const counts = {}
+    for (const g of gs) counts[g] = (counts[g] || 0) + 1
+    const best = Math.max(...Object.values(counts))
+    if (best === 4) {
+      solved.push(gs[0])
+      picked = []
+      if (solved.length === 4) { over = true; if (mode === 'daily') wgRecord('groups', true, mistakes) ; ui.say(['Perfect!', 'Great!', 'Solid!', 'Phew!'][mistakes] || 'Done!', 0) }
+    } else {
+      mistakes++
+      ui.say(best === 3 ? 'One away…' : 'Not quite')
+      if (mistakes >= 4) {
+        over = true
+        // Show the rest, in order.
+        for (let g = 0; g < 4; g++) if (!solved.includes(g)) solved.push(g)
+        if (mode === 'daily') wgRecord('groups', false, 'X')
+        ui.say('Next time!', 0)
+      }
+    }
+    save()
+    draw()
+  }
+  function share() {
+    const rows = tries.map(t => t.gs.map(g => COLORS[g]).join(''))
+    wgShare(`DEBROD Groups ${mode === 'daily' ? `#${wgDay()}` : '(practice)'}\n${rows.join('\n')}`, ctx)
+  }
+
+  function draw() {
+    ui.head(mode, wgDay(), setMode)
+    const left = order.filter(w => !solved.includes(groupOf(w)))
+    const s = wgStore.get('groups_stats', null)
+    wgFill(ui.body,
+      el('div', { class: 'wg-solved' }, solved.map(g => el('div', { class: `wg-band c${g}` }, el('b', null, P[g][0]), el('span', null, P[g][1].join(', '))))),
+      left.length > 0 && el('div', { class: 'wg-grid' }, left.map(w => el('button', { type: 'button', class: picked.includes(w) ? 'on' : '', disabled: over, onClick: () => toggle(w) }, w))),
+      !over && el('div', { class: 'wg-dots' }, 'Mistakes left:', Array.from({ length: 4 - mistakes }, () => el('i'))),
+      !over && el('div', { class: 'wg-row' },
+        el('button', { type: 'button', onClick: () => { order = wgShuffle(order); draw() } }, 'Shuffle'),
+        el('button', { type: 'button', disabled: !picked.length, onClick: () => { picked = []; draw() } }, 'Deselect all'),
+        el('button', { type: 'button', class: 'dark', disabled: picked.length !== 4, onClick: submit }, 'Submit')),
+      over && el('div', { class: 'wg-end' },
+        el('h3', null, mistakes < 4 ? 'Solved!' : 'Out of mistakes'),
+        mode === 'daily' && s && wgStatsBlock(s, [0, 1, 2, 3, 'X'], mistakes < 4 ? mistakes : 'X'),
+        mode === 'daily' && el('p', { class: 'wg-sub' }, 'The rows above count the mistakes you made.'),
+        el('div', { class: 'wg-row' },
+          el('button', { type: 'button', class: 'dark', onClick: share }, 'Share'),
+          el('button', { type: 'button', onClick: () => setMode('practice') }, 'Play a practice one'))))
+  }
+
+  setMode('daily')
+  return { stop() {} }
+}
+
+// ── Hive ────────────────────────────────────────────────────────────────────
+function wordHive(host, ctx) {
+  const ui = wgShell(host, 'Hive', 'words of 4+ letters, always with the centre')
+  const RANKS = [['Beginner', 0], ['Good start', 0.02], ['Moving up', 0.05], ['Good', 0.08], ['Solid', 0.15], ['Nice', 0.25], ['Great', 0.4], ['Amazing', 0.5], ['Genius', 0.7], ['Queen bee', 1]]
+  let H = null
+  let mode = 'daily'
+  let centre = ''
+  let ring = []
+  let answers = []
+  let found = []
+  let entry = ''
+  let revealed = false
+  const saveKey = () => `hive_${wgDay()}`
+  const isPangram = w => new Set(w).size === 7
+  const points = w => (w.length === 4 ? 1 : w.length) + (isPangram(w) ? 7 : 0)
+  const total = () => answers.reduce((t, w) => t + points(w), 0)
+  const mine = () => found.reduce((t, w) => t + points(w), 0)
+  const rank = () => { const f = total() ? mine() / total() : 0; let r = RANKS[0]; for (const x of RANKS) if (f >= x[1] - 1e-9) r = x; return r[0] }
+
+  function setMode(m) {
+    mode = m
+    const n = H.length
+    const p = m === 'daily' ? H[((wgDay() % n) + n) % n] : H[Math.floor(Math.random() * n)]
+    centre = p[0][0]
+    ring = [...p[0].slice(1)]
+    answers = p[1]
+    const saved = m === 'daily' ? wgStore.get(saveKey(), null) : null
+    found = saved ? saved.found : []
+    revealed = saved ? !!saved.revealed : false
+    entry = ''
+    draw()
+  }
+  function save() { if (mode === 'daily') wgStore.set(saveKey(), { found, revealed }) }
+
+  function type(k) {
+    if (revealed) return
+    if (k === 'enter') return submit()
+    if (k === 'back') { entry = entry.slice(0, -1); return draw() }
+    if (/^[a-z]$/.test(k) && entry.length < 19) { entry += k; draw() }
+  }
+  function submit() {
+    const w = entry
+    entry = ''
+    const letters = new Set([centre, ...ring])
+    if (w.length < 4) ui.say('Too short')
+    else if ([...w].some(c => !letters.has(c))) ui.say('Bad letters')
+    else if (!w.includes(centre)) ui.say('Missing centre letter')
+    else if (found.includes(w)) ui.say('Already found')
+    else if (!answers.includes(w)) ui.say('Not in word list')
+    else {
+      const before = rank()
+      found.push(w)
+      save()
+      const after = rank()
+      ui.say(isPangram(w) ? `Pangram! +${points(w)}` : `${['', '', '', '', 'Good!', 'Nice!', 'Awesome!'][Math.min(w.length, 6)] || 'Awesome!'} +${points(w)}`)
+      if (after !== before && mode === 'daily' && after === 'Genius') wgRecord('hive', true, null)
+    }
+    draw()
+  }
+  function share() {
+    wgShare(`DEBROD Hive ${mode === 'daily' ? `#${wgDay()}` : '(practice)'}: ${rank()} · ${found.length} words · ${mine()} points${found.some(isPangram) ? ' · 🐝 pangram' : ''}`, ctx)
+  }
+
+  function draw() {
+    ui.head(mode, wgDay(), setMode)
+    const f = total() ? mine() / total() : 0
+    // Centre and six around it, as hexagons.
+    const spots = [[78, 88], [78, 2], [143, 45], [143, 131], [78, 174], [13, 131], [13, 45]]
+    const shown = revealed ? answers : found
+    wgFill(ui.body,
+      el('div', { class: 'wg-hive-top' },
+        el('div', { class: 'wg-rank' }, el('b', null, rank()), el('div', { class: 'wg-rankbar' }, el('i', { style: `width: ${Math.round(f * 100)}%` })), el('span', null, `${mine()} pts`)),
+        el('div', { class: 'wg-found', 'aria-label': 'Words found' },
+          shown.length ? shown.slice().sort().map(w => el('span', { class: isPangram(w) ? 'pan' : '', style: revealed && !found.includes(w) ? 'opacity: 0.45' : null }, w))
+            : el('span', { class: 'wg-sub' }, `Your words go here. ${answers.length} to find, ${answers.filter(isPangram).length} using every letter.`))),
+      el('div', { class: 'wg-entry', 'aria-live': 'polite' }, [...entry].map(c => el('span', { class: c === centre ? 'c' : '' }, c))),
+      el('div', { class: 'wg-comb' }, [centre, ...ring].map((c, i) => el('button', {
+        type: 'button', class: i === 0 ? 'mid' : '', style: `left: ${spots[i][0]}px; top: ${spots[i][1]}px`, disabled: revealed, onClick: () => type(c),
+      }, c))),
+      el('div', { class: 'wg-row' },
+        el('button', { type: 'button', disabled: revealed, onClick: () => type('back') }, 'Delete'),
+        el('button', { type: 'button', disabled: revealed, 'aria-label': 'Shuffle', onClick: () => { ring = wgShuffle(ring); draw() } }, '⟳'),
+        el('button', { type: 'button', class: 'dark', disabled: revealed, onClick: () => type('enter') }, 'Enter')),
+      el('div', { class: 'wg-row' },
+        el('button', { type: 'button', onClick: share }, 'Share'),
+        !revealed && el('button', { type: 'button', onClick: async () => { if (await ask('Show every answer? That ends this puzzle.', 'Show answers')) { revealed = true; save(); draw() } } }, 'Show answers'),
+        revealed && el('button', { type: 'button', class: 'dark', onClick: () => setMode('practice') }, 'Play a practice one')))
+  }
+
+  ui.body.append(el('p', { class: 'wg-loading' }, 'Loading the word list…'))
+  loadWords().then(data => { H = data.hive; setMode('daily') }).catch(e => wgFill(ui.body, el('p', { class: 'wg-loading' }, e.message)))
+
+  return {
+    key(e, down) {
+      if (!down || !H || e.ctrlKey || e.metaKey || e.altKey) return false
+      if (e.key === 'Enter') { type('enter'); return true }
+      if (e.key === 'Backspace') { type('back'); return true }
+      if (e.key === ' ') { ring = wgShuffle(ring); draw(); return true }
+      if (/^[a-zA-Z]$/.test(e.key)) { type(e.key.toLowerCase()); return true }
+      return false
+    },
+    stop() {},
+  }
+}
+
+// ── Letter Box ──────────────────────────────────────────────────────────────
+function wordBox(host, ctx) {
+  const ui = wgShell(host, 'Letter Box', 'use every letter')
+  let B = null
+  let dict = null
+  let mode = 'daily'
+  let sides = []      // four strings of three letters
+  let solution = ''
+  let words = []      // finished words
+  let entry = ''
+  let over = false
+  let gaveUp = false
+  const saveKey = () => `box_${wgDay()}`
+  const sideOf = c => sides.findIndex(s => s.includes(c))
+  const usedLetters = () => new Set((words.join('') + entry).split(''))
+  const allLetters = () => sides.join('')
+  const lastLetter = () => (entry ? entry[entry.length - 1] : words.length ? words[words.length - 1].slice(-1) : '')
+
+  function setMode(m) {
+    mode = m
+    const list = B.puzzles
+    const n = list.length
+    const p = m === 'daily' ? list[((wgDay() % n) + n) % n] : list[Math.floor(Math.random() * n)]
+    sides = p[0].split(' ')
+    solution = p[1]
+    const saved = m === 'daily' ? wgStore.get(saveKey(), null) : null
+    words = saved ? saved.words : []
+    gaveUp = saved ? !!saved.gaveUp : false
+    entry = words.length ? words[words.length - 1].slice(-1) : ''
+    over = gaveUp || [...allLetters()].every(c => words.join('').includes(c))
+    if (over) entry = ''
+    draw()
+  }
+  function save() { if (mode === 'daily') wgStore.set(saveKey(), { words, gaveUp }) }
+
+  function type(k) {
+    if (over) return
+    if (k === 'enter') return submit()
+    if (k === 'back') {
+      // The first letter of a word after the first is fixed: it's the last one's end.
+      if (entry.length > (words.length ? 1 : 0)) entry = entry.slice(0, -1)
+      else if (words.length && entry.length <= 1) { entry = words.pop(); save() }
+      return draw()
+    }
+    if (!/^[a-z]$/.test(k)) return
+    if (sideOf(k) < 0) { ui.say('Not in the box'); return }
+    const prev = lastLetter()
+    if (entry && sideOf(prev) === sideOf(k)) { ui.say('Same side twice'); return }
+    entry += k
+    draw()
+  }
+  function submit() {
+    if (entry.length < 3) { ui.say('Too short'); return }
+    if (!dict.has(entry)) { ui.say('Not in word list'); return }
+    words.push(entry)
+    const done = [...allLetters()].every(c => words.join('').includes(c))
+    entry = done ? '' : entry.slice(-1)
+    if (done) {
+      over = true
+      if (mode === 'daily') wgRecord('box', true, Math.min(words.length, 6))
+      ui.say(words.length <= 2 ? 'Perfect!' : words.length <= 4 ? 'Nicely done!' : 'Solved!', 0)
+    }
+    save()
+    draw()
+  }
+  function share() {
+    wgShare(`DEBROD Letter Box ${mode === 'daily' ? `#${wgDay()}` : '(practice)'}: ${gaveUp ? 'gave up' : `${words.length} word${words.length === 1 ? '' : 's'}`} 📦`, ctx)
+  }
+
+  // Where each letter sits around the square, in percent: top, right,
+  // bottom, left.
+  function spot(side, i) {
+    const t = [29, 50, 71][i]
+    return [[t, 14], [86, t], [100 - t, 86], [14, 100 - t]][side]
+  }
+
+  function draw() {
+    ui.head(mode, wgDay(), setMode)
+    const used = usedLetters()
+    const last = lastLetter()
+    const path = (words.join('') ? words.map((w, k) => (k ? w.slice(1) : w)).join('') : '') + (entry && words.length ? entry.slice(1) : entry)
+    const pts = [...path].map(c => { const sd = sideOf(c); return spot(sd, sides[sd].indexOf(c)) })
+    // The SVG sits on the square's inner frame (14% to 86%), so map into it.
+    const svgPt = ([x, y]) => `${((x - 14) / 72) * 100},${((y - 14) / 72) * 100}`
+    const svg = document.createElementNS('http:\x2f\x2fwww.w3.org/2000/svg', 'svg')
+    svg.setAttribute('viewBox', '0 0 100 100')
+    if (pts.length > 1) {
+      const line = document.createElementNS('http:\x2f\x2fwww.w3.org/2000/svg', 'polyline')
+      line.setAttribute('points', pts.map(svgPt).join(' '))
+      line.setAttribute('fill', 'none')
+      line.setAttribute('stroke', '#e0806a')
+      line.setAttribute('stroke-width', '1.6')
+      line.setAttribute('stroke-dasharray', entry && !over ? '0' : '0')
+      svg.append(line)
+    }
+    const s = wgStore.get('box_stats', null)
+    wgFill(ui.body,
+      el('div', { class: 'wg-box-words' }, words.length ? words.join(' – ') : el('span', { class: 'wg-sub' }, 'Join letters into words. Letters next to each other can\'t come from the same side, and each word starts with the last one\'s final letter.')),
+      !over && el('div', { class: 'wg-box-entry' }, entry || ' '),
+      el('div', { class: 'wg-square' },
+        el('div', { class: 'frame' }), svg,
+        sides.flatMap((sd, k) => [...sd].map((c, i) => {
+          const [x, y] = spot(k, i)
+          return el('button', { type: 'button', class: `${c === last && !over ? 'last' : used.has(c) ? 'used' : ''}`, style: `left: ${x}%; top: ${y}%`, disabled: over, onClick: () => type(c) }, c)
+        }))),
+      !over && el('div', { class: 'wg-row' },
+        el('button', { type: 'button', onClick: () => type('back') }, 'Delete'),
+        el('button', { type: 'button', onClick: async () => { if (words.length && await ask('Start over with no words?', 'Restart')) { words = []; entry = ''; save(); draw() } } }, 'Restart'),
+        el('button', { type: 'button', class: 'dark', onClick: () => type('enter') }, 'Enter')),
+      !over && el('p', { class: 'wg-sub', style: 'text-align: center' }, `Try to solve it in 5 words or fewer. ${[...allLetters()].filter(c => !used.has(c)).length} letters left.`),
+      !over && el('div', { class: 'wg-row' }, el('button', { type: 'button', onClick: async () => { if (await ask('Give up and see a solution?', 'Give up')) { gaveUp = true; over = true; entry = ''; if (mode === 'daily') wgRecord('box', false, 'X'); save(); draw() } } }, 'Give up')),
+      over && el('div', { class: 'wg-end' },
+        el('h3', null, gaveUp ? 'One way to do it' : `Solved in ${words.length} word${words.length === 1 ? '' : 's'}!`),
+        el('p', null, `Our solution: ${solution.toUpperCase().split(' ').join(' – ')}`),
+        mode === 'daily' && s && wgStatsBlock(s, null),
+        el('div', { class: 'wg-row' },
+          el('button', { type: 'button', class: 'dark', onClick: share }, 'Share'),
+          el('button', { type: 'button', onClick: () => setMode('practice') }, 'Play a practice one'))))
+  }
+
+  ui.body.append(el('p', { class: 'wg-loading' }, 'Loading the word list…'))
+  loadWords().then(data => { B = data.box; dict = new Set(data.box.words.split(' ')); setMode('daily') }).catch(e => wgFill(ui.body, el('p', { class: 'wg-loading' }, e.message)))
+
+  return {
+    key(e, down) {
+      if (!down || !B || e.ctrlKey || e.metaKey || e.altKey) return false
+      if (e.key === 'Enter') { type('enter'); return true }
+      if (e.key === 'Backspace') { type('back'); return true }
+      if (/^[a-zA-Z]$/.test(e.key)) { type(e.key.toLowerCase()); return true }
+      return false
+    },
+    stop() {},
+  }
+}
+</script>
