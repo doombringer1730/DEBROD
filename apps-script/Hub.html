@@ -399,11 +399,15 @@ const Hub = (() => {
     if (!force && board && Date.now() - boardAt < 60000) return
     boardBusy = true
     const auth = Account.client()
-    const [pk, st] = await Promise.all([auth.rpc('debrod_pk_leaderboard'), auth.rpc('debrod_study_leaderboard')])
+    const [pk, st, ph] = await Promise.all([auth.rpc('debrod_pk_leaderboard'), auth.rpc('debrod_study_leaderboard'),
+      auth.from('debrod_profiles').select('id, photo').not('photo', 'is', null)])
     boardBusy = false
     boardAt = Date.now()
-    board = pk.error ? { error: pk.error.message } : pk.data || []
-    studyBoard = st.error ? { error: st.error.message } : st.data || []
+    // The leaderboards only carry emoji, so profile photos come separately.
+    const photos = new Map((ph.data || []).map(r => [r.id, r.photo]))
+    const withPhoto = rows => rows.map(r => Object.assign(r, { photo: photos.get(r.user_id) || null }))
+    board = pk.error ? { error: pk.error.message } : withPhoto(pk.data || [])
+    studyBoard = st.error ? { error: st.error.message } : withPhoto(st.data || [])
     if (visible) draw()
   }
 
@@ -422,7 +426,7 @@ const Hub = (() => {
                 el('thead', null, el('tr', null, ['#', 'Student', 'XP this week', 'Focus this week', 'Cards reviewed', 'Streak', 'All-time XP'].map(h => el('th', null, h)))),
                 el('tbody', null, rows.map((r, i) => el('tr', { class: r.user_id === myId ? 'me' : '' },
                   el('td', { class: 'rank' }, i === 0 && r.week_xp > 0 ? '★' : String(i + 1)),
-                  el('td', null, el('span', { class: 'who' }, el('span', { class: 'hub-av', style: `background: ${safe(r.color)}` }, r.avatar || '🙂'), r.display)),
+                  el('td', null, el('span', { class: 'who' }, el('span', { class: 'hub-av', style: `background: ${safe(r.color)}` }, face(r)), r.display)),
                   el('td', { class: 'pts' }, r.week_xp.toLocaleString()),
                   el('td', null, r.focus_week ? hm(r.focus_week) : '—'),
                   el('td', null, String(r.cards_week)),
@@ -446,7 +450,7 @@ const Hub = (() => {
                 el('thead', null, el('tr', null, ['#', 'Trainer', 'W–L', 'Win %', 'Expert wins', 'vs people', 'Tower', 'Points'].map(h => el('th', null, h)))),
                 el('tbody', null, rows.map((r, i) => el('tr', { class: r.user_id === myId ? 'me' : '' },
                   el('td', { class: 'rank' }, i === 0 ? '★' : String(i + 1)),
-                  el('td', null, el('span', { class: 'who' }, el('span', { class: 'hub-av', style: `background: ${safe(r.color)}` }, r.avatar || '🙂'), r.display)),
+                  el('td', null, el('span', { class: 'who' }, el('span', { class: 'hub-av', style: `background: ${safe(r.color)}` }, face(r)), r.display)),
                   el('td', null, `${r.wins}–${r.losses}${r.ties ? `–${r.ties}` : ''}`),
                   el('td', null, pct(r)),
                   el('td', null, String(r.expert_wins)),

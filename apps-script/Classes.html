@@ -68,7 +68,7 @@ const Classes = (() => {
   const isAdmin = () => typeof Account !== 'undefined' && Account.isAdmin()
   const canEdit = row => row && me && (row.created_by === me.id || isAdmin())
   const who = id => people.get(id) || { display: 'Former member', avatar: '👤', color: '#bbbbbb' }
-  const av = p => el('span', { class: 'cl-av', style: `background: ${safe(p.color)}` }, p.avatar || '🙂')
+  const av = p => el('span', { class: 'cl-av', style: `background: ${safe(p.color)}` }, face(p))
   const rich = text => text.split(/(https?:\/\/[^\s]+)/).map(part => (/^https?:[/][/]/.test(part) ? el('a', { href: part, target: '_blank', rel: 'noopener noreferrer' }, part) : part))
   const fmtDay = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) }
   const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
@@ -79,7 +79,7 @@ const Classes = (() => {
       auth.from('debrod_classes').select('id, name, detail, color, created_by, created_at').order('name'),
       auth.from('debrod_class_members').select('class_id, user_id'),
       auth.from('debrod_class_work').select('id, class_id, title, kind, due, details, link, created_by, created_at, updated_at').order('due'),
-      auth.from('debrod_profiles').select('id, display, avatar, color').eq('status', 'approved'),
+      auth.from('debrod_profiles').select('id, display, avatar, photo, color').eq('status', 'approved'),
     ])
     const bad = [c, m, w, p].find(r => r.error)
     if (bad) { error = bad.error.message; if (ui) ui.refresh(); return }

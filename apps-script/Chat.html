@@ -139,6 +139,11 @@ button.ch-avatar:hover:not(:disabled) { border-color: #000; box-shadow: 0 0 0 2p
 .ch-modal .ch-emoji:hover:not(:disabled) { background: #e6e6e6; border-color: #000; box-shadow: none; }
 .ch-modal .ch-emoji.on, .ch-modal .ch-emoji.on:hover:not(:disabled) { background: #000; }
 .ch-colors { display: flex; flex-wrap: wrap; gap: 6px; }
+.ch-photo-row { align-items: center; gap: 8px; flex-wrap: wrap; }
+.ch-photo-row small { color: #555; }
+.ch-typing { min-height: 20px; padding: 0 14px; font-size: 13px; font-style: italic; color: #444; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ch-typing .dots { display: inline-block; letter-spacing: 1px; animation: ch-blink 1.2s steps(1) infinite; }
+@keyframes ch-blink { 50% { opacity: 0.25; } }
 .ch-modal .ch-color { width: 30px; height: 30px; padding: 0; border: 1px solid #000; border-radius: 50%; box-shadow: none; }
 .ch-modal .ch-color:hover:not(:disabled) { border-color: #000; box-shadow: 0 0 0 2px #fff, 0 0 0 3px #000; }
 .ch-modal .ch-color.on { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #000; }
@@ -192,6 +197,9 @@ const Chat = (() => {
   let editing = null
   let live = null
   let presence = null
+  let typing = new Map()   // who's typing: id → { channel, until }
+  let typingTimer = 0
+  let typingSentAt = 0
 
   // ── DOM ──
   const root = el('section', { class: 'chat' })
@@ -203,13 +211,14 @@ const Chat = (() => {
   const input = el('textarea', { rows: 1, maxlength: 2000, placeholder: 'Message', 'aria-label': 'Message' })
   const sendBtn = el('button', { type: 'submit', class: 'ch-btn default' }, 'Send')
   const errEl = el('p', { class: 'ch-err', role: 'status' })
+  const typingEl = el('div', { class: 'ch-typing', 'aria-live': 'polite' })
   const membersEl = el('div', { class: 'ch-members' })
   const modalEl = el('div', { class: 'ch-modal', hidden: true })
 
   const bar = title => el('div', { class: 'ch-bar' }, typeof title === 'string' ? el('span', null, title) : title)
   root.append(
     el('section', { class: 'ch-win ch-side' }, bar('Channels'), chanList, mePanel),
-    el('section', { class: 'ch-win ch-main' }, bar(titleEl), topicEl, list,
+    el('section', { class: 'ch-win ch-main' }, bar(titleEl), topicEl, list, typingEl,
       el('form', { class: 'ch-compose', onSubmit: send }, input, sendBtn), errEl),
     el('section', { class: 'ch-win ch-people' }, bar('Members'), membersEl))
   document.body.append(modalEl)
@@ -217,7 +226,7 @@ const Chat = (() => {
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(e) }
   })
-  input.addEventListener('input', () => { autosize(input); errEl.textContent = '' })
+  input.addEventListener('input', () => { autosize(input); errEl.textContent = ''; if (input.value.trim()) sendTyping() })
   modalEl.addEventListener('pointerdown', e => { if (e.target === modalEl) closeModal() })
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modalEl.hidden) closeModal() })
 
@@ -234,7 +243,7 @@ const Chat = (() => {
   const avatar = (p, cls, onClick) => el(onClick ? 'button' : 'span', {
     class: `ch-avatar ${cls || ''}`, style: `background: ${safeColor(p.color)}`, type: onClick ? 'button' : null,
     'aria-label': onClick ? `${p.display}'s profile` : null, onClick,
-  }, p.avatar || '🙂')
+  }, face(p))
   const time = d => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const full = d => new Date(d).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })
   function day(d) {
@@ -266,7 +275,7 @@ const Chat = (() => {
 
   async function loadPeople() {
     const { data, error } = await auth.from('debrod_profiles')
-      .select('id, username, display, avatar, color, tagline, bio, is_admin, created_at').eq('status', 'approved')
+      .select('id, username, display, avatar, photo, color, tagline, bio, is_admin, created_at').eq('status', 'approved')
     if (error) return
     people = new Map((data || []).map(p => [p.id, p]))
     if (people.has(me.id)) me = Object.assign({}, me, people.get(me.id))
@@ -281,6 +290,7 @@ const Chat = (() => {
     hasOlder = false
     renderChannels()
     renderHead()
+    renderTyping()
     if (!current) return list.replaceChildren(el('p', { class: 'ch-note' }, 'No channels yet.'))
     try { localStorage.setItem(CHANNEL_KEY, current.id) } catch (e) { /* private mode */ }
     unread[current.id] = 0
@@ -313,7 +323,12 @@ const Chat = (() => {
   function subscribe() {
     live = auth.channel('debrod-chat-live')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'debrod_chat' }, ({ new: m }) => {
+        if (m.sender !== me.id && (!visible || !current || m.channel_id !== current.id) && typeof Notify !== 'undefined') {
+          const c = channels.find(x => x.id === m.channel_id)
+          Notify.chat(m, who(m.sender), c ? c.slug : 'chat', mentionsMe(m.body))
+        }
         if (current && m.channel_id === current.id) {
+          if (typing.delete(m.sender)) renderTyping()
           if (!messages.some(x => x.id === m.id)) messages.push(m)
           if (!visible) unread[m.channel_id] = (unread[m.channel_id] || 0) + 1
           renderMessages(m.sender === me.id)
@@ -344,13 +359,42 @@ const Chat = (() => {
       .subscribe()
 
     // Online = signed in to DEBROD right now, on any tab.
-    presence = auth.channel('debrod-chat-online', { config: { presence: { key: me.id } } })
+    // The same channel carries "is typing" pings.
+    presence = auth.channel('debrod-chat-online', { config: { presence: { key: me.id }, broadcast: { self: false } } })
     presence
       .on('presence', { event: 'sync' }, () => { online = new Set(Object.keys(presence.presenceState())); renderMembers() })
+      .on('broadcast', { event: 'typing' }, ({ payload: t }) => {
+        if (!t || typeof t.id !== 'string' || t.id === me.id) return
+        if (t.stop) typing.delete(t.id)
+        else typing.set(t.id, { channel: t.channel, until: Date.now() + 4500 })
+        renderTyping()
+      })
       .subscribe(async st => { if (st === 'SUBSCRIBED') await presence.track({ at: Date.now() }) })
   }
 
   // ── Rendering ──
+  // ── Typing ──
+  // While you type, a ping at most every 2.5 s; others show you for 4.5 s
+  // after the last one, or until your message lands.
+  function sendTyping(stop) {
+    if (!presence || !current) return
+    const now = Date.now()
+    if (!stop && now - typingSentAt < 2500) return
+    typingSentAt = stop ? 0 : now
+    presence.send({ type: 'broadcast', event: 'typing', payload: stop ? { id: me.id, stop: true } : { id: me.id, channel: current.id } })
+  }
+
+  function renderTyping() {
+    clearTimeout(typingTimer)
+    const now = Date.now()
+    for (const [id, t] of typing) if (t.until <= now) typing.delete(id)
+    const names = [...typing].filter(([, t]) => current && t.channel === current.id).map(([id]) => who(id).display)
+    if (!names.length) fill(typingEl)
+    else fill(typingEl, el('span', { class: 'dots' }, '•••'), ' ',
+      names.length === 1 ? `${names[0]} is typing` : names.length === 2 ? `${names[0]} and ${names[1]} are typing` : names.length === 3 ? `${names[0]}, ${names[1]} and ${names[2]} are typing` : 'Several people are typing')
+    if (typing.size) typingTimer = setTimeout(renderTyping, 1000)
+  }
+
   function renderChannels() {
     fill(chanList, 
       channels.map(c => {
@@ -483,6 +527,7 @@ const Chat = (() => {
     errEl.textContent = ''
     input.value = ''
     autosize(input)
+    sendTyping(true)
     if (data && data.channel_id === current.id && !messages.some(x => x.id === data.id)) messages.push(data)
     renderMessages(true)
     input.focus()
@@ -535,7 +580,9 @@ const Chat = (() => {
   }
 
   function editProfile() {
-    const d = { display: me.display, avatar: me.avatar || '🙂', color: safeColor(me.color), tagline: me.tagline || '', bio: me.bio || '' }
+    const d = { display: me.display, avatar: me.avatar || '🙂', photo: me.photo || null, color: safeColor(me.color), tagline: me.tagline || '', bio: me.bio || '' }
+    let photoBlob = null // a new picture waiting for Save
+    let photoChanged = false
     const err = el('p', { class: 'ch-err', role: 'status' })
     const preview = el('div', { class: 'ch-preview' })
     const drawPreview = () => fill(preview, avatar(d, ''),
@@ -549,6 +596,22 @@ const Chat = (() => {
       return el('label', { class: 'ch-field' }, el('span', null, label, c), node)
     }
     const avatarIn = el('input', { value: d.avatar, maxlength: 8, 'aria-label': 'Avatar emoji', onInput: e => { d.avatar = e.target.value.trim() || '🙂'; drawEmojis(); drawPreview() } })
+    const picker = el('input', { type: 'file', accept: 'image/*', hidden: true, onChange: async e => {
+      const f = e.target.files && e.target.files[0]
+      e.target.value = ''
+      if (!f) return
+      err.textContent = ''
+      try { photoBlob = await squarePhoto(f) } catch (x) { err.textContent = x.message; return }
+      if (d.photo && d.photo.startsWith('blob:')) URL.revokeObjectURL(d.photo)
+      d.photo = URL.createObjectURL(photoBlob)
+      photoChanged = true
+      drawPhoto(); drawPreview()
+    } })
+    const photoRow = el('div', { class: 'row ch-photo-row' })
+    const drawPhoto = () => fill(photoRow,
+      el('button', { type: 'button', class: 'ch-btn', onClick: () => picker.click() }, d.photo ? 'Change photo' : 'Upload a photo'),
+      d.photo && el('button', { type: 'button', class: 'ch-btn', onClick: () => { d.photo = null; photoBlob = null; photoChanged = true; drawPhoto(); drawPreview() } }, 'Remove photo'),
+      el('small', null, d.photo ? 'Your photo shows instead of the emoji.' : 'Optional. Cropped to a square.'), picker)
     const emojis = el('div', { class: 'ch-emojis' })
     const drawEmojis = () => fill(emojis, AVATARS.map(a => el('button', {
       type: 'button', class: `ch-emoji ${d.avatar === a ? 'on' : ''}`, 'aria-label': a,
@@ -559,7 +622,7 @@ const Chat = (() => {
       type: 'button', class: `ch-color ${d.color === c ? 'on' : ''}`, style: `background: ${c}`, 'aria-label': `Colour ${c}`,
       onClick: () => { d.color = c; drawColors(); drawPreview() },
     })))
-    drawEmojis(); drawColors(); drawPreview()
+    drawEmojis(); drawColors(); drawPhoto(); drawPreview()
     const save = el('button', { type: 'submit', class: 'ch-btn default' }, 'Save')
 
     async function submit(e) {
@@ -568,8 +631,12 @@ const Chat = (() => {
       save.disabled = true
       err.textContent = ''
       const { error } = await auth.rpc('debrod_update_me', { p_display: d.display, p_avatar: d.avatar, p_color: d.color, p_tagline: d.tagline, p_bio: d.bio })
+      if (error) { save.disabled = false; err.textContent = readable(error.message); return }
+      if (photoChanged) {
+        const problem = await savePhoto(photoBlob)
+        if (problem) { save.disabled = false; err.textContent = problem; return }
+      }
       save.disabled = false
-      if (error) { err.textContent = readable(error.message); return }
       await Account.refreshProfile()
       me = Object.assign({}, me, Account.profile())
       await loadPeople()
@@ -580,6 +647,7 @@ const Chat = (() => {
     modal('Edit profile', el('form', { class: 'ch-dialog', onSubmit: submit },
       preview,
       field('Display name', 24, el('input', { value: d.display, maxlength: 24, autofocus: true, onInput: e => { d.display = e.target.value; drawPreview() } }), () => d.display),
+      el('div', { class: 'ch-field' }, el('span', null, 'Photo'), photoRow),
       el('div', { class: 'ch-field' }, el('span', null, 'Avatar', el('small', null, 'or type any emoji')), emojis, avatarIn),
       el('div', { class: 'ch-field' }, el('span', null, 'Colour'), colors),
       field('Status', 60, el('input', { value: d.tagline, maxlength: 60, placeholder: 'Cramming for chem, send snacks', onInput: e => { d.tagline = e.target.value; drawPreview() } }), () => d.tagline),
@@ -587,6 +655,52 @@ const Chat = (() => {
       el('p', { class: 'ch-card-since' }, 'Swears and slurs in names, statuses and bios turn into ***.'),
       err,
       el('div', { class: 'row' }, el('button', { type: 'button', class: 'ch-btn', onClick: closeModal }, 'Cancel'), save)), true)
+  }
+
+  // Profile photos: shrunk to a 256px square in the page, so uploads stay
+  // small, then kept in the debrod-avatars bucket under your own folder.
+  function squarePhoto(file) {
+    return new Promise((resolve, reject) => {
+      if (!/^image[/]/.test(file.type)) return reject(new Error('That isn\'t a picture.'))
+      if (file.size > 15 * 1024 * 1024) return reject(new Error('That picture is over 15 MB.'))
+      const url = URL.createObjectURL(file)
+      const img = new Image()
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Couldn\'t open that picture.')) }
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        const size = 256
+        const side = Math.min(img.naturalWidth, img.naturalHeight)
+        const c = document.createElement('canvas')
+        c.width = c.height = size
+        const g = c.getContext('2d')
+        g.imageSmoothingQuality = 'high'
+        g.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size)
+        // WebP where the browser can write it, JPEG otherwise (Safari).
+        c.toBlob(b => {
+          if (b && b.type === 'image/webp') return resolve(b)
+          c.toBlob(j => (j ? resolve(j) : reject(new Error('Couldn\'t shrink that picture.'))), 'image/jpeg', 0.86)
+        }, 'image/webp', 0.86)
+      }
+      img.src = url
+    })
+  }
+
+  async function savePhoto(blob) {
+    const bucket = auth.storage.from('debrod-avatars')
+    let url = null
+    if (blob) {
+      const path = `${me.id}/${Date.now()}.${blob.type === 'image/webp' ? 'webp' : 'jpg'}`
+      const up = await bucket.upload(path, blob, { contentType: blob.type, cacheControl: '31536000', upsert: false })
+      if (up.error) return `Couldn't upload the photo: ${up.error.message}`
+      url = bucket.getPublicUrl(path).data.publicUrl
+    }
+    const { error } = await auth.rpc('debrod_set_photo', { p_url: url })
+    if (error) return readable(error.message)
+    // Tidy up: only the newest picture stays in your folder.
+    const { data: old } = await bucket.list(me.id, { limit: 100 })
+    const stale = (old || []).map(o => `${me.id}/${o.name}`).filter(n => !url || !url.endsWith(n))
+    if (stale.length) await bucket.remove(stale)
+    return null
   }
 
   // Huddy: make, rename, re-topic or delete channels.
@@ -667,6 +781,9 @@ const Chat = (() => {
     messages = []
     people = new Map()
     online = new Set()
+    typing = new Map()
+    clearTimeout(typingTimer)
+    fill(typingEl)
     unread = {}
     current = null
     closeModal()

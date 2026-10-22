@@ -53,6 +53,15 @@ function mount(...nodes) {
   if (f) f.focus()
 }
 
+// What goes inside someone's avatar circle: their photo if they set one
+// (Chat → Edit profile), otherwise their emoji.
+function face(p) {
+  const photo = p && p.photo
+  return photo && /^(https:[/][/][a-z0-9]+\.supabase\.co[/]storage[/]|blob:)/.test(photo)
+    ? el('img', { class: 'face', src: photo, alt: '', loading: 'lazy', draggable: 'false' })
+    : (p && p.avatar) || '🙂'
+}
+
 const pad = n => String(n).padStart(2, '0')
 
 function ext(s) {
@@ -363,6 +372,7 @@ function header() {
         onClick: () => { S.tab = 'admin'; render() },
       }, Account.pendingCount() ? `Members (${Account.pendingCount()})` : 'Members'),
       S.cfg.appUrl && document.body.dataset.web && el('a', { class: 'link', href: `${S.cfg.appUrl}?page=settings`, target: '_top' }, 'Settings'),
+      typeof Notify !== 'undefined' && Notify.bell(),
       Account.profile() && el('button', { type: 'button', class: 'link', title: `Signed in as @${Account.profile().username}`, onClick: Account.signOut }, 'Sign out')))
 }
 
@@ -488,6 +498,7 @@ function render() {
   const hasChat = typeof Chat !== 'undefined'
   const chat = S.tab === 'chat' && hasChat
   if (hasChat) Chat.start()
+  if (typeof Notify !== 'undefined') Notify.start()
   if (typeof Study !== 'undefined' && Study.connect) Study.connect()
   backdrop.hidden = false
   if (!homePage && typeof Hub !== 'undefined') homePage = el('main', { class: 'page mc' }, el('header'), Hub.root)

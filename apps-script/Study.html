@@ -558,6 +558,7 @@ const Study = (() => {
   }
   function disconnect() {
     if (typeof Classes !== 'undefined') Classes.stop()
+    if (typeof Boards !== 'undefined') Boards.stop()
     clearTimeout(sync.timer)
     sync.user = null
     sync.auth = null
@@ -766,6 +767,8 @@ const Study = (() => {
     if (!scrollTo && visible) window.scrollTo(0, 0)
   }
   function render() {
+    // Leaving a whiteboard hangs up its live channel.
+    if (typeof Boards !== 'undefined' && view.name !== 'board') Boards.leave()
     if (view.name === 'home') fill(root, homeView())
     else if (view.name === 'new') fill(root, newDeckView())
     else if (view.name === 'deck') {
@@ -774,6 +777,7 @@ const Study = (() => {
       fill(root, deckView(deck))
     } else if (view.name === 'shop') fill(root, shopView())
     else if (['classes', 'class', 'work', 'post'].includes(view.name)) fill(root, typeof Classes !== 'undefined' ? Classes.view(view, classUi) : homeView())
+    else if (['boards', 'board'].includes(view.name)) fill(root, typeof Boards !== 'undefined' ? Boards.view(view, boardUi) : homeView())
     else if (view.name === 'mode') {
       // Modes draw themselves; this is only for a fresh start.
       fill(root, view.node)
@@ -806,6 +810,12 @@ const Study = (() => {
     toggle: id => toggleClassWork(id),
     // Fresh data: redraw, but never under a form someone's typing in.
     refresh: () => { if (visible && (['classes', 'class', 'work'].includes(view.name) || view.name === 'home')) render() },
+  }
+  // What Boards.html needs from Study.
+  const boardUi = {
+    go: v => go(v),
+    pop: t => pop(t),
+    refresh: () => { if (visible && (view.name === 'home' || view.name === 'boards')) render() },
   }
   function pop(text) {
     const n = el('div', { class: 'st-pop' }, text)
@@ -860,6 +870,7 @@ const Study = (() => {
         el('div', { class: 'st-w st-span2', 'data-section': 'assignments' }, assignmentsPanel()),
         el('div', { class: 'st-w st-span2', 'data-section': 'calendar' }, calendarWidget()),
         classesPanel(),
+        typeof Boards !== 'undefined' && Boards.panel(boardUi),
         el('div', { class: 'st-w st-span4' }, el('h2', null, '🕘 Activity'), activityLog())),
       el('section', { class: 'stack tight', 'data-section': 'decks' },
         el('div', { class: 'st-section-head' },

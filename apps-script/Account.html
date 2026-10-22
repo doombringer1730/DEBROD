@@ -71,7 +71,7 @@ const Account = (() => {
     const s = await session()
     if (!s) return null
     const { data, error } = await auth.from('debrod_profiles')
-      .select('id, username, display, status, is_admin, avatar, color, tagline, bio, created_at').eq('id', s.user.id).maybeSingle()
+      .select('id, username, display, status, is_admin, avatar, photo, color, tagline, bio, created_at').eq('id', s.user.id).maybeSingle()
     if (error) throw new Error(error.message)
     return data
   }
@@ -241,6 +241,7 @@ const Account = (() => {
     adminChannel = null
     words = null
     if (typeof Chat !== 'undefined') Chat.stop()
+    if (typeof Notify !== 'undefined') Notify.stop()
     if (typeof Study !== 'undefined' && Study.disconnect) Study.disconnect()
     if (inRoom) exitRoom()
     S.tab = 'home'

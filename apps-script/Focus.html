@@ -179,7 +179,7 @@ const Focus = (() => {
       })
       .subscribe(async s => {
         if (s !== 'SUBSCRIBED' || !room || room.channel !== channel) return
-        await channel.track({ id: me.id, name: me.display, avatar: me.avatar || '🙂', color: me.color || '' })
+        await channel.track({ id: me.id, name: me.display, avatar: me.avatar || '🙂', photo: me.photo || '', color: me.color || '' })
         channel.send({ type: 'broadcast', event: 'hello', payload: {} })
         setTimeout(() => { if (room && room.channel === channel) room.synced = true }, 2000)
       })
@@ -248,7 +248,7 @@ const Focus = (() => {
         st.phase === 'break' && el('button', { type: 'button', onClick: skip }, 'Skip break')),
       room && el('div', { class: 'stack tight' },
         el('p', { class: 'st-sub', style: 'text-align: center' }, room.code === HALL ? 'The Study hall: anyone can drop in. One timer for everyone here.' : `Room ${room.code}: friends join from Home, or with the code below.`),
-        el('div', { class: 'fc-people' }, room.people.map(p => el('span', { class: 'fc-person' }, el('span', { class: 'fc-av', style: `background: ${safe(p.color)}` }, p.avatar || '🙂'), p.id === room.me ? `${p.name} (you)` : p.name)))),
+        el('div', { class: 'fc-people' }, room.people.map(p => el('span', { class: 'fc-person' }, el('span', { class: 'fc-av', style: `background: ${safe(p.color)}` }, face(p)), p.id === room.me ? `${p.name} (you)` : p.name)))),
       el('form', { class: 'fc-join', onSubmit: e => { e.preventDefault(); if (code.trim()) joinRoom(code) } },
         el('input', { placeholder: room && room.code !== HALL ? `In room ${room.code}` : 'Room code', maxlength: 8, onInput: e => { code = e.target.value } }),
         el('button', { type: 'submit' }, 'Join')),

@@ -664,3 +664,131 @@ begin
     end if;
   end loop;
 end $$;
+-- ── Profile photos ───────────────────────────────────────────────────────
+-- An optional picture instead of the emoji. The page shrinks it to a small
+-- square WebP and uploads it to the debrod-avatars bucket, in a folder named
+-- after you; debrod_set_photo only takes a link into your own folder.
+alter table public.debrod_profiles
+  add column if not exists photo text check (photo is null or char_length(photo) <= 300);
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('debrod-avatars', 'debrod-avatars', true, 262144, array['image/webp', 'image/jpeg', 'image/png'])
+on conflict (id) do nothing;
+
+create policy "debrod members upload their own photo" on storage.objects for insert to authenticated
+  with check (bucket_id = 'debrod-avatars' and (storage.foldername(name))[1] = auth.uid()::text and public.debrod_approved());
+create policy "debrod members replace their own photo" on storage.objects for update to authenticated
+  using (bucket_id = 'debrod-avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "debrod members list their own photos" on storage.objects for select to authenticated
+  using (bucket_id = 'debrod-avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "debrod members remove their own photo" on storage.objects for delete to authenticated
+  using (bucket_id = 'debrod-avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create or replace function public.debrod_set_photo(p_url text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.debrod_approved() then raise exception 'not approved'; end if;
+  if p_url is not null and p_url !~ ('^https://zppygyfzbwbusidmqlru\.supabase\.co/storage/v1/object/public/debrod-avatars/' || auth.uid()::text || '/[A-Za-z0-9._-]+$') then
+    raise exception 'That photo link isn''t yours.';
+  end if;
+  update public.debrod_profiles set photo = p_url where id = auth.uid();
+end $$;
+revoke execute on function public.debrod_set_photo(text) from anon, public;
+grant execute on function public.debrod_set_photo(text) to authenticated;
+
+-- ── Announcements ────────────────────────────────────────────────────────
+-- Huddy's sitewide notices: everyone signed in gets a pop-up, and anyone
+-- who was away sees them in the bell next time.
+create table if not exists public.debrod_announcements (
+  id bigint generated always as identity primary key,
+  body text not null check (char_length(body) between 1 and 500),
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table public.debrod_announcements enable row level security;
+create policy "approved people read announcements" on public.debrod_announcements for select to authenticated using (public.debrod_approved());
+create policy "admins announce" on public.debrod_announcements for insert to authenticated with check (public.debrod_admin() and created_by = auth.uid());
+create policy "admins take announcements down" on public.debrod_announcements for delete to authenticated using (public.debrod_admin());
+grant select, insert, delete on public.debrod_announcements to authenticated;
+revoke all on public.debrod_announcements from anon;
+
+-- ── Whiteboards ──────────────────────────────────────────────────────────
+-- Group whiteboards in Study. A board is open to every member, or only to a
+-- class's members. Each pen stroke is a row (points in 1600 × 1000 board units), so
+-- late joiners get the whole picture and Realtime streams new strokes.
+create table if not exists public.debrod_boards (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(name) between 1 and 40),
+  class_id uuid references public.debrod_classes (id) on delete cascade,
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.debrod_board_strokes (
+  id bigint generated always as identity primary key,
+  board_id uuid not null references public.debrod_boards (id) on delete cascade,
+  author uuid references auth.users (id) on delete set null,
+  data jsonb not null check (octet_length(data::text) <= 40000),
+  created_at timestamptz not null default now()
+);
+create index if not exists debrod_board_strokes_by_board on public.debrod_board_strokes (board_id, id);
+alter table public.debrod_boards enable row level security;
+alter table public.debrod_board_strokes enable row level security;
+
+create or replace function public.debrod_board_ok(b uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.debrod_approved() and exists (
+    select 1 from public.debrod_boards x where x.id = b
+      and (x.class_id is null or public.debrod_in_class(x.class_id) or public.debrod_admin()))
+$$;
+create or replace function public.debrod_board_owner(b uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.debrod_boards x where x.id = b and (x.created_by = auth.uid() or public.debrod_admin()))
+$$;
+
+create policy "see open boards and your classes' boards" on public.debrod_boards for select to authenticated
+  using (public.debrod_approved() and (class_id is null or public.debrod_in_class(class_id) or public.debrod_admin()));
+create policy "make boards" on public.debrod_boards for insert to authenticated
+  with check (public.debrod_approved() and created_by = auth.uid() and (class_id is null or public.debrod_in_class(class_id)));
+create policy "makers and admins rename boards" on public.debrod_boards for update to authenticated
+  using (public.debrod_approved() and (created_by = auth.uid() or public.debrod_admin()));
+create policy "makers and admins delete boards" on public.debrod_boards for delete to authenticated
+  using (public.debrod_approved() and (created_by = auth.uid() or public.debrod_admin()));
+create policy "see strokes on boards you can see" on public.debrod_board_strokes for select to authenticated
+  using (public.debrod_board_ok(board_id));
+create policy "draw on boards you can see" on public.debrod_board_strokes for insert to authenticated
+  with check (author = auth.uid() and public.debrod_board_ok(board_id));
+create policy "undo your strokes, or clear your board" on public.debrod_board_strokes for delete to authenticated
+  using (author = auth.uid() or public.debrod_board_owner(board_id));
+
+create or replace function public.debrod_board_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  new.name := left(trim(public.debrod_clean(new.name)), 40);
+  if tg_op = 'UPDATE' then new.class_id := old.class_id; new.created_by := old.created_by; new.created_at := old.created_at; end if;
+  return new;
+end $$;
+create or replace trigger debrod_board_guard before insert or update on public.debrod_boards for each row execute function public.debrod_board_guard();
+
+create or replace function public.debrod_announce_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  new.body := left(trim(public.debrod_clean(new.body)), 500);
+  return new;
+end $$;
+create or replace trigger debrod_announce_guard before insert on public.debrod_announcements for each row execute function public.debrod_announce_guard();
+
+grant select, insert, update, delete on public.debrod_boards to authenticated;
+grant select, insert, delete on public.debrod_board_strokes to authenticated;
+revoke all on public.debrod_boards, public.debrod_board_strokes from anon;
+revoke execute on function public.debrod_board_ok(uuid), public.debrod_board_owner(uuid) from anon, public;
+grant execute on function public.debrod_board_ok(uuid), public.debrod_board_owner(uuid) to authenticated;
+revoke execute on function public.debrod_board_guard(), public.debrod_announce_guard() from anon, authenticated, public;
+do $$
+declare t text;
+begin
+  foreach t in array array['debrod_announcements', 'debrod_boards', 'debrod_board_strokes'] loop
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
