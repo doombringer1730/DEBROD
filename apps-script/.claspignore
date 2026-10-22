@@ -4,3 +4,4 @@ doom/**
 **/*.md
 showdown/**
 supabase/**
+words/**
