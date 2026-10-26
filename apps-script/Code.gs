@@ -27,8 +27,8 @@ const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_2VMZtA9aTYsUv9qvFTDA0Q_qFhIHHA
 const DEFAULT_YOUTUBE_API_KEY = ''
 const BUILT_IN = { SUPABASE_URL: DEFAULT_SUPABASE_URL, SUPABASE_ANON_KEY: DEFAULT_SUPABASE_ANON_KEY, YOUTUBE_API_KEY: DEFAULT_YOUTUBE_API_KEY }
 
-const SECRET_KEYS = ['TMDB_API_KEY', 'REALDEBRID_API_KEY', 'TORBOX_API_KEY', 'YOUTUBE_API_KEY', 'SUPABASE_ANON_KEY']
-const PLAIN_KEYS = ['SUPABASE_URL', 'TORRENTIO_URL', 'SITE_NAME']
+const SECRET_KEYS = ['TMDB_API_KEY', 'REALDEBRID_API_KEY', 'TORBOX_API_KEY', 'YOUTUBE_API_KEY', 'SUPABASE_ANON_KEY', 'GAMES_LIBRARY_KEY']
+const PLAIN_KEYS = ['SUPABASE_URL', 'TORRENTIO_URL', 'SITE_NAME', 'GAMES_LIBRARY_URL']
 
 // ── Menu and dialogs ────────────────────────────────────────────────────────
 
@@ -354,4 +354,64 @@ function getRoom(token, id) {
 // The clock the watch-together sync measures itself against.
 function getTime() {
   return Date.now()
+}
+
+// ── Games library ───────────────────────────────────────────────────────────
+
+// The arcade's Retro consoles can play from your own folder of games
+// (GAMES_LIBRARY_URL, with a games.json at its top). The key is added here,
+// on the server, and never goes back to the page.
+const GAME_SYSTEMS = ['nes', 'snes', 'n64', 'gb', 'gba', 'nds', 'vb', 'segaMS', 'segaMD', 'segaGG', 'segaCD',
+  'sega32x', 'segaSaturn', 'psx', 'pce', 'atari2600', 'atari7800', 'lynx', 'jaguar', 'ws', 'ngp', 'coleco', '3do', 'arcade']
+// google.script.run carries the file as base64, so keep it to cartridge sizes.
+const MAX_GAME_BYTES = 40 * 1024 * 1024
+
+// Paths are relative to the library and never climb out of it.
+function isLibraryPath_(p) {
+  return typeof p === 'string' && p.length > 0 && p.length < 512 &&
+    p.charAt(0) !== '/' && p.indexOf('\\') === -1 && !/^[a-z][a-z0-9+.-]*:/i.test(p) &&
+    p.split('/').every(seg => seg !== '' && seg !== '.' && seg !== '..')
+}
+
+function fetchLibrary_(path) {
+  let base = prop_('GAMES_LIBRARY_URL')
+  if (!base) throw new Error('Set a games library URL in DEBROD → Settings.')
+  if (!/^https?:[/][/]/i.test(base)) throw new Error('The games library URL must start with https://.')
+  if (!/[/]$/.test(base)) base += '/'
+  if (!isLibraryPath_(path)) throw new Error('Bad library path.')
+  const key = prop_('GAMES_LIBRARY_KEY')
+  // Sent both ways so it works with a plain bearer-token server and with
+  // Supabase Storage, which wants apikey as well.
+  const headers = key ? { Authorization: `Bearer ${key}`, apikey: key } : {}
+  const url = base + path.split('/').map(encodeURIComponent).join('/')
+  const res = UrlFetchApp.fetch(url, { headers, muteHttpExceptions: true, followRedirects: true })
+  if (res.getResponseCode() >= 400) throw new Error(`The games library answered ${res.getResponseCode()} for ${path}.`)
+  return res
+}
+
+// The library's games, or null when there's no library set up.
+function listGames(token) {
+  requireMember_(token)
+  if (!prop_('GAMES_LIBRARY_URL')) return null
+  let data
+  try { data = JSON.parse(fetchLibrary_('games.json').getContentText()) } catch (e) {
+    throw new Error(/answered|URL|Settings/.test(e.message) ? e.message : 'games.json is not valid JSON.')
+  }
+  const rows = Array.isArray(data) ? data : data && data.games
+  if (!Array.isArray(rows)) throw new Error('games.json should be a list of games.')
+  const out = []
+  for (const r of rows) {
+    if (!r || typeof r !== 'object' || GAME_SYSTEMS.indexOf(r.system) === -1 || !isLibraryPath_(r.file)) continue
+    const name = typeof r.name === 'string' && r.name.trim() ? r.name.trim().slice(0, 120) : r.file.split('/').pop()
+    out.push({ name, system: r.system, file: r.file })
+  }
+  return out
+}
+
+// One game file, as base64, for the emulator to unpack in the browser.
+function getGameFile(token, path) {
+  requireMember_(token)
+  const bytes = fetchLibrary_(path).getContent()
+  if (bytes.length > MAX_GAME_BYTES) throw new Error('That file is too big to send through Apps Script (40 MB at most).')
+  return { name: String(path).split('/').pop(), data: Utilities.base64Encode(bytes) }
 }

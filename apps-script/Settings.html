@@ -53,6 +53,18 @@
         <input type="password" autocomplete="off">
       </label>
 
+      <h2>Games library (optional)</h2>
+      <label class="field" data-key="GAMES_LIBRARY_URL">
+        <span>Games library URL</span>
+        <input type="url" placeholder="https://xxxx.supabase.co/storage/v1/object/authenticated/roms/">
+        <small class="muted">A folder of your own games with a games.json at its top, for the arcade's Retro consoles. See the README.</small>
+      </label>
+      <label class="field" data-key="GAMES_LIBRARY_KEY">
+        <span>Games library key</span>
+        <input type="password" autocomplete="off">
+        <small class="muted">Sent to the library from the server as a Bearer token. Leave blank if the folder is public.</small>
+      </label>
+
       <h2>Extras (optional)</h2>
       <label class="field" data-key="SITE_NAME">
         <span>Name in the wordmark</span>

@@ -1320,8 +1320,8 @@ const Arcade = (() => {
     }
   }
 
-  // Scribble (Scribble.html), Pokémon Showdown (Showdown.html) and Star
-  // Sling (StarSling.html) come from their own files. If one isn't in the
+  // Scribble (Scribble.html), Pokémon Showdown (Showdown.html), Star Sling
+  // (StarSling.html) and the Emulator.html games come from their own files. If one isn't in the
   // Apps Script project (or Index doesn't include it), its card says so
   // instead of the whole arcade failing to load.
   function fromFile(fn, file) {
@@ -1357,6 +1357,9 @@ const Arcade = (() => {
     { id: 'hive', name: 'Hive', icon: '🐝', blurb: 'Make words from seven letters. Every word needs the centre one.', hint: 'Words are 4+ letters. Use all seven for a big bonus.', start: fromFile(typeof wordHive === 'function' ? wordHive : null, 'Words'), noScore: true, noRestart: true },
     { id: 'box', name: 'Letter Box', icon: '🔲', blurb: 'Use every letter around the box. Each word starts with the last one\'s final letter.', hint: 'No two letters in a row from the same side.', start: fromFile(typeof wordBox === 'function' ? wordBox : null, 'Words'), noScore: true, noRestart: true },
     { id: 'mini', name: 'Mini', icon: '🧩', blurb: 'A pocket crossword: a new one every day, plus practice ones. Beat your time.', hint: 'Type to fill; click a square twice or press Space to switch Across and Down. Tab jumps to the next clue.', start: fromFile(typeof wordMini === 'function' ? wordMini : null, 'Words'), noScore: true, noRestart: true },
+    { id: 'retro', name: 'Retro consoles', icon: '🕹️', blurb: 'NES to N64, Game Boy to Genesis, PlayStation and arcade, in the browser with EmulatorJS.', hint: 'Play a game file you own, or one from your games library (DEBROD → Settings). Click the game first so it gets your keys.', start: fromFile(typeof Emulator !== 'undefined' ? Emulator.consoles : null, 'Emulator'), noScore: true, noRestart: true },
+    { id: 'pokerogue', name: 'PokéRogue', icon: '🔴', blurb: 'The free fan-made Pokémon roguelite, from pokerogue.net.', hint: 'Make a PokéRogue account to keep your runs. If it won\'t sign in here, use New tab.', start: fromFile(typeof Emulator !== 'undefined' ? Emulator.pokerogue : null, 'Emulator'), noScore: true, noRestart: true },
+    { id: 'oregon', name: 'The Oregon Trail', icon: '🐂', blurb: 'The 1990 MS-DOS classic, from the Internet Archive.', hint: 'Click the screen, then type your choices. You have died of dysentery.', start: fromFile(typeof Emulator !== 'undefined' ? Emulator.oregon : null, 'Emulator'), noScore: true, noRestart: true },
     { id: 'tictactoe', name: 'Tic-tac-toe', icon: '⭕', blurb: 'Beat the CPU as many rounds in a row as you can.', hint: 'You\'re ✕. Turns alternate who goes first.', start: tictactoe },
   ]
 

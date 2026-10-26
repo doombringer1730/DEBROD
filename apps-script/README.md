@@ -29,6 +29,7 @@ keys live in the script's properties instead of environment variables.
 | `Boards.html` | Group whiteboards in Study, live over Supabase Realtime. |
 | `Words.html` | Word games in the arcade: Five, Groups, Hive, Letter Box and the Mini crossword. Their word lists load from `words/words.json` on jsDelivr. |
 | `StarSling.html` | Star Sling, a memorial to Angry Birds Star Wars. |
+| `Emulator.html` | The arcade's Retro consoles (EmulatorJS) and the PokéRogue and Oregon Trail cards. |
 | `Settings.html` | The keys form. |
 | `Styles.html` | `app/globals.css`, wrapped in `<style>`. |
 | `Themes.html` | Each page's look (see [Looks](#looks)). |
@@ -40,7 +41,7 @@ Changing these files or adding one? See [SCRIPTS-GUIDE.md](SCRIPTS-GUIDE.md).
 
 1. Create a Google Doc, then open **Extensions → Apps Script**.
 2. Replace `Code.gs` with the one here. Add the HTML files with **+ → HTML**,
-   named `Index`, `App`, `Account`, `Notify`, `Chat`, `Themes`, `Hub`, `Study`, `Classes`, `Focus`, `Boards`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Words`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
+   named `Index`, `App`, `Account`, `Notify`, `Chat`, `Themes`, `Hub`, `Study`, `Classes`, `Focus`, `Boards`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Words`, `Emulator`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
    one in. To edit `appsscript.json`, turn on **Project Settings → Show
    "appsscript.json" manifest file in editor**.
 3. Save, reload the doc, and open **DEBROD → Settings**. Approve the
@@ -161,9 +162,53 @@ filled-in `Code.gs` out of GitHub. Each search uses 100 of the key's
 
 **Arcade** in the header opens Snake, 2048, Blocks, Breakout, Flap, Pong,
 Minesweeper, Memory, Star Sling, Doom, Scribble, Punchline, Color Clash,
-Sea Battle, Pokémon Showdown and Tic-tac-toe. They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
+Sea Battle, Pokémon Showdown, Retro consoles, PokéRogue, The Oregon Trail
+and Tic-tac-toe. They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
 timer shows how long you've been procrastinating. Switching back to
 **Search** pauses whatever's running.
+
+**Retro consoles** plays games for NES, SNES, N64, Game Boy and Color,
+GBA, DS, Virtual Boy, Master System, Genesis, Game Gear, Sega CD, 32X,
+Saturn, PlayStation, TurboGrafx-16, Atari 2600/7800/Lynx/Jaguar,
+WonderSwan, Neo Geo Pocket, ColecoVision, 3DO and arcade, in the style of
+gam.onl, on [EmulatorJS](https://emulatorjs.org) (pinned to 4.2.3, loaded
+from its CDN). Saves and save states stay in the browser. There are two
+ways to play:
+
+- **Play a file:** pick a game file on your device. It's read in your
+  browser and never uploaded. The system is guessed from the extension;
+  pick it yourself for `.zip`, `.bin`, `.iso`, `.cue` or `.chd`.
+- **Your library:** in **DEBROD → Settings**, set **Games library URL** to
+  a folder of your own games on any http(s) storage, and **Games library
+  key** if it's private. `Code.gs` fetches from it with the key (sent as
+  `Authorization: Bearer <key>` and `apikey`), so the key never reaches a
+  browser. The folder needs a `games.json` at its top:
+
+  ```json
+  [
+    { "name": "My Homebrew", "system": "nes", "file": "nes/my-homebrew.nes" }
+  ]
+  ```
+
+  `file` is a path inside the folder, and `system` is one of `nes`, `snes`,
+  `n64`, `gb`, `gba`, `nds`, `vb`, `segaMS`, `segaMD`, `segaGG`, `segaCD`,
+  `sega32x`, `segaSaturn`, `psx`, `pce`, `atari2600`, `atari7800`, `lynx`,
+  `jaguar`, `ws`, `ngp`, `coleco`, `3do` or `arcade`. Files travel through
+  Apps Script, so they're capped at 40 MB: cartridge games are fine, most
+  disc images aren't. Disc systems and arcade may also need BIOS files,
+  which EmulatorJS doesn't ship. A private Supabase Storage bucket works
+  as the library: use
+  `https://<project>.supabase.co/storage/v1/object/authenticated/<bucket>/`
+  and the project's secret (service_role) key, which stays in Script
+  Properties.
+
+PSP and DOS aren't offered: their cores need cross-origin isolation, which
+Apps Script's frame can't turn on. Only play games you own.
+
+**PokéRogue** (the free fan-made Pokémon roguelite) and **The Oregon
+Trail** (the 1990 MS-DOS version, from the Internet Archive) play from
+their own sites inside the arcade. **New tab** opens them on their own if
+signing in or saving doesn't work in the frame.
 
 **Star Sling** is a memorial to Angry Birds Star Wars (Rovio, 2012), which
 was pulled from the app stores in 2019 and can't be played anymore. It's

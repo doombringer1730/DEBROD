@@ -86,7 +86,7 @@ the files above it define. The order is:
    [What's shared](#whats-shared-apphtml)).
 3. `Account`, `Notify`, `Chat`, `Hub`, `Study`, `Classes`, `Focus`, `Boards`.
 4. The games: `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Scribble`,
-   `Showdown`, `StarSling`, `Words`.
+   `Showdown`, `StarSling`, `Words`, `Emulator`.
 5. `Games` last, since it lists the games from the files above.
 
 Calls *across* modules at run time (say, `Study` calling `Boards.panel()`)
@@ -273,7 +273,7 @@ commit's ID. Don't paste these files into Apps Script.
 - The Supabase URL and publishable (anon) key in `Code.gs` are fine to
   share; they're meant for browsers, and row-level security does the
   protecting.
-- TMDB, Real-Debrid and TorBox keys live in Script Properties through
+- TMDB, Real-Debrid, TorBox and games library keys live in Script Properties through
   **DEBROD → Settings**, and never go back to the page.
 
 ## Before you paste
