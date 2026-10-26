@@ -1,0 +1,492 @@
+<style>
+/* ── Whiteboards (inside Study; the page chrome comes from Study's .st- styles) ── */
+.bd-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.bd-tools .sep { width: 1px; align-self: stretch; background: rgba(0, 0, 0, 0.2); margin: 0 4px; }
+.bd-tools .grow { flex: 1; }
+.bd-tools button.on { outline: 3px solid #2d5fa6; outline-offset: 1px; }
+.bd-swatch { width: 26px; height: 26px; padding: 0; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35); cursor: pointer; }
+.bd-swatch.on { outline: 3px solid #23262b; outline-offset: 1px; }
+.bd-size { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; }
+.bd-size i { display: block; border-radius: 50%; background: currentColor; }
+.bd-wrap { position: relative; width: 100%; aspect-ratio: 16 / 10; border-radius: 4px; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none;
+  background-color: #fffef9; background-image: linear-gradient(rgba(45, 95, 166, 0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(45, 95, 166, 0.09) 1px, transparent 1px);
+  background-size: 4% 6.4%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25), 0 3px 0 rgba(0, 0, 0, 0.15); }
+.bd-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.bd-wrap canvas.top { cursor: crosshair; }
+.bd-wrap.erase canvas.top { cursor: cell; }
+.bd-status { position: absolute; left: 10px; bottom: 8px; font-size: 12px; color: #6b6b6b; pointer-events: none; }
+.bd-people { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bd-person { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 2px 8px 2px 2px; border-radius: 999px; border: 1px solid rgba(0, 0, 0, 0.2); }
+.bd-person .bd-dot { width: 8px; height: 8px; border-radius: 50%; }
+.bd-av { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3); }
+.bd-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.bd-card { text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; min-width: 0; }
+.bd-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bd-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.bd-form input { flex: 2 1 200px; }
+.bd-form select { flex: 1 1 160px; }
+.t-study .bd-person { background: #fbf8ee; border-color: rgba(35, 38, 43, 0.3); }
+.t-study .bd-wrap { border-radius: 2px; }
+</style>
+<script>
+// Whiteboards: shared drawing boards in Study. A board is open to every
+// member, or only to one class. Each finished pen stroke is a row in
+// debrod_board_strokes (supabase/schema.sql), so a board looks the same
+// for anyone who opens it later; while you draw, the stroke also streams
+// live over a Realtime channel, and presence shows who's on the board.
+// Undo takes back your own last stroke; whoever made the board (or Huddy)
+// can wipe it. Shown inside Study (Study.html calls view() and panel()).
+
+const Boards = (() => {
+  // Strokes are stored in board units, 1600 × 1000, whatever the screen.
+  const W = 1600
+  const H = 1000
+  const COLORS = ['#23262b', '#2d5fa6', '#b8322a', '#2c8783', '#e6a634', '#7a4ea3', '#3a7d44', '#c2477e']
+  const SIZES = [3, 7, 16]
+  const MAX_POINTS = 1500       // a longer stroke is saved in pieces
+  const LIVE_MS = 45            // how often a stroke in progress streams
+
+  let auth = null
+  let me = null
+  let ui = null
+  let boards = []
+  let loaded = false
+  let error = ''
+  let listLive = null
+  let open = null               // the board on screen: see openBoard()
+
+  const safe = c => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '#23262b')
+  const fill = (node, ...kids) => { node.replaceChildren(...kids.flat(Infinity).filter(k => k != null && k !== false)); return node }
+  const myClasses = () => ((typeof Classes !== 'undefined' && Classes.summary()) || { classes: [] }).classes
+  const className = id => { const c = myClasses().find(x => x.id === id); return c ? c.name : 'A class' }
+  const canWipe = b => b && me && (b.created_by === me.id || Account.isAdmin())
+
+  // ── The list of boards ──
+  async function loadBoards() {
+    const { data, error: e } = await auth.from('debrod_boards').select('id, name, class_id, created_by, created_at').order('created_at', { ascending: false })
+    error = e ? e.message : ''
+    boards = data || []
+    loaded = true
+    if (ui) ui.refresh()
+  }
+
+  function start() {
+    if (auth || typeof Account === 'undefined' || !Account.ready()) return
+    auth = Account.client()
+    me = Account.profile()
+    loadBoards()
+    listLive = auth.channel('debrod-boards')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'debrod_boards' }, () => loadBoards())
+      .subscribe()
+  }
+
+  function stop() {
+    leave()
+    if (listLive && auth) auth.removeChannel(listLive)
+    listLive = null
+    auth = me = null
+    boards = []
+    loaded = false
+  }
+
+  // A panel on Study's home.
+  function panel(helpers) {
+    ui = helpers
+    start()
+    return el('div', { class: 'st-w st-span4', 'data-section': 'boards' },
+      el('div', { class: 'st-section-head' },
+        el('h2', null, '🖍️ Whiteboards'),
+        el('button', { type: 'button', class: 'primary', onClick: () => ui.go({ name: 'boards' }) }, boards.length ? 'All boards ›' : 'Make a board ›')),
+      !auth ? el('p', { class: 'st-sub' }, 'Sign in to draw with your group.')
+        : !loaded ? el('p', { class: 'st-sub' }, 'Loading boards…')
+          : boards.length
+            ? el('div', { class: 'row', style: 'flex-wrap: wrap; gap: 8px' }, boards.slice(0, 8).map(b => el('button', { type: 'button', class: 'chip', onClick: () => ui.go({ name: 'board', id: b.id }) }, b.name)))
+            : el('p', { class: 'st-sub' }, 'Sketch out a problem together: everyone on a board sees each stroke as it\'s drawn.'))
+  }
+
+  function view(v, helpers) {
+    ui = helpers
+    start()
+    if (!auth) return el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, 'Sign in to use whiteboards.'))
+    if (v.name === 'board') return boardPage(v.id)
+    leave()
+    return listPage()
+  }
+
+  const back = (label, to) => el('button', { type: 'button', class: 'link st-back', onClick: () => ui.go(to) }, `‹ ${label}`)
+
+  function listPage() {
+    let name = ''
+    let classId = ''
+    const card = b => el('button', { type: 'button', class: 'st-deck bd-card', onClick: () => ui.go({ name: 'board', id: b.id }) },
+      el('strong', null, b.name),
+      el('span', { class: 'st-sub' }, b.class_id ? className(b.class_id) : 'Everyone'),
+      el('span', { class: 'st-sub' }, new Date(b.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })))
+    const shared = boards.filter(b => !b.class_id)
+    const byClass = boards.filter(b => b.class_id)
+    return el('div', { class: 'stack' },
+      back('Study', { name: 'home' }),
+      el('div', { class: 'st-head' }, el('div', null, el('p', { class: 'st-eyebrow' }, 'Draw it out together'), el('h1', { class: 'st-title' }, 'Whiteboards'))),
+      error && el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, `Couldn't load boards: ${error}`)),
+      !loaded ? el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, 'Loading boards…')) : [
+        el('p', { class: 'st-label' }, `Your classes' boards (${byClass.length})`),
+        byClass.length ? el('div', { class: 'bd-list' }, byClass.map(card))
+          : el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, 'None yet. Boards for a class only show to its members.')),
+        el('p', { class: 'st-label' }, `Open to everyone (${shared.length})`),
+        shared.length ? el('div', { class: 'bd-list' }, shared.map(card))
+          : el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, 'None yet.')),
+      ],
+      el('form', { class: 'st-w stack tight', onSubmit: async e => {
+        e.preventDefault()
+        if (!name.trim()) return
+        const { data, error: err } = await auth.from('debrod_boards').insert({ name: name.trim(), class_id: classId || null, created_by: me.id }).select('id').single()
+        if (err) return tell(err.message)
+        await loadBoards()
+        ui.go({ name: 'board', id: data.id })
+      } },
+        el('h2', null, '➕ New whiteboard'),
+        el('div', { class: 'bd-form' },
+          el('input', { placeholder: 'Name, e.g. Unit 4 review', maxlength: 40, required: true, onInput: e => { name = e.target.value } }),
+          el('select', { 'aria-label': 'Who can see it', onChange: e => { classId = e.target.value } },
+            el('option', { value: '' }, 'Everyone'),
+            myClasses().map(c => el('option', { value: c.id }, `${c.name} only`))),
+          el('button', { type: 'submit', class: 'primary' }, 'Make board'))))
+  }
+
+  // ── One board ──
+  // open = { id, board, strokes: [{ id, author, data }], live: Map(key → stroke
+  //   in progress from someone else), mine: stroke being drawn, channel, ... }
+  function boardPage(id) {
+    if (open && open.id === id) return open.page
+    leave()
+    const board = boards.find(b => b.id === id) || null
+    const o = open = {
+      id, board, strokes: [], live: new Map(), mine: null, channel: null, people: [], loaded: false, sentAt: 0, sentUpTo: 0,
+      tool: 'pen', color: COLORS[0], size: 1, gone: false,
+    }
+    const wrap = el('div', { class: 'bd-wrap' })
+    const ink = el('canvas')          // everything finished
+    const top = el('canvas', { class: 'top' }) // strokes in progress
+    const status = el('div', { class: 'bd-status' }, 'Loading the board…')
+    wrap.append(ink, top, status)
+    const tools = el('div', { class: 'bd-tools' })
+    const people = el('div', { class: 'bd-people' })
+    o.wrap = wrap; o.ink = ink; o.top = top; o.status = status; o.tools = tools; o.peopleEl = people
+    o.page = el('div', { class: 'stack' },
+      back('Whiteboards', { name: 'boards' }),
+      el('div', { class: 'st-head' }, el('div', null,
+        el('p', { class: 'st-eyebrow' }, board && board.class_id ? `${className(board.class_id)} only` : 'Open to everyone'),
+        el('h1', { class: 'st-title' }, board ? board.name : 'Whiteboard'))),
+      el('div', { class: 'st-w stack tight' }, tools, wrap, people))
+    drawTools()
+    o.resize = new ResizeObserver(() => sizeCanvases())
+    o.resize.observe(wrap)
+    top.addEventListener('pointerdown', down)
+    top.addEventListener('pointermove', move)
+    top.addEventListener('pointerup', up)
+    top.addEventListener('pointercancel', up)
+    o.keys = e => {
+      if (open !== o || !wrap.isConnected) return
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.target.closest('input, textarea')) { e.preventDefault(); undo() }
+    }
+    document.addEventListener('keydown', o.keys)
+    connect(o)
+    return o.page
+  }
+
+  async function connect(o) {
+    if (!o.board) {
+      const { data } = await auth.from('debrod_boards').select('id, name, class_id, created_by, created_at').eq('id', o.id).maybeSingle()
+      if (o.gone) return
+      if (!data) { o.status.textContent = 'This board is gone, or it belongs to a class you\'re not in.'; return }
+      o.board = data
+      drawTools()
+    }
+    // Every stroke so far, a thousand at a time.
+    const all = []
+    for (let from = 0; ; from += 1000) {
+      const { data, error: e } = await auth.from('debrod_board_strokes').select('id, author, data').eq('board_id', o.id).order('id').range(from, from + 999)
+      if (o.gone) return
+      if (e) { o.status.textContent = `Couldn't load the board: ${e.message}`; return }
+      all.push(...(data || []))
+      if (!data || data.length < 1000) break
+    }
+    // Rows that came in over Realtime while loading are kept too.
+    const seen = new Set(all.map(s => s.id))
+    o.strokes = all.concat(o.strokes.filter(s => !seen.has(s.id))).sort((a, b) => a.id - b.id)
+    o.loaded = true
+    o.status.textContent = ''
+    redraw(o)
+
+    const ch = o.channel = auth.channel(`debrod-board:${o.id}`, { config: { presence: { key: me.id }, broadcast: { self: false } } })
+    ch.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'debrod_board_strokes', filter: `board_id=eq.${o.id}` }, ({ new: s }) => {
+      if (o.strokes.some(x => x.id === s.id)) return
+      const pending = o.strokes.find(x => x.id == null && x.data.k === (s.data && s.data.k))
+      if (pending) { pending.id = s.id; return }
+      o.live.delete(s.data && s.data.k)
+      o.strokes.push(s)
+      paint(o.ink.getContext('2d'), s.data, scale(o))
+      drawLive(o)
+    })
+    ch.on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'debrod_board_strokes' }, ({ old }) => {
+      const n = o.strokes.length
+      o.strokes = o.strokes.filter(s => s.id !== old.id)
+      if (o.strokes.length !== n) redrawSoon(o)
+    })
+    ch.on('broadcast', { event: 'seg' }, ({ payload: p }) => {
+      if (!p || typeof p.k !== 'string' || !Array.isArray(p.p)) return
+      const s = o.live.get(p.k) || { k: p.k, t: p.t, c: p.c, w: p.w, p: [] }
+      s.p = s.p.concat(p.p.slice(0, 2000))
+      s.at = Date.now()
+      if (s.t === 'erase') {
+        // Erasing shows right away on the finished layer.
+        paint(o.ink.getContext('2d'), { t: 'erase', w: s.w, p: s.p.slice(Math.max(0, s.p.length - p.p.length - 2)) }, scale(o))
+      }
+      o.live.set(p.k, s)
+      drawLive(o)
+    })
+    ch.on('broadcast', { event: 'wipe' }, () => { o.strokes = []; o.live.clear(); redraw(o) })
+    ch.on('presence', { event: 'sync' }, () => {
+      o.people = Object.values(ch.presenceState()).map(list => list[0]).filter(Boolean)
+      drawPeople(o)
+    })
+    ch.subscribe(async st => {
+      if (st === 'SUBSCRIBED') await ch.track({ id: me.id, name: me.display, avatar: me.avatar || '🙂', photo: me.photo || '', color: me.color || '' })
+    })
+    // Someone else's stroke that never got saved fades out after a while.
+    o.sweep = setInterval(() => {
+      const old = Date.now() - 8000
+      let gone = false
+      for (const [k, s] of o.live) if (s.at < old) { o.live.delete(k); gone = true }
+      if (gone) drawLive(o)
+    }, 3000)
+  }
+
+  // Leaving the board page: Study calls this through view() and on sign-out.
+  function leave() {
+    const o = open
+    if (!o) return
+    open = null
+    o.gone = true
+    if (o.mine) finish(o)
+    if (o.channel && auth) { o.channel.untrack(); auth.removeChannel(o.channel) }
+    if (o.resize) o.resize.disconnect()
+    clearInterval(o.sweep)
+    document.removeEventListener('keydown', o.keys)
+  }
+
+  function drawPeople(o) {
+    fill(o.peopleEl, o.people.length ? [el('span', { class: 'st-sub' }, 'On this board:'), o.people.map(p => el('span', { class: 'bd-person' },
+      el('span', { class: 'bd-av', style: `background: ${safe(p.color)}` }, face(p)), p.id === me.id ? `${p.name} (you)` : p.name))] : null)
+  }
+
+  function drawTools() {
+    const o = open
+    if (!o) return
+    const toolBtn = (t, label, title) => el('button', { type: 'button', class: `chip ${o.tool === t ? 'on' : ''}`, title, onClick: () => { o.tool = t; o.wrap.classList.toggle('erase', t === 'erase'); drawTools() } }, label)
+    fill(o.tools,
+      toolBtn('pen', '✏️ Pen', 'Pen'),
+      toolBtn('hl', '🖍️ Highlighter', 'See-through marker'),
+      toolBtn('erase', '🧽 Eraser', 'Rub out'),
+      el('span', { class: 'sep' }),
+      COLORS.map(c => el('button', { type: 'button', class: `bd-swatch ${o.color === c && o.tool !== 'erase' ? 'on' : ''}`, style: `background: ${c}`, 'aria-label': `Colour ${c}`,
+        onClick: () => { o.color = c; if (o.tool === 'erase') { o.tool = 'pen'; o.wrap.classList.remove('erase') } drawTools() } })),
+      el('span', { class: 'sep' }),
+      SIZES.map((s, i) => el('button', { type: 'button', class: `chip bd-size ${o.size === i ? 'on' : ''}`, 'aria-label': ['Thin', 'Medium', 'Thick'][i], onClick: () => { o.size = i; drawTools() } },
+        el('i', { style: `width: ${4 + i * 5}px; height: ${4 + i * 5}px` }))),
+      el('span', { class: 'grow' }),
+      el('button', { type: 'button', class: 'chip', title: 'Undo your last stroke (Ctrl+Z)', onClick: undo }, '↶ Undo'),
+      canWipe(o.board) && el('button', { type: 'button', class: 'chip', onClick: wipe }, '🗑 Clear'),
+      canWipe(o.board) && el('button', { type: 'button', class: 'chip', onClick: removeBoard }, 'Delete board'))
+  }
+
+  // ── Drawing ──
+  const scale = o => o.ink.width / W
+
+  function sizeCanvases() {
+    const o = open
+    if (!o) return
+    const r = o.wrap.getBoundingClientRect()
+    if (!r.width) return
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const w = Math.round(r.width * dpr)
+    const h = Math.round(w * H / W)
+    if (o.ink.width === w && o.ink.height === h) return
+    for (const c of [o.ink, o.top]) { c.width = w; c.height = h }
+    redraw(o)
+  }
+
+  // One stroke onto a canvas. s: { t: 'pen' | 'hl' | 'erase', c, w, p: [x, y, x, y, …] }
+  function paint(g, s, k) {
+    const p = s.p || []
+    if (p.length < 2) return
+    g.save()
+    g.lineCap = 'round'
+    g.lineJoin = 'round'
+    g.globalCompositeOperation = s.t === 'erase' ? 'destination-out' : s.t === 'hl' ? 'multiply' : 'source-over'
+    g.globalAlpha = s.t === 'hl' ? 0.35 : 1
+    g.strokeStyle = s.t === 'erase' ? '#000' : safe(s.c)
+    g.fillStyle = g.strokeStyle
+    const w = Math.max(1, Math.min(120, Number(s.w) || 4)) * (s.t === 'hl' ? 2.6 : s.t === 'erase' ? 3 : 1) * k
+    g.lineWidth = w
+    if (p.length < 4) {
+      g.beginPath()
+      g.arc(p[0] * k, p[1] * k, w / 2, 0, Math.PI * 2)
+      g.fill()
+    } else {
+      g.beginPath()
+      g.moveTo(p[0] * k, p[1] * k)
+      // Smooth through the midpoints.
+      for (let i = 2; i < p.length - 2; i += 2) {
+        const mx = (p[i] + p[i + 2]) / 2
+        const my = (p[i + 1] + p[i + 3]) / 2
+        g.quadraticCurveTo(p[i] * k, p[i + 1] * k, mx * k, my * k)
+      }
+      g.lineTo(p[p.length - 2] * k, p[p.length - 1] * k)
+      g.stroke()
+    }
+    g.restore()
+  }
+
+  function redraw(o) {
+    o.redrawQueued = false
+    const g = o.ink.getContext('2d')
+    g.clearRect(0, 0, o.ink.width, o.ink.height)
+    const k = scale(o)
+    for (const s of o.strokes) paint(g, s.data, k)
+    drawLive(o)
+  }
+  function redrawSoon(o) {
+    if (o.redrawQueued) return
+    o.redrawQueued = true
+    requestAnimationFrame(() => { if (open === o) redraw(o) })
+  }
+
+  // Strokes still being drawn, yours and others', on the top layer.
+  function drawLive(o) {
+    const g = o.top.getContext('2d')
+    g.clearRect(0, 0, o.top.width, o.top.height)
+    const k = scale(o)
+    for (const s of o.live.values()) if (s.t !== 'erase') paint(g, s, k)
+    if (o.mine && o.mine.t !== 'erase') paint(g, o.mine, k)
+  }
+
+  function point(o, e) {
+    const r = o.top.getBoundingClientRect()
+    return [Math.round(Math.max(0, Math.min(W, (e.clientX - r.left) / r.width * W))), Math.round(Math.max(0, Math.min(H, (e.clientY - r.top) / r.height * H)))]
+  }
+
+  function down(e) {
+    const o = open
+    if (!o || !o.loaded || (e.pointerType === 'mouse' && e.button !== 0)) return
+    e.preventDefault()
+    o.top.setPointerCapture(e.pointerId)
+    o.pointer = e.pointerId
+    begin(o, point(o, e))
+  }
+
+  function begin(o, [x, y]) {
+    o.mine = { k: `${me.id.slice(0, 8)}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`, t: o.tool, c: o.color, w: SIZES[o.size], p: [x, y] }
+    o.sentUpTo = 0
+    o.sentAt = 0
+    stream(o, true)
+    if (o.mine.t === 'erase') paint(o.ink.getContext('2d'), o.mine, scale(o))
+    drawLive(o)
+  }
+
+  function move(e) {
+    const o = open
+    if (!o || !o.mine || e.pointerId !== o.pointer) return
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e]
+    const s = o.mine
+    for (const ev of evs.length ? evs : [e]) {
+      const [x, y] = point(o, ev)
+      const lx = s.p[s.p.length - 2]
+      const ly = s.p[s.p.length - 1]
+      if (Math.abs(x - lx) + Math.abs(y - ly) < 2) continue
+      s.p.push(x, y)
+      if (s.t === 'erase') paint(o.ink.getContext('2d'), { t: 'erase', w: s.w, p: [lx, ly, x, y] }, scale(o))
+    }
+    if (s.p.length / 2 >= MAX_POINTS) {
+      // Long stroke: save this piece and carry on from where it ended.
+      const end = s.p.slice(-2)
+      finish(o)
+      begin(o, end)
+      return
+    }
+    stream(o, false)
+    drawLive(o)
+  }
+
+  function up(e) {
+    const o = open
+    if (!o || !o.mine || e.pointerId !== o.pointer) return
+    finish(o)
+  }
+
+  // Stream the new points of your stroke to everyone on the board.
+  function stream(o, force) {
+    const s = o.mine
+    if (!o.channel || !s) return
+    const now = Date.now()
+    if (!force && now - o.sentAt < LIVE_MS) return
+    o.sentAt = now
+    const p = s.p.slice(o.sentUpTo)
+    o.sentUpTo = s.p.length
+    if (p.length) o.channel.send({ type: 'broadcast', event: 'seg', payload: { k: s.k, t: s.t, c: s.c, w: s.w, p } })
+  }
+
+  async function finish(o) {
+    const s = o.mine
+    o.mine = null
+    if (!s) return
+    stream(Object.assign({}, o, { mine: s }), true)
+    const row = { id: null, author: me.id, data: s }
+    o.strokes.push(row)
+    if (s.t !== 'erase') paint(o.ink.getContext('2d'), s, scale(o))
+    drawLive(o)
+    const { data, error: e } = await auth.from('debrod_board_strokes').insert({ board_id: o.id, author: me.id, data: s }).select('id').single()
+    if (e) {
+      o.strokes = o.strokes.filter(x => x !== row)
+      if (open === o) { redraw(o); ui.pop(`Couldn't save that stroke: ${e.message}`) }
+      return
+    }
+    if (row.id == null) row.id = data.id
+  }
+
+  async function undo() {
+    const o = open
+    if (!o) return
+    const last = [...o.strokes].reverse().find(s => s.author === me.id && s.id != null)
+    if (!last) return ui.pop('Nothing of yours to undo')
+    o.strokes = o.strokes.filter(s => s !== last)
+    redraw(o)
+    const { error: e } = await auth.from('debrod_board_strokes').delete().eq('id', last.id)
+    if (e) { tell(e.message); o.strokes.push(last); o.strokes.sort((a, b) => a.id - b.id); redraw(o) }
+  }
+
+  async function wipe() {
+    const o = open
+    if (!o || !(await ask('Clear the whole board for everyone? This can\'t be undone.', 'Clear'))) return
+    const { error: e } = await auth.from('debrod_board_strokes').delete().eq('board_id', o.id)
+    if (e) return tell(e.message)
+    o.strokes = []
+    o.live.clear()
+    redraw(o)
+    if (o.channel) o.channel.send({ type: 'broadcast', event: 'wipe', payload: {} })
+  }
+
+  async function removeBoard() {
+    const o = open
+    if (!o || !(await ask(`Delete “${o.board.name}” and everything on it?`, 'Delete'))) return
+    const { error: e } = await auth.from('debrod_boards').delete().eq('id', o.id)
+    if (e) return tell(e.message)
+    leave()
+    await loadBoards()
+    ui.go({ name: 'boards' })
+  }
+
+  return { panel, view, leave, start, stop }
+})()
+//# sourceURL=debrod/Boards.js
+</script>

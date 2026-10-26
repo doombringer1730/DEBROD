@@ -1,0 +1,311 @@
+<style>
+/* ── Classes (inside Study; most of the look comes from Study's own .st- styles) ── */
+.cl-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.cl-head .grow { flex: 1; min-width: 0; }
+.cl-swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; background: var(--c, #888); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3); }
+.cl-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.cl-card { position: relative; text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 14px 14px 14px 20px; min-width: 0; }
+.cl-card::after { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--c, #888); }
+.cl-card strong { font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cl-row .grow { flex: 1; min-width: 0; }
+.cl-people { display: flex; flex-wrap: wrap; gap: 6px; }
+.cl-person { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 8px 2px 2px; border: 1px solid rgba(0, 0, 0, 0.2); border-radius: 999px; }
+.cl-av { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; flex: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3); }
+.cl-kind { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; padding: 1px 6px; border: 1px solid currentColor; border-radius: 3px; white-space: nowrap; }
+.cl-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; letter-spacing: 0.04em; padding: 0 6px; border-radius: 3px; background: color-mix(in srgb, var(--c, #888) 18%, transparent); box-shadow: inset 3px 0 0 var(--c, #888); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.cl-details { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; font-size: 15px; }
+.cl-details a { overflow-wrap: anywhere; }
+.cl-form { display: flex; flex-direction: column; gap: 10px; }
+.cl-form .row { gap: 8px; flex-wrap: wrap; }
+.cl-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.cl-form textarea { min-height: 150px; resize: vertical; }
+.cl-form select { width: 100%; }
+.cl-colors { display: flex; gap: 6px; flex-wrap: wrap; }
+.cl-colors button { width: 28px; height: 28px; padding: 0; border-radius: 50%; }
+.cl-colors button.on { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #000; }
+.cl-open { display: block; width: 100%; text-align: left; background: none; border: none; padding: 0; box-shadow: none; font: inherit; color: inherit; text-transform: none; letter-spacing: normal; cursor: pointer; }
+.cl-open:hover:not(:disabled) { background: none; box-shadow: none; text-decoration: underline; }
+.st-item .main .cl-tag { margin-top: 2px; }
+/* In the punch-card room the open buttons stay plain text, not keys. */
+.t-study button.cl-open, .t-study button.cl-open:hover:not(:disabled) { background: none; color: inherit; box-shadow: none; font: inherit; text-transform: none; letter-spacing: normal; padding: 0; }
+.t-study .cl-person { border-color: rgba(35, 38, 43, 0.3); background: #fbf8ee; }
+.t-study .cl-details { font-family: 'Courier Prime', monospace; }
+.t-study .cl-details a { color: #2d5fa6; }
+.t-study a.chip { align-self: flex-start; color: #efe8d4; background: #3b3f46; border: none; border-radius: 2px; box-shadow: 0 3px 0 #1f2226; font: 700 12px 'Archivo Narrow', sans-serif; letter-spacing: 0.12em; text-transform: uppercase; text-decoration: none; padding: 7px 12px; }
+.t-study a.chip:hover { background: #4a4f57; color: #fff; }
+</style>
+<script>
+// Classes: anyone can make one, everyone can browse and join, and members
+// post the class's assignments, tests and readings with what each one
+// entails. Members' Study picks them up as assignments (Study mirrors them,
+// tagged with the class), so turning one in, the calendar and Home's "Due
+// soon" work as for your own. Everything goes through Supabase with your
+// session; the database decides who sees what and filters the text
+// (supabase/schema.sql). Shown inside Study (Study.html calls view()).
+
+const Classes = (() => {
+  const KINDS = { assignment: '📝 Assignment', test: '🧪 Test', quiz: '❓ Quiz', project: '🛠️ Project', reading: '📖 Reading' }
+  const COLORS = ['#2d5fa6', '#df5236', '#2c8783', '#e6a634', '#7a4ea3', '#3a7d44', '#c2477e', '#5b3b27']
+
+  let auth = null
+  let me = null
+  let started = false
+  let loaded = false
+  let error = ''
+  let classes = []
+  let members = new Map() // class id → [user id]
+  let mine = new Set()
+  let work = []
+  let people = new Map()
+  let live = null
+  let reloadTimer = null
+  let onWork = null       // Study's mirror
+
+  const safe = c => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '#888888')
+  const classById = id => classes.find(c => c.id === id) || null
+  const workById = id => work.find(w => w.id === id) || null
+  const isAdmin = () => typeof Account !== 'undefined' && Account.isAdmin()
+  const canEdit = row => row && me && (row.created_by === me.id || isAdmin())
+  const who = id => people.get(id) || { display: 'Former member', avatar: '👤', color: '#bbbbbb' }
+  const av = p => el('span', { class: 'cl-av', style: `background: ${safe(p.color)}` }, face(p))
+  const rich = text => text.split(/(https?:\/\/[^\s]+)/).map(part => (/^https?:[/][/]/.test(part) ? el('a', { href: part, target: '_blank', rel: 'noopener noreferrer' }, part) : part))
+  const fmtDay = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) }
+  const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+
+  // ── Data ──
+  async function load() {
+    const [c, m, w, p] = await Promise.all([
+      auth.from('debrod_classes').select('id, name, detail, color, created_by, created_at').order('name'),
+      auth.from('debrod_class_members').select('class_id, user_id'),
+      auth.from('debrod_class_work').select('id, class_id, title, kind, due, details, link, created_by, created_at, updated_at').order('due'),
+      auth.from('debrod_profiles').select('id, display, avatar, photo, color').eq('status', 'approved'),
+    ])
+    const bad = [c, m, w, p].find(r => r.error)
+    if (bad) { error = bad.error.message; if (ui) ui.refresh(); return }
+    error = ''
+    classes = c.data || []
+    members = new Map()
+    for (const row of m.data || []) members.set(row.class_id, (members.get(row.class_id) || []).concat(row.user_id))
+    mine = new Set((m.data || []).filter(r => r.user_id === me.id).map(r => r.class_id))
+    work = w.data || []
+    people = new Map((p.data || []).map(x => [x.id, x]))
+    loaded = true
+    if (onWork) onWork(work.filter(x => mine.has(x.class_id)), classById)
+    if (ui) ui.refresh()
+  }
+  const reload = () => { clearTimeout(reloadTimer); reloadTimer = setTimeout(load, 300) }
+
+  // Once you're signed in; `mirror` gets your classes' work after each load.
+  function start(mirror) {
+    if (started || typeof Account === 'undefined' || !Account.ready()) return
+    auth = Account.client()
+    me = Account.profile()
+    if (!auth || !me) return
+    started = true
+    onWork = mirror
+    load()
+    live = auth.channel('debrod-classes')
+    for (const table of ['debrod_classes', 'debrod_class_members', 'debrod_class_work']) live.on('postgres_changes', { event: '*', schema: 'public', table }, reload)
+    live.subscribe()
+  }
+  function stop() {
+    if (live && auth) auth.removeChannel(live)
+    live = null
+    started = loaded = false
+    classes = []; members = new Map(); mine = new Set(); work = []
+  }
+
+  async function run(promise, after) {
+    const { error: e } = await promise
+    if (e) { tell(e.message); return false }
+    await load()
+    if (after) after()
+    return true
+  }
+
+  // ── Pages (Study hands over go/pop/back and turn-in through `ui`) ──
+  let ui = null
+
+  function view(v, helpers) {
+    ui = helpers
+    if (!started) return el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, 'Sign in to use classes.'))
+    if (!loaded) return el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, error ? `Couldn't load classes: ${error}` : 'Loading classes…'))
+    if (v.name === 'class') return classPage(v.id)
+    if (v.name === 'work') return workPage(v.id)
+    if (v.name === 'post') return postPage(v.classId, v.id)
+    return listPage()
+  }
+
+  const back = (label, to) => el('button', { type: 'button', class: 'link st-back', onClick: () => ui.go(to) }, `‹ ${label}`)
+  const upcoming = id => work.filter(w => w.class_id === id && w.due >= todayKey())
+
+  function classCard(c) {
+    const n = (members.get(c.id) || []).length
+    const up = upcoming(c.id).length
+    return el('button', { type: 'button', class: 'st-deck cl-card', style: `--c: ${safe(c.color)}`, onClick: () => ui.go({ name: 'class', id: c.id }) },
+      el('strong', null, c.name),
+      c.detail && el('span', { class: 'st-sub truncate' }, c.detail),
+      el('div', { class: 'row' },
+        el('span', null, `${n} member${n === 1 ? '' : 's'}`),
+        mine.has(c.id) && el('span', null, up ? `${up} coming up` : 'nothing due')))
+  }
+
+  function listPage() {
+    const yours = classes.filter(c => mine.has(c.id))
+    const others = classes.filter(c => !mine.has(c.id))
+    let name = ''
+    let detail = ''
+    let color = COLORS[classes.length % COLORS.length]
+    const colors = el('div', { class: 'cl-colors' })
+    const drawColors = () => fill(colors, COLORS.map(c => el('button', { type: 'button', class: color === c ? 'on' : '', style: `background: ${c}`, 'aria-label': `Colour ${c}`, onClick: () => { color = c; drawColors() } })))
+    drawColors()
+    return el('div', { class: 'stack' },
+      back('Study', { name: 'home' }),
+      el('div', { class: 'st-head' }, el('div', null, el('p', { class: 'st-eyebrow' }, 'Join yours, see what\'s due'), el('h1', { class: 'st-title' }, 'Classes'))),
+      el('p', { class: 'st-label' }, `Your classes (${yours.length})`),
+      yours.length ? el('div', { class: 'cl-cards' }, yours.map(classCard))
+        : el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, 'You\'re not in any classes yet. Join one below, or make it.')),
+      others.length > 0 && el('p', { class: 'st-label' }, 'Everyone\'s classes'),
+      others.length > 0 && el('div', { class: 'st-list' }, others.map(c => el('div', { class: 'st-item' },
+        el('span', { class: 'cl-swatch', style: `--c: ${safe(c.color)}` }),
+        el('div', { class: 'main' }, el('button', { type: 'button', class: 'cl-open', onClick: () => ui.go({ name: 'class', id: c.id }) }, el('p', null, c.name)),
+          el('p', { class: 'st-sub' }, [c.detail, `${(members.get(c.id) || []).length} members`].filter(Boolean).join(' · '))),
+        el('button', { type: 'button', class: 'primary', onClick: () => run(auth.from('debrod_class_members').insert({ class_id: c.id, user_id: me.id }), () => ui.pop(`🏫 Joined ${c.name}`)) }, 'Join')))),
+      el('form', { class: 'st-w cl-form', onSubmit: e => {
+        e.preventDefault()
+        if (!name.trim()) return
+        run(auth.from('debrod_classes').insert({ name: name.trim(), detail: detail.trim(), color, created_by: me.id }), () => ui.pop('🏫 Class made. You\'re in it.'))
+      } },
+        el('h2', null, '➕ Make a class'),
+        el('div', { class: 'row' },
+          el('input', { placeholder: 'Class name, e.g. AP Chem', maxlength: 40, required: true, style: 'flex: 2 1 200px', onInput: e => { name = e.target.value } }),
+          el('input', { placeholder: 'Teacher or period (optional)', maxlength: 60, style: 'flex: 1 1 160px', onInput: e => { detail = e.target.value } })),
+        el('div', { class: 'row' }, colors, el('span', { class: 'grow' }), el('button', { type: 'submit', class: 'primary' }, 'Make class'))))
+  }
+
+  function workRow(w, showClass) {
+    const dl = ui.dueLabel(w.due)
+    const done = ui.isDone(w.id)
+    const c = classById(w.class_id)
+    return el('div', { class: `st-item ${done ? 'done' : dl.tone === 'over' ? 'over' : ''}` },
+      el('button', { type: 'button', class: `st-check ${done ? 'on' : ''}`, title: done ? 'Undo turn-in' : 'Turn in', 'aria-label': `${done ? 'Undo turn-in of' : 'Turn in'} ${w.title}`, onClick: () => ui.toggle(w.id) }, done ? '✓' : ''),
+      el('div', { class: 'main' },
+        el('button', { type: 'button', class: 'cl-open', onClick: () => ui.go({ name: 'work', id: w.id }) }, el('p', null, w.title)),
+        el('p', { class: `st-due ${done ? 'st-good' : dl.tone}` }, `${KINDS[w.kind] || ''} · ${done ? 'turned in' : dl.text}`),
+        showClass && c && el('span', { class: 'cl-tag', style: `--c: ${safe(c.color)}` }, c.name)))
+  }
+
+  function classPage(id) {
+    const c = classById(id)
+    if (!c) return el('div', { class: 'stack' }, back('Classes', { name: 'classes' }), el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, 'That class is gone.')))
+    const inIt = mine.has(id)
+    const list = (members.get(id) || []).map(who).sort((a, b) => a.display.localeCompare(b.display))
+    const soon = upcoming(id)
+    const past = work.filter(w => w.class_id === id && w.due < todayKey()).slice(-10).reverse()
+    return el('div', { class: 'stack' },
+      back('Classes', { name: 'classes' }),
+      el('div', { class: 'st-head' },
+        el('div', { class: 'cl-head' }, el('span', { class: 'cl-swatch', style: `--c: ${safe(c.color)}; width: 22px; height: 22px` }),
+          el('div', null, el('p', { class: 'st-eyebrow' }, c.detail || 'Class'), el('h1', { class: 'st-title' }, c.name))),
+        el('div', { class: 'row' },
+          inIt
+            ? el('button', { type: 'button', class: 'primary', onClick: () => ui.go({ name: 'post', classId: id }) }, '+ Post assignment')
+            : el('button', { type: 'button', class: 'primary', onClick: () => run(auth.from('debrod_class_members').insert({ class_id: id, user_id: me.id }), () => ui.pop(`🏫 Joined ${c.name}`)) }, 'Join class'),
+          inIt && el('button', { type: 'button', onClick: async () => { if (await ask(`Leave ${c.name}? Its assignments leave your list (ones you turned in stay).`, 'Leave')) run(auth.from('debrod_class_members').delete().eq('class_id', id).eq('user_id', me.id)) } }, 'Leave'),
+          canEdit(c) && el('button', { type: 'button', onClick: async () => { if (await ask(`Delete ${c.name} and everything posted in it, for everyone?`, 'Delete')) run(auth.from('debrod_classes').delete().eq('id', id), () => ui.go({ name: 'classes' })) } }, 'Delete class'))),
+      el('div', { class: 'st-w' },
+        el('h2', null, `👥 Members (${list.length})`),
+        el('div', { class: 'cl-people' }, list.map(p => el('span', { class: 'cl-person' }, av(p), p.display)))),
+      !inIt && el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, 'Join to see and post this class\'s assignments.')),
+      inIt && el('div', { class: 'st-w' },
+        el('h2', null, `📌 Coming up (${soon.length})`),
+        soon.length ? el('div', { class: 'st-list' }, soon.map(w => workRow(w, false)))
+          : el('p', { class: 'st-empty' }, 'Nothing posted yet. Post the next assignment so everyone has it.')),
+      inIt && past.length > 0 && el('div', { class: 'st-w' },
+        el('h2', null, '🗂️ Past'),
+        el('div', { class: 'st-list' }, past.map(w => workRow(w, false)))))
+  }
+
+  function workPage(id) {
+    const w = workById(id)
+    if (!w) return el('div', { class: 'stack' }, back('Study', { name: 'home' }), el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, 'That assignment was taken down, or you\'re not in its class anymore.')))
+    const c = classById(w.class_id)
+    const dl = ui.dueLabel(w.due)
+    const done = ui.isDone(w.id)
+    const poster = who(w.created_by)
+    return el('div', { class: 'stack' },
+      back(c ? c.name : 'Classes', c ? { name: 'class', id: c.id } : { name: 'classes' }),
+      el('div', { class: 'st-w stack' },
+        el('div', { class: 'cl-row' },
+          el('span', { class: 'cl-kind' }, KINDS[w.kind] || w.kind),
+          c && el('span', { class: 'cl-tag', style: `--c: ${safe(c.color)}` }, c.name),
+          el('span', { class: 'grow' }),
+          el('span', { class: `st-due ${done ? 'st-good' : dl.tone}` }, done ? 'turned in' : dl.text)),
+        el('h1', { class: 'st-title', style: 'text-transform: none' }, w.title),
+        el('p', { class: 'st-sub' }, `Due ${fmtDay(w.due)}`),
+        w.details ? el('div', { class: 'cl-details' }, rich(w.details)) : el('p', { class: 'st-empty' }, 'No details posted. Ask in #study-hall, or add them if you posted it.'),
+        w.link && el('a', { href: w.link, target: '_blank', rel: 'noopener noreferrer', class: 'chip' }, '🔗 Open the link'),
+        el('div', { class: 'cl-row' },
+          av(poster), el('span', { class: 'st-sub grow' }, `Posted by ${poster.display}${w.updated_at && w.updated_at !== w.created_at ? ' · edited' : ''}`),
+          canEdit(w) && el('button', { type: 'button', onClick: () => ui.go({ name: 'post', classId: w.class_id, id: w.id }) }, 'Edit'),
+          canEdit(w) && el('button', { type: 'button', onClick: async () => { if (await ask(`Take down “${w.title}” for everyone in the class?`, 'Take down')) run(auth.from('debrod_class_work').delete().eq('id', w.id), () => ui.go(c ? { name: 'class', id: c.id } : { name: 'classes' })) } }, 'Take down')),
+        el('button', { type: 'button', class: done ? '' : 'primary', onClick: () => { ui.toggle(w.id); ui.go({ name: 'work', id: w.id }) } }, done ? 'Undo turn-in' : '✅ Turn it in')))
+  }
+
+  function postPage(classId, id) {
+    const c = classById(classId)
+    const w = id ? workById(id) : null
+    if (!c || (id && !w)) return listPage()
+    const d = { title: w ? w.title : '', kind: w ? w.kind : 'assignment', due: w ? w.due : todayKey(), details: w ? w.details : '', link: w && w.link ? w.link : '' }
+    const count = el('small', { class: 'st-sub' }, `${d.details.length}/4000`)
+    async function submit(e) {
+      e.preventDefault()
+      if (!d.title.trim() || !d.due) return
+      const link = d.link.trim()
+      if (link && !/^https?:[/][/]/i.test(link)) { tell('Links start with https:/\/ (or http:/\/).'); return }
+      const row = { title: d.title.trim(), kind: d.kind, due: d.due, details: d.details.trim(), link: link || null }
+      const q = w
+        ? auth.from('debrod_class_work').update(row).eq('id', w.id).select('id').single()
+        : auth.from('debrod_class_work').insert(Object.assign(row, { class_id: classId, created_by: me.id })).select('id').single()
+      const { data, error: err } = await q
+      if (err) { tell(err.message); return }
+      await load()
+      ui.pop(w ? '✏️ Saved' : `📌 Posted to ${c.name}`)
+      ui.go({ name: 'work', id: data.id })
+    }
+    return el('div', { class: 'stack' },
+      back(c.name, { name: 'class', id: classId }),
+      el('form', { class: 'st-w cl-form', onSubmit: submit },
+        el('h2', null, w ? '✏️ Edit assignment' : `📌 Post to ${c.name}`),
+        el('label', null, 'Title', el('input', { value: d.title, maxlength: 120, required: true, autofocus: true, placeholder: 'e.g. Lab 4 report', onInput: e => { d.title = e.target.value } })),
+        el('div', { class: 'row' },
+          el('label', { style: 'flex: 1 1 160px' }, 'Type', (() => {
+            const sel = el('select', { onChange: e => { d.kind = e.target.value } }, Object.entries(KINDS).map(([k, label]) => el('option', { value: k }, label)))
+            sel.value = d.kind
+            return sel
+          })()),
+          el('label', { style: 'flex: 1 1 160px' }, 'Due', el('input', { type: 'date', value: d.due, required: true, onInput: e => { d.due = e.target.value } }))),
+        el('label', null, el('span', { class: 'cl-row' }, el('span', { class: 'grow' }, 'What it entails'), count),
+          el('textarea', { value: d.details, maxlength: 4000, placeholder: 'What to do, what to hand in, pages or questions, how it\'s graded, anything people should know.', onInput: e => { d.details = e.target.value; count.textContent = `${d.details.length}/4000` } })),
+        el('label', null, 'Link (optional)', el('input', { type: 'url', value: d.link, maxlength: 500, placeholder: 'https://…', onInput: e => { d.link = e.target.value } })),
+        el('p', { class: 'st-sub' }, 'Everyone in the class sees it in their Study assignments. Swears and slurs turn into ***.'),
+        el('div', { class: 'row' }, el('span', { class: 'grow' }), el('button', { type: 'submit', class: 'primary' }, w ? 'Save' : 'Post'))))
+  }
+
+  // For Study's home panel.
+  function summary() {
+    if (!loaded) return null
+    return { classes: classes.filter(c => mine.has(c.id)), upcoming: work.filter(w => mine.has(w.class_id) && w.due >= todayKey()).length }
+  }
+
+  // Like replaceChildren, but skipping false/null.
+  function fill(node, ...kids) {
+    node.replaceChildren(...kids.flat(Infinity).filter(k => k != null && k !== false))
+    return node
+  }
+
+  return { start, stop, view, summary, workById, classById }
+})()
+//# sourceURL=debrod/Classes.js
+</script>

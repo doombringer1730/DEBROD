@@ -1,0 +1,1544 @@
+<script>
+// The arcade: a few small games for when nothing good is on. Best scores
+// stay in this browser. Loaded after App.html, whose el() and formatTime()
+// it uses.
+
+const Arcade = (() => {
+  const C = {
+    bg: '#0d0221', panel: '#160934', line: 'rgba(0, 240, 255, 0.28)', text: '#f6edff', muted: '#a99bd1',
+    cyan: '#00f0ff', magenta: '#ff2bd6', orange: '#ff7a1a', yellow: '#ffd319', good: '#3dffa8', bad: '#ff4d6d',
+  }
+  const KEYS = {
+    ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+    w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right',
+    ' ': 'action', Enter: 'action',
+  }
+  const DIRS = { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } }
+  const rand = n => Math.floor(Math.random() * n)
+  function shuffle(list) {
+    const a = list.slice()
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = rand(i + 1)
+      ;[a[i], a[j]] = [a[j], a[i]]
+    }
+    return a
+  }
+
+  // ── Best scores ──
+  const BEST_KEY = 'ds_arcade_best'
+  const memBest = {}
+  function allBest() {
+    let stored = {}
+    try { stored = JSON.parse(localStorage.getItem(BEST_KEY)) || {} } catch (e) { /* private mode */ }
+    return Object.assign({}, stored, memBest)
+  }
+  function bestOf(game) {
+    return allBest()[game.id] || 0
+  }
+  function recordBest(game, score) {
+    const old = bestOf(game)
+    const better = !old || (game.lowerIsBetter ? score < old : score > old)
+    if (!better) return false
+    memBest[game.id] = score
+    try { localStorage.setItem(BEST_KEY, JSON.stringify(allBest())) } catch (e) { /* private mode */ }
+    return true
+  }
+
+  // A canvas drawn in logical pixels, sharp on high-DPI screens.
+  function canvas(w, h) {
+    const dpr = window.devicePixelRatio || 1
+    const c = el('canvas', { class: 'game-canvas', width: Math.round(w * dpr), height: Math.round(h * dpr), style: `aspect-ratio: ${w} / ${h}` })
+    const g = c.getContext('2d')
+    g.scale(dpr, dpr)
+    return [c, g]
+  }
+
+  function banner(g, w, h, title, sub) {
+    g.fillStyle = 'rgba(13, 2, 33, 0.72)'
+    g.fillRect(0, 0, w, h)
+    g.textAlign = 'center'
+    g.fillStyle = C.yellow
+    g.font = '700 22px Orbitron, sans-serif'
+    g.fillText(title, w / 2, h / 2 - 6)
+    if (sub) {
+      g.fillStyle = C.cyan
+      g.font = '14px "Share Tech Mono", monospace'
+      g.fillText(sub, w / 2, h / 2 + 20)
+    }
+  }
+
+  // ── Snake ──
+  function snake(host, ctx) {
+    const N = 20, CELL = 20, SIZE = N * CELL
+    const [c, g] = canvas(SIZE, SIZE)
+    host.append(c)
+    let body, dir, queue, food, score, timer, running, dead, speed
+
+    function place() {
+      do { food = { x: rand(N), y: rand(N) } } while (body.some(p => p.x === food.x && p.y === food.y))
+    }
+
+    function reset() {
+      clearTimeout(timer)
+      body = [{ x: 9, y: 10 }, { x: 8, y: 10 }, { x: 7, y: 10 }]
+      dir = DIRS.right
+      queue = []
+      score = 0
+      speed = 140
+      running = false
+      dead = false
+      ctx.score(0)
+      place()
+      draw('Snake', 'Arrow keys or swipe to start')
+    }
+
+    function draw(title, sub) {
+      g.fillStyle = C.bg
+      g.fillRect(0, 0, SIZE, SIZE)
+      g.strokeStyle = 'rgba(255, 43, 214, 0.12)'
+      g.lineWidth = 1
+      for (let i = 1; i < N; i++) {
+        g.beginPath(); g.moveTo(i * CELL + 0.5, 0); g.lineTo(i * CELL + 0.5, SIZE); g.stroke()
+        g.beginPath(); g.moveTo(0, i * CELL + 0.5); g.lineTo(SIZE, i * CELL + 0.5); g.stroke()
+      }
+      g.shadowBlur = 12
+      g.shadowColor = C.magenta
+      g.fillStyle = C.magenta
+      g.beginPath()
+      g.arc(food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, CELL / 2 - 3, 0, Math.PI * 2)
+      g.fill()
+      g.shadowColor = C.cyan
+      body.forEach((p, i) => {
+        g.fillStyle = i === 0 ? C.text : C.cyan
+        g.fillRect(p.x * CELL + 2, p.y * CELL + 2, CELL - 4, CELL - 4)
+      })
+      g.shadowBlur = 0
+      if (title) banner(g, SIZE, SIZE, title, sub)
+    }
+
+    function step() {
+      // Queued turns let quick double-taps land on consecutive ticks.
+      while (queue.length) {
+        const d = queue.shift()
+        if (d.x !== -dir.x || d.y !== -dir.y) { dir = d; break }
+      }
+      const head = { x: body[0].x + dir.x, y: body[0].y + dir.y }
+      const eats = head.x === food.x && head.y === food.y
+      const wall = head.x < 0 || head.y < 0 || head.x >= N || head.y >= N
+      const bites = (eats ? body : body.slice(0, -1)).some(p => p.x === head.x && p.y === head.y)
+      if (wall || bites) {
+        running = false
+        dead = true
+        draw()
+        return ctx.end('Game over', score)
+      }
+      body.unshift(head)
+      if (eats) {
+        ctx.score(++score)
+        if (body.length === N * N) { running = false; draw(); return ctx.end('You filled the board', score) }
+        place()
+        speed = Math.max(60, speed - 3)
+      } else {
+        body.pop()
+      }
+      draw()
+      timer = setTimeout(step, speed)
+    }
+
+    reset()
+    return {
+      input(d) {
+        if (!DIRS[d] || dead) return
+        if (queue.length < 3) queue.push(DIRS[d])
+        if (!running) { running = true; step() }
+      },
+      pause() {
+        if (!running) return
+        clearTimeout(timer)
+        running = false
+        draw('Paused', 'Any arrow key to carry on')
+      },
+      restart: reset,
+      stop() { clearTimeout(timer) },
+    }
+  }
+
+  // ── 2048 ──
+  function twenty48(host, ctx) {
+    const N = 4
+    const board = el('div', { class: 'g2048' })
+    host.append(board)
+    let cells, score, won
+
+    function addTile() {
+      const empty = []
+      cells.forEach((v, i) => { if (!v) empty.push(i) })
+      if (empty.length) cells[empty[rand(empty.length)]] = Math.random() < 0.9 ? 2 : 4
+    }
+
+    function reset() {
+      cells = new Array(N * N).fill(0)
+      score = 0
+      won = false
+      addTile()
+      addTile()
+      ctx.score(0)
+      draw()
+    }
+
+    // The board's indices, one row of them per line, in the order tiles slide.
+    function lines(d) {
+      const out = []
+      for (let a = 0; a < N; a++) {
+        const line = []
+        for (let b = 0; b < N; b++) {
+          if (d === 'left') line.push(a * N + b)
+          if (d === 'right') line.push(a * N + (N - 1 - b))
+          if (d === 'up') line.push(b * N + a)
+          if (d === 'down') line.push((N - 1 - b) * N + a)
+        }
+        out.push(line)
+      }
+      return out
+    }
+
+    function canMove() {
+      if (cells.includes(0)) return true
+      for (let i = 0; i < N * N; i++) {
+        if (i % N < N - 1 && cells[i] === cells[i + 1]) return true
+        if (i + N < N * N && cells[i] === cells[i + N]) return true
+      }
+      return false
+    }
+
+    function move(d) {
+      let moved = false
+      for (const line of lines(d)) {
+        const vals = line.map(i => cells[i]).filter(Boolean)
+        const merged = []
+        for (let i = 0; i < vals.length; i++) {
+          if (vals[i] === vals[i + 1]) {
+            merged.push(vals[i] * 2)
+            score += vals[i] * 2
+            if (vals[i] * 2 === 2048 && !won) won = true
+            i++
+          } else {
+            merged.push(vals[i])
+          }
+        }
+        line.forEach((idx, i) => {
+          const v = merged[i] || 0
+          if (cells[idx] !== v) moved = true
+          cells[idx] = v
+        })
+      }
+      if (!moved) return
+      addTile()
+      ctx.score(score)
+      draw()
+      if (won === true) { won = 'shown'; ctx.toast('2048! Keep going?') }
+      if (!canMove()) ctx.end('No moves left', score)
+    }
+
+    function draw() {
+      board.replaceChildren(...cells.map(v => el('div', { class: 'tile', 'data-v': v ? Math.min(v, 4096) : null }, v || '')))
+    }
+
+    reset()
+    return { input(d) { if (DIRS[d]) move(d) }, restart: reset, stop() {} }
+  }
+
+  // ── Breakout ──
+  function breakout(host, ctx) {
+    const W = 420, H = 480
+    const COLS = 8, ROWS = 5, BW = 46, BH = 16, GAP = 5, TOP = 50
+    const LEFT = (W - (COLS * BW + (COLS - 1) * GAP)) / 2
+    const ROW_COLORS = [C.yellow, C.orange, C.orange, C.magenta, C.magenta]
+    const [c, g] = canvas(W, H)
+    host.append(c)
+    let paddle, ball, bricks, lives, score, level, raf, last, state
+
+    function serve() {
+      ball = { x: paddle.x, y: H - 46, vx: 0, vy: 0, r: 7 }
+      state = 'serve'
+    }
+
+    function buildLevel() {
+      bricks = []
+      for (let r = 0; r < ROWS; r++) {
+        for (let col = 0; col < COLS; col++) {
+          bricks.push({ x: LEFT + col * (BW + GAP), y: TOP + r * (BH + GAP), color: ROW_COLORS[r], alive: true })
+        }
+      }
+    }
+
+    function reset() {
+      cancelAnimationFrame(raf)
+      paddle = { x: W / 2, w: 80, h: 10, y: H - 30 }
+      lives = 3
+      score = 0
+      level = 1
+      ctx.score(0)
+      buildLevel()
+      serve()
+      last = 0
+      raf = requestAnimationFrame(frame)
+    }
+
+    function launch() {
+      if (state === 'over') return
+      if (state === 'paused') { state = 'play'; return }
+      if (state !== 'serve') return
+      const speed = 300 + (level - 1) * 40
+      const angle = (Math.random() * 0.6 - 0.3) - Math.PI / 2
+      ball.vx = Math.cos(angle) * speed
+      ball.vy = Math.sin(angle) * speed
+      state = 'play'
+    }
+
+    function update(dt) {
+      const pspeed = 460
+      if (ctx.held.has('left')) paddle.x -= pspeed * dt
+      if (ctx.held.has('right')) paddle.x += pspeed * dt
+      paddle.x = Math.max(paddle.w / 2, Math.min(W - paddle.w / 2, paddle.x))
+      if (state === 'serve') { ball.x = paddle.x; return }
+      if (state !== 'play') return
+
+      ball.x += ball.vx * dt
+      ball.y += ball.vy * dt
+      if (ball.x < ball.r) { ball.x = ball.r; ball.vx = Math.abs(ball.vx) }
+      if (ball.x > W - ball.r) { ball.x = W - ball.r; ball.vx = -Math.abs(ball.vx) }
+      if (ball.y < ball.r) { ball.y = ball.r; ball.vy = Math.abs(ball.vy) }
+
+      // Paddle: where it lands sets the angle, like the original.
+      const px = paddle.x - paddle.w / 2
+      if (ball.vy > 0 && ball.y + ball.r >= paddle.y && ball.y + ball.r <= paddle.y + paddle.h + 8 &&
+          ball.x >= px - ball.r && ball.x <= px + paddle.w + ball.r) {
+        const hit = (ball.x - paddle.x) / (paddle.w / 2)
+        const speed = Math.hypot(ball.vx, ball.vy) * 1.01
+        const angle = Math.max(-1, Math.min(1, hit)) * (Math.PI / 3)
+        ball.vx = Math.sin(angle) * speed
+        ball.vy = -Math.cos(angle) * speed
+        ball.y = paddle.y - ball.r
+      }
+
+      for (const b of bricks) {
+        if (!b.alive) continue
+        const nx = Math.max(b.x, Math.min(ball.x, b.x + BW))
+        const ny = Math.max(b.y, Math.min(ball.y, b.y + BH))
+        if ((ball.x - nx) ** 2 + (ball.y - ny) ** 2 > ball.r ** 2) continue
+        b.alive = false
+        ctx.score(score += 10)
+        // Bounce off whichever side it came through.
+        const overlapX = Math.min(ball.x + ball.r - b.x, b.x + BW - (ball.x - ball.r))
+        const overlapY = Math.min(ball.y + ball.r - b.y, b.y + BH - (ball.y - ball.r))
+        if (overlapX < overlapY) ball.vx = -ball.vx
+        else ball.vy = -ball.vy
+        break
+      }
+
+      if (bricks.every(b => !b.alive)) {
+        level++
+        ctx.toast(`Level ${level}`)
+        buildLevel()
+        serve()
+      }
+
+      if (ball.y > H + ball.r) {
+        lives--
+        if (lives <= 0) {
+          state = 'over'
+          ctx.end('Game over', score)
+        } else {
+          serve()
+        }
+      }
+    }
+
+    function draw() {
+      g.fillStyle = C.bg
+      g.fillRect(0, 0, W, H)
+      g.shadowBlur = 10
+      for (const b of bricks) {
+        if (!b.alive) continue
+        g.shadowColor = b.color
+        g.fillStyle = b.color
+        g.fillRect(b.x, b.y, BW, BH)
+      }
+      g.shadowColor = C.cyan
+      g.fillStyle = C.cyan
+      g.fillRect(paddle.x - paddle.w / 2, paddle.y, paddle.w, paddle.h)
+      g.shadowColor = C.text
+      g.fillStyle = C.text
+      g.beginPath()
+      g.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2)
+      g.fill()
+      g.shadowBlur = 0
+      g.textAlign = 'left'
+      g.fillStyle = C.muted
+      g.font = '13px "Share Tech Mono", monospace'
+      g.fillText(`LIVES ${'♥'.repeat(lives)}   LEVEL ${level}`, 12, 24)
+      if (state === 'serve') banner(g, W, H, level === 1 && score === 0 ? 'Breakout' : 'Ready', 'Space or tap to launch')
+      if (state === 'paused') banner(g, W, H, 'Paused', 'Space or tap to carry on')
+    }
+
+    function frame(t) {
+      const dt = last ? Math.min(0.032, (t - last) / 1000) : 0
+      last = t
+      update(dt)
+      draw()
+      if (state !== 'over') raf = requestAnimationFrame(frame)
+    }
+
+    // Mouse or finger steers the paddle.
+    function steer(clientX) {
+      const rect = c.getBoundingClientRect()
+      paddle.x = ((clientX - rect.left) / rect.width) * W
+    }
+    c.addEventListener('mousemove', e => steer(e.clientX))
+    c.addEventListener('touchmove', e => { steer(e.touches[0].clientX); e.preventDefault() }, { passive: false })
+    c.addEventListener('touchstart', e => steer(e.touches[0].clientX), { passive: true })
+    c.addEventListener('click', launch)
+
+    reset()
+    return {
+      input(d) { if (d === 'action') launch() },
+      pause() {
+        if (state === 'play') state = 'paused'
+        cancelAnimationFrame(raf)
+        draw()
+      },
+      resume() {
+        if (state === 'over') return
+        last = 0
+        raf = requestAnimationFrame(frame)
+      },
+      restart: reset,
+      stop() { cancelAnimationFrame(raf) },
+    }
+  }
+
+  // ── Minesweeper ──
+  function mines(host, ctx) {
+    const N = 9, MINES = 10
+    const grid = el('div', { class: 'mines' })
+    const flagBtn = el('button', { type: 'button', class: 'chip' }, '🚩 Flag mode: off')
+    host.append(grid, flagBtn)
+    let cells, started, finished, flagMode, startedAt, clock, elapsed
+
+    flagBtn.addEventListener('click', () => {
+      flagMode = !flagMode
+      flagBtn.textContent = `🚩 Flag mode: ${flagMode ? 'on' : 'off'}`
+      flagBtn.classList.toggle('on', flagMode)
+    })
+
+    const around = i => {
+      const x = i % N, y = Math.floor(i / N), out = []
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy
+          if ((dx || dy) && nx >= 0 && ny >= 0 && nx < N && ny < N) out.push(ny * N + nx)
+        }
+      }
+      return out
+    }
+
+    function reset() {
+      clearInterval(clock)
+      cells = Array.from({ length: N * N }, () => ({ mine: false, open: false, flag: false, n: 0 }))
+      started = false
+      finished = false
+      elapsed = 0
+      ctx.score(0)
+      draw()
+    }
+
+    // Mines go down after the first click, so it's never a loss.
+    function plant(safe) {
+      const keepClear = new Set([safe, ...around(safe)])
+      let placed = 0
+      while (placed < MINES) {
+        const i = rand(N * N)
+        if (keepClear.has(i) || cells[i].mine) continue
+        cells[i].mine = true
+        placed++
+      }
+      cells.forEach((cell, i) => { cell.n = around(i).filter(j => cells[j].mine).length })
+      started = true
+      tick()
+    }
+
+    function tick() {
+      startedAt = Date.now() - elapsed * 1000
+      clearInterval(clock)
+      clock = setInterval(() => { elapsed = Math.floor((Date.now() - startedAt) / 1000); ctx.score(elapsed) }, 250)
+    }
+
+    function open(i) {
+      const stack = [i]
+      while (stack.length) {
+        const j = stack.pop()
+        const cell = cells[j]
+        if (cell.open || cell.flag) continue
+        cell.open = true
+        if (!cell.n && !cell.mine) stack.push(...around(j))
+      }
+    }
+
+    function press(i, flag) {
+      if (finished) return
+      const cell = cells[i]
+      if (cell.open) return
+      if (flag) {
+        cell.flag = !cell.flag
+        return draw()
+      }
+      if (cell.flag) return
+      if (!started) plant(i)
+      if (cell.mine) {
+        finished = true
+        clearInterval(clock)
+        cells.forEach(x => { if (x.mine) x.open = true })
+        draw(i)
+        return ctx.end('Boom', null)
+      }
+      open(i)
+      draw()
+      if (cells.every(x => x.open || x.mine)) {
+        finished = true
+        clearInterval(clock)
+        elapsed = Math.max(1, Math.floor((Date.now() - startedAt) / 1000))
+        ctx.score(elapsed)
+        ctx.end(`Cleared in ${elapsed}s`, elapsed)
+      }
+    }
+
+    const NUM_COLORS = ['', C.cyan, C.good, C.yellow, C.orange, C.magenta, C.bad, C.text, C.text]
+
+    function draw(blown) {
+      grid.replaceChildren(...cells.map((cell, i) => {
+        const label = cell.open ? (cell.mine ? '💥' : cell.n || '') : cell.flag ? '🚩' : ''
+        return el('button', {
+          type: 'button',
+          class: `cell ${cell.open ? 'open' : ''} ${i === blown ? 'blown' : ''}`,
+          style: cell.open && cell.n && !cell.mine ? `color: ${NUM_COLORS[cell.n]}` : null,
+          'aria-label': cell.open ? String(cell.n) : 'Hidden',
+          onClick: () => press(i, flagMode),
+          onContextmenu: e => { e.preventDefault(); press(i, true) },
+        }, label)
+      }))
+    }
+
+    reset()
+    return {
+      pause() { if (started && !finished) { clearInterval(clock); elapsed = Math.floor((Date.now() - startedAt) / 1000) } },
+      resume() { if (started && !finished) tick() },
+      restart: reset,
+      stop() { clearInterval(clock) },
+    }
+  }
+
+  // ── Blocks ──
+  function blocks(host, ctx) {
+    const COLS = 10, ROWS = 20, CELL = 22, SIDE = 110
+    const WELL = COLS * CELL, W = WELL + SIDE, H = ROWS * CELL
+    const SHAPES = {
+      I: [[1, 1, 1, 1]], O: [[1, 1], [1, 1]], T: [[0, 1, 0], [1, 1, 1]], S: [[0, 1, 1], [1, 1, 0]],
+      Z: [[1, 1, 0], [0, 1, 1]], J: [[1, 0, 0], [1, 1, 1]], L: [[0, 0, 1], [1, 1, 1]],
+    }
+    const COLORS = { I: C.cyan, O: C.yellow, T: C.magenta, S: C.good, Z: C.bad, J: '#7b5cff', L: C.orange }
+    const [c, g] = canvas(W, H)
+    host.append(c)
+    let board, piece, next, bag, score, lines, level, timer, state
+
+    const speed = () => Math.max(90, 800 - (level - 1) * 75)
+    const rotate = m => m[0].map((_, i) => m.map(r => r[i]).reverse())
+
+    // A shuffled bag of all seven, so droughts stay short.
+    function take() {
+      if (!bag.length) bag = shuffle(Object.keys(SHAPES))
+      const k = bag.pop()
+      return { k, m: SHAPES[k], x: 0, y: 0 }
+    }
+
+    function collides(m, x, y) {
+      return m.some((row, dy) => row.some((v, dx) => v && (
+        x + dx < 0 || x + dx >= COLS || y + dy >= ROWS || (y + dy >= 0 && board[y + dy][x + dx]))))
+    }
+
+    function spawn() {
+      piece = next
+      next = take()
+      piece.x = Math.floor((COLS - piece.m[0].length) / 2)
+      piece.y = 0
+      if (collides(piece.m, piece.x, piece.y)) {
+        state = 'over'
+        clearTimeout(timer)
+        draw()
+        ctx.end('Topped out', score)
+      }
+    }
+
+    function lock() {
+      piece.m.forEach((row, dy) => row.forEach((v, dx) => {
+        if (v && piece.y + dy >= 0) board[piece.y + dy][piece.x + dx] = piece.k
+      }))
+      let cleared = 0
+      for (let y = ROWS - 1; y >= 0; y--) {
+        if (!board[y].every(Boolean)) continue
+        board.splice(y, 1)
+        board.unshift(new Array(COLS).fill(null))
+        cleared++
+        y++
+      }
+      if (cleared) {
+        score += [0, 100, 300, 500, 800][cleared] * level
+        lines += cleared
+        const lv = Math.floor(lines / 10) + 1
+        if (lv > level) { level = lv; ctx.toast(`Level ${level}`) }
+        ctx.score(score)
+      }
+      spawn()
+    }
+
+    function fall() {
+      if (!collides(piece.m, piece.x, piece.y + 1)) piece.y++
+      else lock()
+    }
+
+    function tick() {
+      if (state !== 'play') return
+      fall()
+      draw()
+      if (state === 'play') timer = setTimeout(tick, speed())
+    }
+
+    function reset() {
+      clearTimeout(timer)
+      board = Array.from({ length: ROWS }, () => new Array(COLS).fill(null))
+      bag = []
+      next = take()
+      score = 0
+      lines = 0
+      level = 1
+      ctx.score(0)
+      state = 'ready'
+      spawn()
+      draw('Blocks', 'Any key or tap to start')
+    }
+
+    function block(x, y, color, size, alpha) {
+      g.globalAlpha = alpha || 1
+      g.fillStyle = color
+      g.shadowColor = color
+      g.shadowBlur = alpha ? 0 : 8
+      g.fillRect(x + 1, y + 1, size - 2, size - 2)
+      g.globalAlpha = 1
+    }
+
+    function draw(title, sub) {
+      g.fillStyle = C.bg
+      g.fillRect(0, 0, W, H)
+      g.strokeStyle = 'rgba(255, 43, 214, 0.1)'
+      for (let x = 1; x < COLS; x++) { g.beginPath(); g.moveTo(x * CELL + 0.5, 0); g.lineTo(x * CELL + 0.5, H); g.stroke() }
+      for (let y = 1; y < ROWS; y++) { g.beginPath(); g.moveTo(0, y * CELL + 0.5); g.lineTo(WELL, y * CELL + 0.5); g.stroke() }
+      board.forEach((row, y) => row.forEach((k, x) => { if (k) block(x * CELL, y * CELL, COLORS[k], CELL) }))
+      if (state !== 'over') {
+        let ghost = piece.y
+        while (!collides(piece.m, piece.x, ghost + 1)) ghost++
+        piece.m.forEach((row, dy) => row.forEach((v, dx) => {
+          if (!v) return
+          block((piece.x + dx) * CELL, (ghost + dy) * CELL, COLORS[piece.k], CELL, 0.2)
+          if (piece.y + dy >= 0) block((piece.x + dx) * CELL, (piece.y + dy) * CELL, COLORS[piece.k], CELL)
+        }))
+      }
+      g.shadowBlur = 0
+      g.fillStyle = 'rgba(22, 9, 52, 0.9)'
+      g.fillRect(WELL, 0, SIDE, H)
+      g.fillStyle = C.magenta
+      g.fillRect(WELL, 0, 2, H)
+      g.textAlign = 'left'
+      g.font = '12px "Share Tech Mono", monospace'
+      g.fillStyle = C.muted
+      g.fillText('NEXT', WELL + 16, 28)
+      next.m.forEach((row, dy) => row.forEach((v, dx) => {
+        if (v) block(WELL + 16 + dx * 18, 40 + dy * 18, COLORS[next.k], 18)
+      }))
+      g.shadowBlur = 0
+      g.fillStyle = C.muted
+      g.fillText('LINES', WELL + 16, 130)
+      g.fillText('LEVEL', WELL + 16, 180)
+      g.fillStyle = C.cyan
+      g.font = '700 20px Orbitron, sans-serif'
+      g.fillText(String(lines), WELL + 16, 154)
+      g.fillText(String(level), WELL + 16, 204)
+      if (title) banner(g, W, H, title, sub)
+    }
+
+    function input(d) {
+      if (state === 'over') return
+      if (state !== 'play') {
+        state = 'play'
+        draw()
+        timer = setTimeout(tick, speed())
+        return
+      }
+      if (d === 'left' && !collides(piece.m, piece.x - 1, piece.y)) piece.x--
+      if (d === 'right' && !collides(piece.m, piece.x + 1, piece.y)) piece.x++
+      if (d === 'down') fall()
+      if (d === 'up') {
+        // Rotate, nudging off a wall if that's all that's in the way.
+        const m = rotate(piece.m)
+        const kick = [0, -1, 1, -2, 2].find(k => !collides(m, piece.x + k, piece.y))
+        if (kick !== undefined) { piece.m = m; piece.x += kick }
+      }
+      if (d === 'action') {
+        while (!collides(piece.m, piece.x, piece.y + 1)) { piece.y++; score += 2 }
+        ctx.score(score)
+        lock()
+      }
+      if (state === 'play') draw()
+    }
+
+    c.addEventListener('click', () => input('up'))
+    reset()
+    return {
+      input,
+      // A swipe down drops all the way.
+      swipe(d) { input(d === 'down' ? 'action' : d) },
+      pause() {
+        if (state !== 'play') return
+        clearTimeout(timer)
+        state = 'paused'
+        draw('Paused', 'Any key to carry on')
+      },
+      restart: reset,
+      stop() { clearTimeout(timer) },
+    }
+  }
+
+  // ── Flap ──
+  function flap(host, ctx) {
+    const W = 360, H = 480, FLOOR = H - 24, GAP = 140, PIPE = 56, SPEED = 160, GRAVITY = 1250, LIFT = -390
+    const [c, g] = canvas(W, H)
+    host.append(c)
+    let bird, pipes, score, state, raf, last, spawnIn
+
+    function reset() {
+      cancelAnimationFrame(raf)
+      bird = { x: 90, y: H / 2, vy: 0, r: 11 }
+      pipes = []
+      score = 0
+      spawnIn = 0.6
+      state = 'ready'
+      ctx.score(0)
+      last = 0
+      raf = requestAnimationFrame(frame)
+    }
+
+    function up() {
+      if (state === 'over') return
+      state = 'play'
+      bird.vy = LIFT
+    }
+
+    function update(dt) {
+      if (state === 'ready') { bird.y = H / 2 + Math.sin(performance.now() / 300) * 6; return }
+      if (state !== 'play') return
+      bird.vy += GRAVITY * dt
+      bird.y += bird.vy * dt
+      if (bird.y < bird.r) { bird.y = bird.r; bird.vy = 0 }
+      spawnIn -= dt
+      if (spawnIn <= 0) {
+        spawnIn = 1.45
+        pipes.push({ x: W, top: 50 + Math.random() * (FLOOR - GAP - 100), passed: false })
+      }
+      for (const p of pipes) {
+        p.x -= SPEED * dt
+        if (!p.passed && p.x + PIPE < bird.x - bird.r) { p.passed = true; ctx.score(++score) }
+      }
+      pipes = pipes.filter(p => p.x > -PIPE)
+      const hit = bird.y + bird.r >= FLOOR || pipes.some(p =>
+        bird.x + bird.r > p.x && bird.x - bird.r < p.x + PIPE && (bird.y - bird.r < p.top || bird.y + bird.r > p.top + GAP))
+      if (hit) {
+        state = 'over'
+        ctx.end('Splat', score)
+      }
+    }
+
+    function draw() {
+      const sky = g.createLinearGradient(0, 0, 0, H)
+      sky.addColorStop(0, '#1a0b3d')
+      sky.addColorStop(1, C.bg)
+      g.fillStyle = sky
+      g.fillRect(0, 0, W, H)
+      g.shadowBlur = 12
+      for (const p of pipes) {
+        g.shadowColor = C.cyan
+        g.fillStyle = 'rgba(0, 240, 255, 0.16)'
+        g.strokeStyle = C.cyan
+        g.lineWidth = 2
+        g.fillRect(p.x, 0, PIPE, p.top)
+        g.strokeRect(p.x + 1, -2, PIPE - 2, p.top + 1)
+        g.fillRect(p.x, p.top + GAP, PIPE, FLOOR - p.top - GAP)
+        g.strokeRect(p.x + 1, p.top + GAP, PIPE - 2, FLOOR - p.top - GAP + 2)
+      }
+      g.shadowColor = C.magenta
+      g.fillStyle = C.magenta
+      g.fillRect(0, FLOOR, W, 2)
+      g.shadowColor = C.orange
+      g.fillStyle = C.yellow
+      g.beginPath()
+      g.arc(bird.x, bird.y, bird.r, 0, Math.PI * 2)
+      g.fill()
+      g.shadowBlur = 0
+      g.fillStyle = C.bg
+      g.beginPath()
+      g.arc(bird.x + 4, bird.y - 3, 2.5, 0, Math.PI * 2)
+      g.fill()
+      g.textAlign = 'center'
+      g.fillStyle = C.text
+      g.font = '900 34px Orbitron, sans-serif'
+      if (state !== 'ready') g.fillText(String(score), W / 2, 56)
+      if (state === 'ready') banner(g, W, H, 'Flap', 'Space, ↑ or tap to flap')
+      if (state === 'paused') banner(g, W, H, 'Paused', 'Flap to carry on')
+    }
+
+    function frame(t) {
+      const dt = last ? Math.min(0.032, (t - last) / 1000) : 0
+      last = t
+      update(dt)
+      draw()
+      if (state !== 'over') raf = requestAnimationFrame(frame)
+    }
+
+    c.addEventListener('pointerdown', e => { e.preventDefault(); up() })
+    reset()
+    return {
+      input(d) { if (d === 'action' || d === 'up') up() },
+      swipe() {},
+      pause() {
+        if (state === 'play') state = 'paused'
+        cancelAnimationFrame(raf)
+        draw()
+      },
+      resume() {
+        if (state === 'over') return
+        last = 0
+        raf = requestAnimationFrame(frame)
+      },
+      restart: reset,
+      stop() { cancelAnimationFrame(raf) },
+    }
+  }
+
+  // ── Pong ──
+  function pong(host, ctx) {
+    const W = 420, H = 300, PW = 10, PH = 60, MARGIN = 18, CPU_WINS_AT = 5
+    const [c, g] = canvas(W, H)
+    host.append(c)
+    let you, cpu, ball, yours, theirs, state, wait, raf, last
+
+    function serve(dir) {
+      ball = { x: W / 2, y: H / 2, vx: 0, vy: 0, r: 6, dir }
+      state = 'serve'
+      wait = 0.9
+    }
+
+    function reset() {
+      cancelAnimationFrame(raf)
+      you = H / 2
+      cpu = H / 2
+      yours = 0
+      theirs = 0
+      ctx.score(0)
+      serve(1)
+      last = 0
+      raf = requestAnimationFrame(frame)
+    }
+
+    function bounce(paddleY, toRight) {
+      const rel = Math.max(-1, Math.min(1, (ball.y - paddleY) / (PH / 2)))
+      const speed = Math.min(720, Math.hypot(ball.vx, ball.vy) * 1.05)
+      const angle = rel * (Math.PI / 4)
+      ball.vx = Math.cos(angle) * speed * (toRight ? 1 : -1)
+      ball.vy = Math.sin(angle) * speed
+    }
+
+    function update(dt) {
+      if (ctx.held.has('up')) you -= 380 * dt
+      if (ctx.held.has('down')) you += 380 * dt
+      you = Math.max(PH / 2, Math.min(H - PH / 2, you))
+      if (state === 'serve') {
+        wait -= dt
+        if (wait <= 0) {
+          const angle = Math.random() * 0.8 - 0.4
+          ball.vx = Math.cos(angle) * 260 * ball.dir
+          ball.vy = Math.sin(angle) * 260
+          state = 'play'
+        }
+        return
+      }
+      if (state !== 'play') return
+      // The CPU tracks the ball but can't move faster than this, so fast
+      // steep shots get past it.
+      const reach = 240 + yours * 12
+      const target = ball.vx > 0 ? ball.y : H / 2
+      cpu += Math.max(-reach * dt, Math.min(reach * dt, target - cpu))
+      cpu = Math.max(PH / 2, Math.min(H - PH / 2, cpu))
+
+      ball.x += ball.vx * dt
+      ball.y += ball.vy * dt
+      if (ball.y < ball.r) { ball.y = ball.r; ball.vy = Math.abs(ball.vy) }
+      if (ball.y > H - ball.r) { ball.y = H - ball.r; ball.vy = -Math.abs(ball.vy) }
+      if (ball.vx < 0 && ball.x - ball.r <= MARGIN + PW && ball.x > MARGIN && Math.abs(ball.y - you) <= PH / 2 + ball.r) {
+        ball.x = MARGIN + PW + ball.r
+        bounce(you, true)
+      }
+      if (ball.vx > 0 && ball.x + ball.r >= W - MARGIN - PW && ball.x < W - MARGIN && Math.abs(ball.y - cpu) <= PH / 2 + ball.r) {
+        ball.x = W - MARGIN - PW - ball.r
+        bounce(cpu, false)
+      }
+      if (ball.x > W + ball.r) {
+        ctx.score(++yours)
+        serve(-1)
+      } else if (ball.x < -ball.r) {
+        theirs++
+        if (theirs >= CPU_WINS_AT) {
+          state = 'over'
+          ctx.end(`CPU wins ${theirs}–${yours}`, yours)
+        } else {
+          serve(1)
+        }
+      }
+    }
+
+    function draw() {
+      g.fillStyle = C.bg
+      g.fillRect(0, 0, W, H)
+      g.fillStyle = 'rgba(255, 43, 214, 0.35)'
+      for (let y = 8; y < H; y += 20) g.fillRect(W / 2 - 1, y, 2, 10)
+      g.textAlign = 'center'
+      g.font = '900 36px Orbitron, sans-serif'
+      g.fillStyle = 'rgba(0, 240, 255, 0.5)'
+      g.fillText(String(yours), W / 2 - 50, 50)
+      g.fillStyle = 'rgba(255, 43, 214, 0.5)'
+      g.fillText(String(theirs), W / 2 + 50, 50)
+      g.shadowBlur = 12
+      g.shadowColor = C.cyan
+      g.fillStyle = C.cyan
+      g.fillRect(MARGIN, you - PH / 2, PW, PH)
+      g.shadowColor = C.magenta
+      g.fillStyle = C.magenta
+      g.fillRect(W - MARGIN - PW, cpu - PH / 2, PW, PH)
+      g.shadowColor = C.text
+      g.fillStyle = C.text
+      g.beginPath()
+      g.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2)
+      g.fill()
+      g.shadowBlur = 0
+      if (state === 'paused') banner(g, W, H, 'Paused', 'Space or tap to carry on')
+      if (state === 'serve' && yours === 0 && theirs === 0) {
+        g.fillStyle = C.muted
+        g.font = '13px "Share Tech Mono", monospace'
+        g.fillText(`You're cyan. First to let ${CPU_WINS_AT} past loses.`, W / 2, H - 20)
+      }
+    }
+
+    function frame(t) {
+      const dt = last ? Math.min(0.032, (t - last) / 1000) : 0
+      last = t
+      update(dt)
+      draw()
+      if (state !== 'over') raf = requestAnimationFrame(frame)
+    }
+
+    function steer(clientY) {
+      const rect = c.getBoundingClientRect()
+      you = ((clientY - rect.top) / rect.height) * H
+    }
+    c.addEventListener('mousemove', e => steer(e.clientY))
+    c.addEventListener('touchmove', e => { steer(e.touches[0].clientY); e.preventDefault() }, { passive: false })
+    c.addEventListener('touchstart', e => steer(e.touches[0].clientY), { passive: true })
+    c.addEventListener('click', () => { if (state === 'paused') state = 'play' })
+
+    reset()
+    return {
+      input(d) { if (d === 'action' && state === 'paused') state = 'play' },
+      swipe() {},
+      pause() {
+        if (state === 'play') state = 'paused'
+        cancelAnimationFrame(raf)
+        draw()
+      },
+      resume() {
+        if (state === 'over') return
+        last = 0
+        raf = requestAnimationFrame(frame)
+      },
+      restart: reset,
+      stop() { cancelAnimationFrame(raf) },
+    }
+  }
+
+  // ── Memory ──
+  function memory(host, ctx) {
+    const FACES = ['🍿', '🎬', '👾', '🕹️', '📼', '🚀', '🌴', '💾']
+    const grid = el('div', { class: 'memory' })
+    host.append(grid)
+    let cards, open, moves, matched, busy, timer
+
+    function reset() {
+      clearTimeout(timer)
+      cards = shuffle([...FACES, ...FACES]).map(face => ({ face, up: false, done: false }))
+      open = []
+      moves = 0
+      matched = 0
+      busy = false
+      ctx.score(0)
+      draw()
+    }
+
+    function flip(i) {
+      const card = cards[i]
+      if (busy || card.up || card.done) return
+      card.up = true
+      open.push(i)
+      if (open.length === 2) {
+        ctx.score(++moves)
+        const [a, b] = open
+        if (cards[a].face === cards[b].face) {
+          cards[a].done = cards[b].done = true
+          open = []
+          if (++matched === FACES.length) {
+            draw()
+            return ctx.end(`Cleared in ${moves} moves`, moves)
+          }
+        } else {
+          busy = true
+          timer = setTimeout(() => {
+            cards[a].up = cards[b].up = false
+            open = []
+            busy = false
+            draw()
+          }, 750)
+        }
+      }
+      draw()
+    }
+
+    function draw() {
+      grid.replaceChildren(...cards.map((card, i) => el('button', {
+        type: 'button',
+        class: `flip ${card.up || card.done ? 'up' : ''} ${card.done ? 'done' : ''}`,
+        'aria-label': card.up || card.done ? card.face : 'Hidden card',
+        onClick: () => flip(i),
+      }, card.up || card.done ? card.face : '')))
+    }
+
+    reset()
+    return { restart: reset, stop() { clearTimeout(timer) } }
+  }
+
+  // ── Tic-tac-toe ──
+  function tictactoe(host, ctx) {
+    const LINES = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]]
+    const SLOPPY = 0.3 // how often the CPU plays a random square instead of the best one
+    const grid = el('div', { class: 'ttt' })
+    const note = el('p', { class: 'muted small' })
+    host.append(grid, note)
+    let cells, wins, yourTurn, over, timer, round
+
+    function winner(b) {
+      for (const [a, x, y] of LINES) if (b[a] && b[a] === b[x] && b[a] === b[y]) return b[a]
+      return b.every(Boolean) ? 'draw' : null
+    }
+
+    function minimax(b, oTurn, depth) {
+      const w = winner(b)
+      if (w === 'O') return 10 - depth
+      if (w === 'X') return depth - 10
+      if (w === 'draw') return 0
+      let best = oTurn ? -Infinity : Infinity
+      b.forEach((v, i) => {
+        if (v) return
+        b[i] = oTurn ? 'O' : 'X'
+        const s = minimax(b, !oTurn, depth + 1)
+        b[i] = ''
+        best = oTurn ? Math.max(best, s) : Math.min(best, s)
+      })
+      return best
+    }
+
+    function cpuMove() {
+      const empty = cells.map((v, i) => (v ? -1 : i)).filter(i => i >= 0)
+      if (Math.random() < SLOPPY) return empty[rand(empty.length)]
+      let best = -Infinity, move = empty[0]
+      for (const i of empty) {
+        cells[i] = 'O'
+        const s = minimax(cells, false, 0)
+        cells[i] = ''
+        if (s > best) { best = s; move = i }
+      }
+      return move
+    }
+
+    function settle() {
+      const w = winner(cells)
+      if (!w) return false
+      over = true
+      if (w === 'O') {
+        draw()
+        ctx.end('The CPU wins', wins)
+        return true
+      }
+      if (w === 'X') ctx.score(++wins)
+      ctx.toast(w === 'X' ? 'You win! Next round…' : 'Draw. Next round…')
+      timer = setTimeout(newRound, 1100)
+      return true
+    }
+
+    // Who goes first alternates each round.
+    function newRound() {
+      cells = new Array(9).fill('')
+      over = false
+      round++
+      yourTurn = round % 2 === 1
+      draw()
+      if (!yourTurn) timer = setTimeout(cpuTurn, 400)
+    }
+
+    function cpuTurn() {
+      if (over) return
+      cells[cpuMove()] = 'O'
+      yourTurn = true
+      settle()
+      draw()
+    }
+
+    function press(i) {
+      if (over || !yourTurn || cells[i]) return
+      cells[i] = 'X'
+      yourTurn = false
+      if (!settle()) timer = setTimeout(cpuTurn, 350)
+      draw()
+    }
+
+    function draw() {
+      note.textContent = over ? '' : yourTurn ? 'Your move: you\'re ✕' : 'CPU is thinking…'
+      grid.replaceChildren(...cells.map((v, i) => el('button', {
+        type: 'button',
+        class: v === 'X' ? 'x' : v === 'O' ? 'o' : '',
+        'aria-label': v || `Square ${i + 1}`,
+        onClick: () => press(i),
+      }, v === 'X' ? '✕' : v === 'O' ? '◯' : '')))
+    }
+
+    function reset() {
+      clearTimeout(timer)
+      wins = 0
+      round = 0
+      ctx.score(0)
+      newRound()
+    }
+
+    reset()
+    return { restart: reset, stop() { clearTimeout(timer) } }
+  }
+
+  // ── Doom ──
+  // DoomPDF's engine (github.com/ading2210/doompdf), built for a canvas
+  // instead of a PDF: see doom/ next to these files. The engine and the
+  // shareware WAD (about 5 MB together) come from jsDelivr the first time
+  // Doom is opened, so the rest of the page stays small.
+  const DOOM_BASE = 'https://cdn.jsdelivr.net/gh/doombringer1730/DEBROD@c36ea4da8b8fa7590431790c5ddbd28758423da3/apps-script/doom/'
+  const DK = {
+    left: 0xac, right: 0xae, up: 0xad, down: 0xaf, strafeL: 0xa0, strafeR: 0xa1,
+    use: 0xa2, fire: 0xa3, esc: 27, enter: 13, tab: 9, back: 0x7f, shift: 0x80 + 0x36, alt: 0x80 + 0x38,
+  }
+  const DOOM_CODES = {
+    ArrowLeft: DK.left, ArrowRight: DK.right, ArrowUp: DK.up, ArrowDown: DK.down,
+    KeyW: DK.up, KeyS: DK.down, KeyA: DK.strafeL, KeyD: DK.strafeR,
+    Space: DK.fire, ControlLeft: DK.fire, ControlRight: DK.fire, KeyE: DK.use,
+    Enter: DK.enter, NumpadEnter: DK.enter, Escape: DK.esc, Backquote: DK.esc, Backspace: DK.back,
+    Tab: DK.tab, KeyM: DK.tab, ShiftLeft: DK.shift, ShiftRight: DK.shift, AltLeft: DK.alt, AltRight: DK.alt,
+    Minus: 0x2d, Equal: 0x3d,
+  }
+  let doomEngine = null
+  let doomWad = null
+
+  function doomFiles() {
+    if (!doomEngine) {
+      doomEngine = new Promise((resolve, reject) => {
+        const s = document.createElement('script')
+        s.src = `${DOOM_BASE}doom.js`
+        s.onload = () => resolve(window.createDoom)
+        s.onerror = () => { doomEngine = null; s.remove(); reject(new Error('Could not load the Doom engine.')) }
+        document.head.append(s)
+      })
+    }
+    if (!doomWad) {
+      doomWad = fetch(`${DOOM_BASE}doom1.wad`)
+        .then(r => { if (!r.ok) throw new Error(`Could not load the WAD (${r.status}).`); return r.arrayBuffer() })
+        .then(b => new Uint8Array(b))
+        .catch(e => { doomWad = null; throw e })
+    }
+    return Promise.all([doomEngine, doomWad])
+  }
+
+  // Letters, digits and F-keys pass through, for weapons, y/n and cheats.
+  function doomKey(e) {
+    if (DOOM_CODES[e.code]) return DOOM_CODES[e.code]
+    let m = /^Key([A-Z])$/.exec(e.code) || /^Digit([0-9])$/.exec(e.code)
+    if (m) return m[1].toLowerCase().charCodeAt(0)
+    m = /^F([0-9]{1,2})$/.exec(e.code)
+    if (m) {
+      const n = Number(m[1])
+      if (n >= 1 && n <= 10) return 0x80 + 0x3a + n
+      if (n === 11 || n === 12) return 0x80 + 0x4c + n
+    }
+    return 0
+  }
+
+  function doom(host, ctx) {
+    const W = 320, H = 200
+    const c = el('canvas', { class: 'game-canvas doom-canvas', width: W, height: H })
+    const g = c.getContext('2d')
+    const image = g.createImageData(W, H)
+    const status = el('p', { class: 'muted small doom-status' }, 'Loading Doom…')
+    const pad = el('div', { class: 'doom-pad' })
+    host.append(c, status, pad)
+
+    let mod = null
+    let queue = []
+    let down = new Set()
+    let paused = false
+    let alive = true
+    let boots = 0 // so a restart mid-load drops the older boot
+
+    function send(key, pressed) {
+      if (!key) return
+      if (pressed) down.add(key)
+      else if (!down.delete(key)) return
+      queue.push((pressed ? 1 << 8 : 0) | key)
+    }
+
+    function releaseAll() {
+      for (const key of [...down]) send(key, false)
+    }
+
+    function draw(ptr, w, h) {
+      const src = mod.HEAPU8
+      const dst = image.data
+      // The engine's pixels are BGRX; a canvas wants RGBA.
+      for (let i = 0, p = ptr, n = w * h * 4; i < n; i += 4, p += 4) {
+        dst[i] = src[p + 2]
+        dst[i + 1] = src[p + 1]
+        dst[i + 2] = src[p]
+        dst[i + 3] = 255
+      }
+      g.putImageData(image, 0, 0)
+    }
+
+    // On-screen buttons, like the ones in the PDF, for phones and tablets.
+    const BUTTONS = [
+      ['◀', DK.left], ['▲', DK.up], ['▼', DK.down], ['▶', DK.right],
+      ['Fire', DK.fire], ['Use', DK.use], ['Enter', DK.enter], ['Menu', DK.esc], ['Map', DK.tab],
+    ]
+    for (const [label, key] of BUTTONS) {
+      const b = el('button', { type: 'button', class: label.length > 1 ? 'wide' : '' }, label)
+      const press = e => { e.preventDefault(); send(key, true) }
+      const release = e => { e.preventDefault(); send(key, false) }
+      b.addEventListener('pointerdown', press)
+      b.addEventListener('pointerup', release)
+      b.addEventListener('pointerleave', release)
+      b.addEventListener('pointercancel', release)
+      b.addEventListener('contextmenu', e => e.preventDefault())
+      pad.append(b)
+    }
+
+    function boot() {
+      const mine = ++boots
+      const current = () => alive && mine === boots
+      status.textContent = 'Loading Doom… (about 5 MB the first time)'
+      doomFiles()
+        .then(([createDoom, wad]) => {
+          if (!current()) return
+          return createDoom({
+            arguments: ['-iwad', '/doom1.wad'],
+            preRun: [m => m.FS.writeFile('/doom1.wad', wad)],
+            nextKey: () => queue.shift() || 0,
+            drawFrame: (ptr, w, h) => { if (mod) draw(ptr, w, h) },
+            print: () => {},
+            printErr: () => {},
+            onAbort: what => { status.textContent = `Doom stopped: ${what}` },
+          })
+        })
+        .then(m => {
+          if (!m) return
+          if (!current()) { m.pauseMainLoop(); return }
+          mod = m
+          if (paused) mod.pauseMainLoop()
+          status.textContent = 'Arrows / WASD move · Ctrl or Space fire · E use · Shift run · M map · Esc or ` menu'
+        })
+        .catch(e => { if (current()) status.textContent = `${e.message} Restart to try again.` })
+    }
+
+    window.addEventListener('blur', releaseAll)
+    boot()
+    return {
+      // Doom wants every key, held and released, not just arrows.
+      key(e, pressed) {
+        const k = doomKey(e)
+        if (!k) return false
+        if (pressed && e.repeat) return true
+        send(k, pressed)
+        return true
+      },
+      pause() {
+        paused = true
+        releaseAll()
+        if (mod) mod.pauseMainLoop()
+      },
+      resume() {
+        paused = false
+        if (mod) mod.resumeMainLoop()
+      },
+      restart() {
+        if (mod) mod.pauseMainLoop()
+        mod = null
+        queue = []
+        down = new Set()
+        boot()
+      },
+      stop() {
+        alive = false
+        window.removeEventListener('blur', releaseAll)
+        if (mod) mod.pauseMainLoop()
+        mod = null
+      },
+    }
+  }
+
+  // Scribble (Scribble.html), Pokémon Showdown (Showdown.html), Star Sling
+  // (StarSling.html) and the Emulator.html games come from their own files. If one isn't in the
+  // Apps Script project (or Index doesn't include it), its card says so
+  // instead of the whole arcade failing to load.
+  function fromFile(fn, file) {
+    if (typeof fn === 'function') return fn
+    return host => {
+      host.append(el('div', { class: 'card stack pk-menu' },
+        el('p', { class: 'name' }, `${file}.html is missing`),
+        el('p', { class: 'muted small' },
+          `Add it in the Apps Script editor with + → HTML, named ${file} (no .html), paste in ${file}.html, ` +
+          `and make sure Index includes ${file} before Games. Then save and reload.`)))
+      return { stop() {} }
+    }
+  }
+
+  const GAMES = [
+    { id: 'snake', name: 'Snake', icon: '🐍', blurb: 'Eat, grow, don\'t bite yourself.', hint: 'Arrow keys / WASD, or swipe.', start: snake },
+    { id: '2048', name: '2048', icon: '🔢', blurb: 'Slide and merge to 2048.', hint: 'Arrow keys / WASD, or swipe.', start: twenty48 },
+    { id: 'blocks', name: 'Blocks', icon: '🟪', blurb: 'Stack them, clear lines, don\'t top out.', hint: '← → move, ↑ or tap rotates, ↓ drops a row, Space drops all the way. Swipe works too.', start: blocks },
+    { id: 'breakout', name: 'Breakout', icon: '🧱', blurb: 'Bounce the ball, break the wall.', hint: 'Mouse, finger or ← →. Space or tap to launch.', start: breakout },
+    { id: 'flap', name: 'Flap', icon: '🐤', blurb: 'One button. Many pipes.', hint: 'Space, ↑, click or tap to flap.', start: flap },
+    { id: 'pong', name: 'Pong', icon: '🏓', blurb: 'You against the machine.', hint: '↑ ↓, mouse or finger moves your paddle.', start: pong },
+    { id: 'mines', name: 'Minesweeper', icon: '💣', blurb: 'Ten mines. Fastest clear wins.', hint: 'Click to dig, right-click or flag mode to flag.', start: mines, lowerIsBetter: true, unit: 's' },
+    { id: 'memory', name: 'Memory', icon: '🃏', blurb: 'Find the eight pairs in as few moves as you can.', hint: 'Click or tap two cards.', start: memory, lowerIsBetter: true, unit: ' moves' },
+    { id: 'sling', name: 'Star Sling', icon: '🌠', blurb: 'A memorial to Angry Birds Star Wars: sling heroes at trooper forts. The original seven levels, or endless random ones that save as you go.', hint: 'Drag back and let go (or arrows to aim, Space to fire). Tap or Space mid-flight for the hero\'s power. Endless runs save after every level.', start: fromFile(typeof starSling === 'function' ? starSling : null, 'StarSling') },
+    { id: 'doom', name: 'Doom', icon: '👹', blurb: 'The real thing: DoomPDF\'s engine, shareware episode one.', hint: 'Loads about 5 MB the first time. No sound.', start: doom, noScore: true },
+    { id: 'scribble', name: 'Scribble', icon: '✏️', blurb: 'Draw and guess with friends, skribbl.io style, right here.', hint: 'Plays over your Supabase, like watch together. Make a room, then Invite. Switching to Search keeps you in the room.', start: fromFile(typeof scribble === 'function' ? scribble : null, 'Scribble'), noScore: true, noRestart: true },
+    { id: 'showdown', name: 'Pokémon Showdown', icon: '⚔️', blurb: 'Showdown\'s own engine: every Random Battle, OU to VGC, a team builder, plus drafts and a Battle Tower.', hint: 'Battling a friend runs over your Supabase, like Scribble. Hover anything for details; 💡 Coach shows how each move matches up.', start: fromFile(typeof showdown === 'function' ? showdown : null, 'Showdown'), noScore: true, noRestart: true },
+    { id: 'cards', name: 'Color Clash', icon: '🎴', blurb: 'The color-matching card game: Skips, Reverses, +2s and Wild +4s, against the CPU or 2 to 6 friends.', hint: 'Match the color or the symbol. Call Last card! before you\'re down to one. Playing friends runs over your Supabase, like Scribble.', start: fromFile(typeof colorClash === 'function' ? colorClash : null, 'Cards'), noScore: true, noRestart: true },
+    { id: 'sea', name: 'Sea Battle', icon: '🚢', blurb: 'Hide your fleet, hunt theirs: the classic grid game against the CPU or a friend.', hint: 'Place your ships (R rotates), then fire at their waters. Playing a friend runs over your Supabase, like Scribble.', start: fromFile(typeof seaBattle === 'function' ? seaBattle : null, 'Sea'), noScore: true, noRestart: true },
+    { id: 'punch', name: 'Punchline', icon: '🤡', blurb: 'The fill-in-the-blank party game: a rotating judge, your funniest answer wins. 3 to 10 friends.', hint: 'Play your funniest card for the prompt; the judge picks a favourite. Plays over your Supabase, like Scribble.', start: fromFile(typeof punchline === 'function' ? punchline : null, 'Punch'), noScore: true, noRestart: true },
+    { id: 'five', name: 'Five', icon: '🟩', blurb: 'Guess the five-letter word in six tries. A new one every day, plus endless practice.', hint: 'Type or tap the keys. Green is right spot, yellow is in the word.', start: fromFile(typeof wordFive === 'function' ? wordFive : null, 'Words'), noScore: true, noRestart: true },
+    { id: 'groups', name: 'Groups', icon: '🟨', blurb: 'Sixteen words, four hidden groups of four. Four mistakes and you\'re out.', hint: 'Pick four that belong together, then Submit.', start: fromFile(typeof wordGroups === 'function' ? wordGroups : null, 'Words'), noScore: true, noRestart: true },
+    { id: 'hive', name: 'Hive', icon: '🐝', blurb: 'Make words from seven letters. Every word needs the centre one.', hint: 'Words are 4+ letters. Use all seven for a big bonus.', start: fromFile(typeof wordHive === 'function' ? wordHive : null, 'Words'), noScore: true, noRestart: true },
+    { id: 'box', name: 'Letter Box', icon: '🔲', blurb: 'Use every letter around the box. Each word starts with the last one\'s final letter.', hint: 'No two letters in a row from the same side.', start: fromFile(typeof wordBox === 'function' ? wordBox : null, 'Words'), noScore: true, noRestart: true },
+    { id: 'mini', name: 'Mini', icon: '🧩', blurb: 'A pocket crossword: a new one every day, plus practice ones. Beat your time.', hint: 'Type to fill; click a square twice or press Space to switch Across and Down. Tab jumps to the next clue.', start: fromFile(typeof wordMini === 'function' ? wordMini : null, 'Words'), noScore: true, noRestart: true },
+    { id: 'retro', name: 'Retro consoles', icon: '🕹️', blurb: 'NES to N64, Game Boy to Genesis, PlayStation and arcade, in the browser with EmulatorJS.', hint: 'Play a game file you own, or one from your games library (DEBROD → Settings). Click the game first so it gets your keys.', start: fromFile(typeof Emulator !== 'undefined' ? Emulator.consoles : null, 'Emulator'), noScore: true, noRestart: true },
+    { id: 'pokerogue', name: 'PokéRogue', icon: '🔴', blurb: 'The free fan-made Pokémon roguelite, from pokerogue.net.', hint: 'Make a PokéRogue account to keep your runs. If it won\'t sign in here, use New tab.', start: fromFile(typeof Emulator !== 'undefined' ? Emulator.pokerogue : null, 'Emulator'), noScore: true, noRestart: true },
+    { id: 'oregon', name: 'The Oregon Trail', icon: '🐂', blurb: 'The 1990 MS-DOS classic, from the Internet Archive.', hint: 'Click the screen, then type your choices. You have died of dysentery.', start: fromFile(typeof Emulator !== 'undefined' ? Emulator.oregon : null, 'Emulator'), noScore: true, noRestart: true },
+    { id: 'tictactoe', name: 'Tic-tac-toe', icon: '⭕', blurb: 'Beat the CPU as many rounds in a row as you can.', hint: 'You\'re ✕. Turns alternate who goes first.', start: tictactoe },
+  ]
+
+  // ── The hub ──
+  const root = el('section', { class: 'arcade stack' })
+  const held = new Set()
+  let current = null // { game, api, end }
+  let wastedMs = 0
+  let visibleSince = null
+  let wastedTimer = null
+  let wastedEl = null
+
+  const fmtScore = (game, v) => (v ? `${v}${game.unit || ''}` : '—')
+
+  function wasted() {
+    return wastedMs + (visibleSince ? Date.now() - visibleSince : 0)
+  }
+
+  function hub() {
+    if (current) { current.api.stop(); current = null }
+    if (typeof hubActivity === 'function') hubActivity(null)
+    wastedEl = el('span', { class: 'pill' }, '')
+    root.replaceChildren(
+      el('div', { class: 'arcade-top' },
+        el('div', null,
+          el('p', { class: 'name' }, 'The arcade'),
+          el('p', { class: 'muted small' }, 'Nothing good on? Waste a little time.')),
+        wastedEl),
+      el('div', { class: 'arcade-grid' },
+        GAMES.map(game => el('button', {
+          type: 'button',
+          class: 'game-card',
+          onClick: () => (game.href ? window.open(game.href, '_blank', 'noopener,noreferrer') : play(game)),
+        },
+          el('span', { class: 'game-icon', 'aria-hidden': 'true' }, game.icon),
+          el('span', { class: 'name' }, game.name, game.href ? ' ↗' : ''),
+          el('span', { class: 'muted small' }, game.blurb),
+          !game.noScore && el('span', { class: 'mono small' }, `Best ${fmtScore(game, bestOf(game))}`)))))
+    updateWasted()
+  }
+
+  // The last few games played, for Home's "Jump back in".
+  function remember(id) {
+    try {
+      const list = (JSON.parse(localStorage.getItem('ds_arcade_recent')) || []).filter(x => x !== id)
+      localStorage.setItem('ds_arcade_recent', JSON.stringify([id, ...list].slice(0, 8)))
+    } catch (e) { /* private mode */ }
+  }
+
+  function play(game, opts) {
+    if (current) current.api.stop()
+    remember(game.id)
+    if (typeof hubActivity === 'function') hubActivity({ game: game.id, label: game.name, joinable: false })
+    const scoreEl = el('span', { class: 'mono' }, '0')
+    const bestEl = el('span', { class: 'mono' }, fmtScore(game, bestOf(game)))
+    const host = el('div', { class: `game-host game-${game.id}` })
+    const endEl = el('div', { class: 'game-end', hidden: true })
+    const toastEl = el('p', { class: 'pill game-toast', hidden: true })
+    let toastTimer
+
+    const ctx = {
+      held,
+      score(v) { scoreEl.textContent = game.unit ? `${v}${game.unit}` : String(v) },
+      toast(text) {
+        toastEl.textContent = text
+        toastEl.hidden = false
+        clearTimeout(toastTimer)
+        toastTimer = setTimeout(() => { toastEl.hidden = true }, 1800)
+      },
+      // A best kept as you go, for games that don't end (Star Sling's endless runs).
+      best(score) {
+        if (score > 0) recordBest(game, score)
+        bestEl.textContent = fmtScore(game, bestOf(game))
+      },
+      end(title, score) {
+        const record = score != null && score > 0 && recordBest(game, score)
+        bestEl.textContent = fmtScore(game, bestOf(game))
+        endEl.replaceChildren(el('div', { class: 'card stack' },
+          el('p', { class: 'wordmark' }, title),
+          score != null && el('p', { class: 'tagline' }, record ? 'New best!' : `Score ${fmtScore(game, score)}`),
+          el('button', { type: 'button', class: 'primary', autofocus: true, onClick: restart }, 'Play again'),
+          el('button', { type: 'button', class: 'link', onClick: hub }, '‹ Arcade')))
+        endEl.hidden = false
+        const f = endEl.querySelector('[autofocus]')
+        if (f) f.focus()
+      },
+    }
+
+    function restart() {
+      // So Space goes to the game, not back to the Restart button.
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur()
+      endEl.hidden = true
+      current.api.restart()
+    }
+
+    // Swipes for the games played with arrows.
+    let touch = null
+    host.addEventListener('touchstart', e => { touch = { x: e.touches[0].clientX, y: e.touches[0].clientY } }, { passive: true })
+    host.addEventListener('touchend', e => {
+      if (!touch) return
+      const dx = e.changedTouches[0].clientX - touch.x
+      const dy = e.changedTouches[0].clientY - touch.y
+      touch = null
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return
+      const d = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up')
+      const api = current && current.api
+      if (api && (api.swipe || api.input)) (api.swipe || api.input)(d)
+    })
+
+    root.replaceChildren(
+      el('div', { class: 'arcade-top' },
+        el('button', { type: 'button', class: 'link back', onClick: hub }, '‹ Arcade'),
+        el('div', { class: 'row' },
+          !game.noScore && el('span', { class: 'pill' }, 'Score ', scoreEl),
+          !game.noScore && el('span', { class: 'pill' }, 'Best ', bestEl),
+          !game.noRestart && el('button', { type: 'button', class: 'chip', onClick: restart }, 'Restart'))),
+      el('div', { class: 'game-stage' }, host, toastEl, endEl),
+      el('p', { class: 'muted small game-hint' }, game.hint))
+    current = { game, api: game.start(host, ctx, opts) }
+  }
+
+  document.addEventListener('keydown', e => {
+    if (!current || !visibleSince || !root.isConnected) return
+    if (e.target.closest && e.target.closest('input, textarea, select')) return
+    if (current.api.key) {
+      if (current.api.key(e, true)) e.preventDefault()
+      return
+    }
+    const d = KEYS[e.key]
+    if (!d) return
+    // Space on a focused button should still press it.
+    if (d === 'action' && e.target.closest && e.target.closest('button')) return
+    e.preventDefault()
+    held.add(d)
+    if (current.api.input) current.api.input(d)
+  })
+  document.addEventListener('keyup', e => {
+    const d = KEYS[e.key]
+    if (d) held.delete(d)
+    if (current && current.api.key && current.api.key(e, false)) e.preventDefault()
+  })
+  window.addEventListener('blur', () => held.clear())
+
+  function updateWasted() {
+    if (!wastedEl) return
+    wastedEl.textContent = `⏳ Procrastinated ${formatTime(wasted() / 1000)}`
+  }
+
+  hub()
+  return {
+    // The same element every time, so a game survives the page re-rendering.
+    root,
+    // The games, with your best, for Home.
+    list() {
+      return GAMES.map(g => ({ id: g.id, name: g.name, icon: g.icon, best: !g.noScore && bestOf(g) ? `Best ${fmtScore(g, bestOf(g))}` : '' }))
+    },
+    // Straight into a game, e.g. from a Scribble invite link.
+    open(id, opts) {
+      const game = GAMES.find(x => x.id === id)
+      if (game) play(game, opts)
+    },
+    show() {
+      if (visibleSince) return
+      visibleSince = Date.now()
+      clearInterval(wastedTimer)
+      wastedTimer = setInterval(updateWasted, 1000)
+      updateWasted()
+      if (current && current.api.resume) current.api.resume()
+    },
+    // Leaving the tab pauses whatever's running.
+    hide() {
+      if (!visibleSince) return
+      wastedMs += Date.now() - visibleSince
+      visibleSince = null
+      clearInterval(wastedTimer)
+      held.clear()
+      if (current && current.api.pause) current.api.pause()
+    },
+  }
+})()
+//# sourceURL=debrod/Games.js
+</script>

@@ -1,0 +1,1226 @@
+<script>
+// The search, player and watch-together room, ported from app/browser.tsx and
+// app/watch/[room]/room.tsx to plain JS. Server calls go through
+// google.script.run; Torrentio and Supabase are reached from the page, as on
+// the site.
+
+const IMG = 'https://image.tmdb.org/t/p'
+// Browsers can't decode these, so such files play silent or not at all.
+const INCOMPAT_AUDIO = /\b(AC3|DTS|TrueHD|EAC3|DDP|DD5\.1|Atmos)\b/i
+const app = document.getElementById('app')
+const backdrop = document.getElementById('backdrop')
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function call(fn, ...args) {
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(e => {
+        const msg = String((e && e.message) || e || 'Something went wrong.')
+        reject(new Error(msg.replace(/^(Exception|Error):\s*/, '')))
+      })[fn](...args)
+  })
+}
+
+// Server calls that need a signed-in, approved member (Account.html).
+function member(fn, ...args) {
+  return Account.token().then(t => call(fn, t, ...args))
+}
+
+// Builds DOM without innerHTML, so titles from TMDB can't inject markup.
+function el(tag, props, ...kids) {
+  const n = document.createElement(tag)
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue
+    if (k.startsWith('on')) n.addEventListener(k.slice(2).toLowerCase(), v)
+    else if (k === 'class') n.className = v
+    else if (k === 'style') n.setAttribute('style', v)
+    else if (k === 'value') n.value = v
+    else if (k in n && typeof v === 'boolean') n[k] = v
+    else n.setAttribute(k, v === true ? '' : v)
+  }
+  for (const c of kids.flat(Infinity)) {
+    if (c == null || c === false) continue
+    n.append(c.nodeType ? c : String(c))
+  }
+  return n
+}
+
+function mount(...nodes) {
+  app.replaceChildren(...nodes)
+  const f = app.querySelector('[autofocus]')
+  if (f) f.focus()
+}
+
+// What goes inside someone's avatar circle: their photo if they set one
+// (Chat → Edit profile), otherwise their emoji.
+function face(p) {
+  const photo = p && p.photo
+  return photo && /^(https:[/][/][a-z0-9]+\.supabase\.co[/]storage[/]|blob:)/.test(photo)
+    ? el('img', { class: 'face', src: photo, alt: '', loading: 'lazy', draggable: 'false' })
+    : (p && p.avatar) || '🙂'
+}
+
+const pad = n => String(n).padStart(2, '0')
+
+function ext(s) {
+  return s.filename.includes('.') ? s.filename.split('.').pop().toLowerCase() : ''
+}
+
+function browserSafe(s) {
+  const e = ext(s)
+  if (e && e !== 'mp4') return false
+  return !INCOMPAT_AUDIO.test(`${s.quality} ${s.title}`)
+}
+
+function formatSize(bytes) {
+  if (!bytes) return ''
+  const gb = bytes / 1024 ** 3
+  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`
+}
+
+// The browser's own confirm, alert and prompt boxes often don't show inside
+// Apps Script's sandboxed frame (confirm just answers "no"), so DEBROD asks
+// on the page instead. Each returns a promise: ask() resolves true or false,
+// tell() and showText() resolve when closed.
+function dialog(message, buttons, extra) {
+  return new Promise(resolve => {
+    const prev = document.activeElement
+    const close = value => {
+      box.remove()
+      removeEventListener('keydown', key, true)
+      if (prev && prev.focus) try { prev.focus() } catch (e) { /* gone */ }
+      resolve(value)
+    }
+    const key = e => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(buttons.length > 1 ? false : true) }
+    }
+    const btns = buttons.map(([label, value, primary]) => el('button', { type: 'button', class: primary ? 'primary' : '', onClick: () => close(value) }, label))
+    const box = el('div', { class: 'ask', role: 'dialog', 'aria-modal': 'true', onClick: e => { if (e.target === box) close(buttons.length > 1 ? false : true) } },
+      el('div', { class: 'card stack' }, el('p', { class: 'ask-text' }, message), extra || null, el('div', { class: 'row ask-buttons' }, btns)))
+    document.body.append(box)
+    addEventListener('keydown', key, true)
+    const f = box.querySelector('input') || btns[btns.length - 1]
+    setTimeout(() => { f.focus(); if (f.select) f.select() }, 0)
+  })
+}
+const ask = (message, yes = 'Yes', no = 'Cancel') => dialog(message, [[no, false], [yes, true, true]])
+const tell = message => dialog(message, [['OK', true, true]])
+const showText = (message, text) => dialog(message, [['Done', true, true]],
+  el('input', { value: text, readonly: true, onFocus: e => e.target.select() }))
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
+// ── Torrentio (from lib/torrentio.ts) ───────────────────────────────────────
+
+async function fetchSource({ service, url }) {
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 25000)
+  try {
+    const res = await fetch(url, { signal: ctl.signal })
+    if (!res.ok) throw new Error(`${service}: Torrentio answered ${res.status}`)
+    const data = await res.json()
+    return (data.streams || [])
+      .filter(s => s.url && s.url.startsWith('https://'))
+      .map(s => {
+        const lines = (s.name || '').split('\n')
+        const hints = s.behaviorHints || {}
+        return {
+          service,
+          quality: lines[1] || lines[0] || 'Stream',
+          title: (s.title || '').split('\n')[0],
+          url: s.url,
+          filename: hints.filename || '',
+          size: hints.videoSize || null,
+        }
+      })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// Every source at once; one failing is fine as long as another answers.
+async function fetchStreams(sources) {
+  const settled = await Promise.allSettled(sources.map(fetchSource))
+  const streams = settled.flatMap(r => (r.status === 'fulfilled' ? r.value : []))
+  const failures = settled.filter(r => r.status === 'rejected')
+  if (!streams.length && failures.length) {
+    throw new Error(failures.map(f => (f.reason && f.reason.message) || 'Torrentio failed').join(' · '))
+  }
+  return streams
+}
+
+// ── Browser (from app/browser.tsx) ──────────────────────────────────────────
+
+const S = {
+  cfg: null,
+  kind: 'movie',
+  query: '',
+  results: [],
+  title: null,
+  seasons: [],
+  season: null,
+  episodes: [],
+  episode: null,
+  streams: null,
+  safeOnly: true,
+  playing: null,
+  copied: null,
+  loading: false,
+  error: null,
+  roomCode: '',
+  tab: 'home', // or 'search', 'arcade', 'study', 'admin' (Huddy's Members)
+}
+let inRoom = false
+
+async function load(promise, set) {
+  S.loading = true
+  S.error = null
+  render()
+  try {
+    set(await promise)
+  } catch (e) {
+    S.error = e.message
+  }
+  S.loading = false
+  render()
+}
+
+async function loadStreams(...args) {
+  S.loading = true
+  S.error = null
+  render()
+  try {
+    S.streams = await fetchStreams(await member('getStreamSources', ...args))
+  } catch (e) {
+    S.streams = []
+    S.error = e.message || 'Could not load streams.'
+  }
+  S.loading = false
+  render()
+}
+
+function onSearch(e) {
+  e.preventDefault()
+  if (!S.query.trim()) return
+  if (S.kind === 'youtube') load(member('searchYouTube', S.query), v => { S.results = v })
+  else load(member('searchTitles', S.kind, S.query), v => { S.results = v })
+}
+
+function pickTitle(t) {
+  S.title = t
+  if (S.kind === 'youtube') return render()
+  S.streams = null
+  S.playing = null
+  if (S.kind === 'movie') loadStreams('movie', t.id)
+  else load(member('getSeasons', t.id), v => { S.seasons = v })
+}
+
+function pickSeason(s) {
+  S.season = s
+  S.episodes = []
+  load(member('getEpisodes', S.title.id, s.number), v => { S.episodes = v })
+}
+
+function pickEpisode(ep) {
+  S.episode = ep
+  S.streams = null
+  S.playing = null
+  loadStreams('tv', S.title.id, S.season.number, ep.number)
+}
+
+function back() {
+  S.error = null
+  S.playing = null
+  if (S.kind === 'youtube') {
+    S.title = null
+  } else if (S.streams !== null) {
+    S.streams = null
+    if (S.kind === 'movie') S.title = null
+    else S.episode = null
+  } else if (S.season) {
+    S.season = null
+    S.episodes = []
+  } else {
+    S.title = null
+    S.seasons = []
+  }
+  render()
+}
+
+function label() {
+  const t = S.title
+  if (!t) return ''
+  return S.kind === 'tv' && S.season && S.episode
+    ? `${t.name} · S${pad(S.season.number)}E${pad(S.episode.number)}`
+    : t.name
+}
+
+// A room for this stream, with the next few streams as backups.
+async function watchTogether(s, list) {
+  if (!S.cfg.supabaseUrl || !S.cfg.supabaseKey) {
+    S.error = 'Set SUPABASE_URL and SUPABASE_ANON_KEY in DEBROD → Settings to watch together.'
+    return render()
+  }
+  const source = {
+    title: label(),
+    poster: S.title ? S.title.poster : null,
+    src: s.url,
+    fallbacks: list.filter(o => o.url !== s.url).slice(0, 5).map(o => o.url),
+  }
+  S.loading = true
+  render()
+  try {
+    const id = await member('createRoom', source)
+    S.loading = false
+    enterRoom(id, source)
+  } catch (e) {
+    S.loading = false
+    S.error = e.message
+    render()
+  }
+}
+
+// YouTube rooms carry the video id instead of stream links.
+async function watchYouTube(t) {
+  if (!S.cfg.supabaseUrl || !S.cfg.supabaseKey) {
+    S.error = 'Set SUPABASE_URL and SUPABASE_ANON_KEY in DEBROD → Settings to watch together.'
+    return render()
+  }
+  const source = { title: t.name, poster: null, youtube: t.id, src: '', fallbacks: [] }
+  S.loading = true
+  render()
+  try {
+    const id = await member('createRoom', source)
+    S.loading = false
+    enterRoom(id, source)
+  } catch (e) {
+    S.loading = false
+    S.error = e.message
+    render()
+  }
+}
+
+async function joinRoom(e) {
+  e.preventDefault()
+  if (!S.roomCode.trim()) return
+  if (!S.cfg.supabaseUrl || !S.cfg.supabaseKey) {
+    S.error = 'Set SUPABASE_URL and SUPABASE_ANON_KEY in DEBROD → Settings to watch together.'
+    return render()
+  }
+  S.loading = true
+  S.error = null
+  render()
+  try {
+    const room = await member('getRoom', S.roomCode)
+    S.loading = false
+    S.roomCode = ''
+    enterRoom(room.id, room.source)
+  } catch (err) {
+    S.loading = false
+    S.error = err.message
+    render()
+  }
+}
+
+async function copyStream(s) {
+  if (await copyText(s.url)) {
+    S.copied = s.url
+    render()
+    setTimeout(() => { if (S.copied === s.url) { S.copied = null; render() } }, 1500)
+  } else {
+    S.copied = null
+    S.showLink = s.url
+    render()
+  }
+}
+
+// Each page has its own era (Themes.html), and its own line under the name.
+const TAGLINES = {
+  home: 'Stream search · est. 1984',
+  search: 'Tonight\'s listings',
+  arcade: 'Home video computer system',
+  study: 'Data processing division',
+  admin: 'Personnel office · restricted',
+  chat: 'The bulletin board',
+}
+
+function header() {
+  return el('header', { class: 'top' },
+    el('div', null,
+      el('h1', { class: 'wordmark' }, S.cfg.siteName),
+      el('p', { class: 'tagline' }, TAGLINES[S.tab] || TAGLINES.home)),
+    el('nav', { class: 'tabs' },
+      tab('home', 'Home'),
+      tab('search', 'Search'),
+      tab('arcade', 'Arcade'),
+      tab('study', 'Study'),
+      typeof Chat !== 'undefined' && el('button', {
+        type: 'button', class: `link ${S.tab === 'chat' ? 'on' : ''}`, 'data-chat-unread': '',
+        onClick: () => { S.tab = 'chat'; render() },
+      }, Chat.unreadCount() ? `Chat (${Chat.unreadCount()})` : 'Chat'),
+      Account.isAdmin() && el('button', {
+        type: 'button', class: `link ${S.tab === 'admin' ? 'on' : ''}`, 'data-pending': '',
+        onClick: () => { S.tab = 'admin'; render() },
+      }, Account.pendingCount() ? `Members (${Account.pendingCount()})` : 'Members'),
+      S.cfg.appUrl && document.body.dataset.web && el('a', { class: 'link', href: `${S.cfg.appUrl}?page=settings`, target: '_top' }, 'Settings'),
+      typeof Notify !== 'undefined' && Notify.bell(),
+      Account.profile() && el('button', { type: 'button', class: 'link', title: `Signed in as @${Account.profile().username}`, onClick: Account.signOut }, 'Sign out')))
+}
+
+function tab(id, text) {
+  return el('button', { type: 'button', class: `link ${S.tab === id ? 'on' : ''}`, onClick: () => { S.tab = id; render() } }, text)
+}
+
+function status(text) {
+  return [
+    S.error && el('p', { class: 'error' }, S.error),
+    S.loading && el('p', { class: 'muted mono' }, text),
+  ]
+}
+
+// The inline player is kept across renders, so copying a link or flipping
+// the filter doesn't restart the video.
+let playerEl = null
+
+function player(s) {
+  if (!playerEl || playerEl.dataset.url !== s.url) {
+    playerEl = el('video', { src: s.url, controls: true, autoplay: true, playsinline: true, 'data-url': s.url })
+  }
+  return playerEl
+}
+
+let youtubeEl = null
+
+function youtubePlayer(id) {
+  if (!youtubeEl || youtubeEl.dataset.id !== id) {
+    youtubeEl = el('iframe', {
+      src: `https:/\/www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0`,
+      allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: true,
+      title: 'YouTube video', 'data-id': id,
+    })
+  }
+  return youtubeEl
+}
+
+// The arcade page stays in the document while you're on Search, only
+// hidden, so a game carries on (Scribble keeps you in your room) and is
+// just as you left it when you come back.
+let arcadePage = null
+// Study (Study.html) keeps its page the same way, so a review session or a
+// half-typed assignment survives a trip to Search. So does Home (Hub.html),
+// which holds the "online now" presence.
+let studyPage = null
+let homePage = null
+// And Chat (Chat.html), so a half-written message and your scroll stay put.
+let chatPage = null
+const studyMissing = () => el('div', { class: 'card stack' },
+  el('p', { class: 'name' }, 'Study.html is missing'),
+  el('p', { class: 'muted small' }, 'Add it in the Apps Script editor with + → HTML, named Study (no .html), paste in Study.html, and make sure Index includes Study right after App. Then save and reload.'))
+
+// ── Boot screens ──
+// Switching tabs plays a few lines of an old terminal loading the page up,
+// then the screen collapses like a CRT switching off. The first load gets a
+// longer power-on. A click or key skips it; reduced-motion skips it always.
+let bootTab = null
+let bootEl = null
+
+function bootLines(tab, first) {
+  const sum = tab === 'study' && typeof Study !== 'undefined' && Study.summary ? (() => { try { return Study.summary() } catch (e) { return null } })() : null
+  const games = typeof Arcade !== 'undefined' && Arcade.list ? Arcade.list().length : 0
+  const power = first ? [
+    'DEBROD BIOS v1.984  (C) STREAM SEARCH SYSTEMS',
+    'MEMORY TEST ........ 640K OK',
+    `DETECTING DRIVES ... ${typeof Study !== 'undefined' ? 'STUDY ' : ''}ARCADE SEARCH`,
+    `NETWORK ............ ${S.cfg && S.cfg.supabaseUrl ? 'SUPABASE LINK UP' : 'OFFLINE'}`,
+  ] : []
+  const by = {
+    home: ['> mission-control --boot', 'checking link ......... OK', 'loading crew roster ... OK', 'reading the board ..... OK', 'ALL SYSTEMS NOMINAL'],
+    search: ['DEBROD TELEVISION · CHANNEL 4', 'warming up the tubes ...... ok', 'adjusting the rabbit ears . ok', `tonight's listings ........ ${S.cfg && S.cfg.hasDebrid ? 'ready' : 'NO SIGNAL'}`, 'please stand by.'],
+    arcade: ['HOME VIDEO COMPUTER SYSTEM', 'cartridge seated ......... ok', `${games || 'all'} games in the drawer`, 'difficulty switches ...... A / B', 'PRESS GAME RESET'],
+    chat: ['Welcome to DEBROD.', 'opening "Bulletin Board" ... ok', 'dialling everyone in ...... ok', 'say hi.'],
+    admin: ['TELETYPE 33 · PERSONNEL OFFICE', 'unlocking the cabinet ...... ok', `files awaiting clearance ... ${typeof Account !== 'undefined' ? Account.pendingCount() : 0}`, 'READY.'],
+    study: ['/\/STUDY    JOB (DEBROD),CLASS=A', '/\/STEP1    EXEC PGM=NOTEBOOK', sum ? `/\/ASSIGN   DD DUE=${(sum.open || []).length}${sum.overdue ? `,LATE=${sum.overdue}` : ''}` : '/\/DECKS    DD DSN=FLASH.CARDS', sum && sum.cardsDue ? `/\/REVIEW   DD CARDS=${sum.cardsDue}` : '/\/REVIEW   DD SPACED=YES', 'IEF142I STUDY - STEP WAS EXECUTED'],
+  }
+  return power.concat(by[tab] || by.search)
+}
+
+function bootScreen(tab, first) {
+  try { if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return } catch (e) { /* old browser */ }
+  if (bootEl) bootEl.remove()
+  const lines = bootLines(tab, first)
+  const out = el('pre', { class: 'boot-text' })
+  const node = el('div', { class: `boot boot-${tab} ${tab === 'home' ? 'amber' : ''}`, 'aria-hidden': 'true' }, out)
+  bootEl = node
+  document.body.append(node)
+  const step = first ? 85 : 55
+  let i = 0
+  let done = false
+  const finish = () => {
+    if (done) return
+    done = true
+    clearInterval(timer)
+    removeEventListener('keydown', finish, true)
+    node.classList.add('off')
+    setTimeout(() => { node.remove(); if (bootEl === node) bootEl = null }, 260)
+  }
+  const timer = setInterval(() => {
+    out.textContent += `${i ? '\n' : ''}${lines[i++]}`
+    if (i < lines.length) return
+    clearInterval(timer)
+    setTimeout(finish, first ? 320 : 160)
+  }, step)
+  node.addEventListener('pointerdown', finish)
+  addEventListener('keydown', finish, true)
+  setTimeout(finish, (lines.length + 4) * step + 600)
+}
+
+function render() {
+  if (inRoom || !S.cfg || !Account.ready()) return
+  if (S.tab !== bootTab) {
+    const first = bootTab === null
+    bootTab = S.tab
+    bootScreen(S.tab, first)
+  }
+  if (!S.playing) playerEl = null
+  if (!(S.kind === 'youtube' && S.title)) youtubeEl = null
+  const arcade = S.tab === 'arcade'
+  const study = S.tab === 'study'
+  const home = S.tab === 'home' && typeof Hub !== 'undefined'
+  const hasChat = typeof Chat !== 'undefined'
+  const chat = S.tab === 'chat' && hasChat
+  if (hasChat) Chat.start()
+  if (typeof Notify !== 'undefined') Notify.start()
+  if (typeof Study !== 'undefined' && Study.connect) Study.connect()
+  backdrop.hidden = false
+  if (!homePage && typeof Hub !== 'undefined') homePage = el('main', { class: 'page mc' }, el('header'), Hub.root)
+  if (homePage) {
+    homePage.firstElementChild.replaceWith(header())
+    homePage.hidden = !home
+    if (home) Hub.show(); else Hub.hide()
+  }
+  if (!arcadePage || !arcadePage.isConnected) arcadePage = el('main', { class: 'page t-arcade' }, el('header'), Arcade.root)
+  arcadePage.firstElementChild.replaceWith(header())
+  arcadePage.hidden = !arcade
+  if (arcade) Arcade.show()
+  else Arcade.hide()
+  const hasStudy = typeof Study !== 'undefined'
+  if (!studyPage || !studyPage.isConnected) studyPage = el('main', { class: 'page t-study' }, el('header'), hasStudy ? Study.root : studyMissing())
+  studyPage.firstElementChild.replaceWith(header())
+  studyPage.hidden = !study
+  if (hasStudy) { if (study) Study.show(); else Study.hide() }
+  if (hasChat) {
+    if (!chatPage || !chatPage.isConnected) chatPage = el('main', { class: 'page t-chat' }, el('header'), Chat.root)
+    chatPage.firstElementChild.replaceWith(header())
+    chatPage.hidden = !chat
+    if (chat) Chat.show(); else Chat.hide()
+  }
+
+  for (const n of [...app.children]) if (n !== arcadePage && n !== studyPage && n !== homePage && n !== chatPage) n.remove()
+  const search = arcade || study || home || chat ? null
+    : S.tab === 'admin' && Account.isAdmin()
+      ? el('main', { class: 'page t-members' }, header(), Account.adminView())
+      : el('main', { class: 'page t-search' }, header(), view())
+  if (search) app.prepend(search)
+  if (homePage && !homePage.isConnected) app.append(homePage)
+  if (!arcadePage.isConnected) app.append(arcadePage)
+  if (!studyPage.isConnected) app.append(studyPage)
+  if (chatPage && !chatPage.isConnected) app.append(chatPage)
+  const f = (search || (home ? homePage : study ? studyPage : chat ? chatPage : arcadePage)).querySelector('[autofocus]')
+  if (f) f.focus()
+}
+
+function view() {
+  const t = S.title
+
+  // ── Search ──
+  if (!t) {
+    return el('div', { class: 'stack' },
+      el('div', { class: 'toggle' },
+        ['movie', 'tv', 'youtube'].map(k => el('button', {
+          type: 'button',
+          class: S.kind === k ? 'on' : '',
+          onClick: () => { S.kind = k; S.results = []; render() },
+        }, { movie: 'Movies', tv: 'TV shows', youtube: 'YouTube' }[k]))),
+      S.kind === 'youtube' && !S.cfg.hasYoutube &&
+        el('p', { class: 'muted small' }, 'YouTube search needs a YouTube Data API key. Add YOUTUBE_API_KEY in DEBROD → Settings.'),
+      el('form', { class: 'row', onSubmit: onSearch },
+        el('input', {
+          type: 'search', value: S.query, autofocus: true,
+          placeholder: { movie: 'Search movies…', tv: 'Search TV shows…', youtube: 'Search YouTube…' }[S.kind],
+          onInput: e => { S.query = e.target.value },
+        }),
+        el('button', { type: 'submit', class: 'primary', disabled: S.loading }, 'Search')),
+      el('form', { class: 'row', onSubmit: joinRoom },
+        el('input', {
+          value: S.roomCode, placeholder: 'Got a room code? Join a watch party…', maxlength: 32,
+          onInput: e => { S.roomCode = e.target.value },
+        }),
+        el('button', { type: 'submit', disabled: S.loading }, 'Join')),
+      status('Scanning the airwaves…'),
+      S.kind === 'youtube'
+        ? el('div', { class: 'grid wide' },
+          S.results.map(r => el('button', { type: 'button', class: 'poster', onClick: () => pickTitle(r) },
+            r.thumb
+              ? el('img', { src: r.thumb, alt: '', loading: 'lazy' })
+              : el('span', { class: 'noposter' }, r.name),
+            el('span', { class: 'name' }, r.name),
+            el('span', { class: 'muted' }, [r.channel, r.year].filter(Boolean).join(' · ')))))
+        : el('div', { class: 'grid' },
+          S.results.map(r => el('button', { type: 'button', class: 'poster', onClick: () => pickTitle(r) },
+            r.poster
+              ? el('img', { src: `${IMG}/w342${r.poster}`, alt: '', loading: 'lazy' })
+              : el('span', { class: 'noposter' }, r.name),
+            el('span', { class: 'name' }, r.name),
+            el('span', { class: 'muted' }, r.year)))))
+  }
+
+  // ── YouTube ──
+  if (S.kind === 'youtube') {
+    return el('div', { class: 'stack' },
+      el('button', { type: 'button', class: 'link back', onClick: back }, '‹ Back'),
+      el('div', { class: 'player' }, youtubePlayer(t.id)),
+      el('div', null,
+        el('p', { class: 'name' }, t.name),
+        el('p', { class: 'muted' }, [t.channel, t.year].filter(Boolean).join(' · '))),
+      status('Opening a room…'),
+      el('div', { class: 'actions' },
+        el('button', { type: 'button', class: 'together', disabled: S.loading, onClick: () => watchYouTube(t) }, 'Watch together'),
+        el('a', { href: `https:/\/www.youtube.com/watch?v=${encodeURIComponent(t.id)}`, target: '_blank', rel: 'noreferrer' }, 'Open on YouTube')))
+  }
+
+  const heading = el('div', { class: 'heading' },
+    t.poster && el('img', { src: `${IMG}/w92${t.poster}`, alt: '' }),
+    el('div', null,
+      el('p', { class: 'name' }, label()),
+      el('p', { class: 'muted' }, t.year)))
+
+  // ── Streams ──
+  if (S.streams !== null || S.kind === 'movie') {
+    const streams = S.streams
+    const list = (streams || []).filter(s => !S.safeOnly || browserSafe(s))
+    return el('div', { class: 'stack' },
+      el('button', { type: 'button', class: 'link back', onClick: back }, '‹ Back'),
+      heading,
+      S.playing && el('div', { class: 'player' },
+        player(S.playing),
+        el('p', { class: 'muted small' }, S.playing.title)),
+      S.showLink && el('div', { class: 'card stack' },
+        el('p', { class: 'muted small' }, 'Copying is blocked here. Select the link and press Ctrl+C:'),
+        el('input', { value: S.showLink, readonly: true, autofocus: true, onFocus: e => e.target.select() }),
+        el('button', { type: 'button', onClick: () => { S.showLink = null; render() } }, 'Done')),
+      status('Tuning in to cached streams…'),
+      streams && streams.length > 0 && el('button', {
+        type: 'button', class: `chip ${S.safeOnly ? 'on' : ''}`,
+        onClick: () => { S.safeOnly = !S.safeOnly; render() },
+      }, S.safeOnly ? 'Browser-safe only (MP4, AAC)' : 'Showing every format'),
+      streams && streams.length === 0 && !S.error && el('p', { class: 'muted' }, 'No cached streams found.'),
+      streams && streams.length > 0 && list.length === 0 &&
+        el('p', { class: 'muted' }, `No browser-safe streams. Turn the filter off to see all ${streams.length}.`),
+      el('div', { class: 'stack tight' },
+        list.map(s => el('div', { class: 'stream' },
+          el('div', { class: 'info' },
+            el('p', null,
+              el('strong', null, s.quality),
+              ext(s) && el('span', { class: `tag ${ext(s) === 'mp4' ? 'good' : 'bad'}` }, ext(s)),
+              el('span', { class: 'tag' }, s.service)),
+            el('p', { class: 'muted small truncate' }, s.title, s.size ? ` · ${formatSize(s.size)}` : '')),
+          el('div', { class: 'actions' },
+            el('button', { type: 'button', class: 'together', onClick: () => watchTogether(s, list) }, 'Watch together'),
+            el('button', { type: 'button', onClick: () => { S.playing = s; render() } }, 'Play'),
+            el('button', { type: 'button', onClick: () => copyStream(s) }, S.copied === s.url ? 'Copied' : 'Copy link'),
+            el('a', { href: s.url, target: '_blank', rel: 'noreferrer' }, 'Open'))))))
+  }
+
+  // ── Episodes ──
+  if (S.season) {
+    return el('div', { class: 'stack' },
+      el('button', { type: 'button', class: 'link back', onClick: back }, `‹ ${t.name}`),
+      el('p', { class: 'name' }, S.season.name),
+      status('Loading…'),
+      el('div', { class: 'stack tight' },
+        S.episodes.map(ep => el('button', { type: 'button', class: 'item', onClick: () => pickEpisode(ep) },
+          el('span', { class: 'muted mono' }, `E${pad(ep.number)}`), ` ${ep.name}`))))
+  }
+
+  // ── Seasons ──
+  return el('div', { class: 'stack' },
+    el('button', { type: 'button', class: 'link back', onClick: back }, '‹ Back'),
+    heading,
+    status('Loading…'),
+    el('div', { class: 'stack tight' },
+      S.seasons.map(s => el('button', { type: 'button', class: 'item spread', onClick: () => pickSeason(s) },
+        el('span', null, s.name),
+        el('span', { class: 'muted' }, `${s.episodes} eps`)))))
+}
+
+// ── Watch together (from app/watch/[room]/room.tsx) ─────────────────────────
+
+// Heartbeats plus explicit play/pause/seek actions over a Supabase Realtime
+// broadcast channel, with a rolling-median clock offset against the script's
+// getTime so a "playing" position can be projected forward by its travel
+// time. Nothing is stored: chat and emotes are broadcast and vanish on close.
+
+const EMOTES = ['🍿', '❤️', '😂', '😱', '👏', '💀', '🔥', '🎬']
+
+const HEARTBEAT_MS    = 4000   // broadcast interval
+const NTP_INTERVAL_MS = 30000  // re-sync clock every 30s
+const NTP_SAMPLES     = 5      // rolling window size
+const DRIFT_THRESHOLD = 1.5    // seconds — correct heartbeats above this drift
+const DRIFT_ACTION    = 0.8    // seconds — lower threshold for explicit actions
+const ALONE_AFTER_MS  = 2000   // nobody answered hello: we lead from here
+
+const NAME_KEY = 'ds_name'
+
+function randomId() {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4)
+}
+
+function detectDevice() {
+  const ua = navigator.userAgent
+  if (/tablet|ipad|playbook|silk/i.test(ua)) return 'tablet'
+  if (/mobile|android|iphone|ipod|blackberry|phone/i.test(ua)) return 'phone'
+  return 'desktop'
+}
+
+function formatTime(s) {
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = Math.floor(s % 60)
+  const mm = h > 0 ? String(m).padStart(2, '0') : String(m)
+  return `${h > 0 ? `${h}:` : ''}${mm}:${String(sec).padStart(2, '0')}`
+}
+
+function median(arr) {
+  if (!arr.length) return 0
+  const s = [...arr].sort((a, b) => a - b)
+  return s[Math.floor(s.length / 2)]
+}
+
+function storedName() {
+  try { return localStorage.getItem(NAME_KEY) } catch (e) { return null }
+}
+
+function storeName(n) {
+  try { localStorage.setItem(NAME_KEY, n) } catch (e) { /* private mode */ }
+}
+
+let leaveRoom = null
+
+// YouTube's IFrame API dressed up as a <video>, so the room's sync code
+// drives it unchanged: paused, currentTime, src, play(), pause(), and play,
+// pause, seeked and error events. YouTube has no seek event, so a jump in
+// its clock between polls counts as one.
+let youtubeApi = null
+
+function loadYouTubeApi() {
+  if (!youtubeApi) {
+    youtubeApi = new Promise((resolve, reject) => {
+      if (window.YT && window.YT.Player) return resolve(window.YT)
+      window.onYouTubeIframeAPIReady = () => resolve(window.YT)
+      const script = el('script', { src: 'https://www.youtube.com/iframe_api' })
+      script.onerror = () => { youtubeApi = null; reject(new Error('Could not load YouTube.')) }
+      document.head.append(script)
+    })
+  }
+  return youtubeApi
+}
+
+function youtubeVideo() {
+  const box = el('div', { class: 'yt' }, el('div'))
+  let yt = null
+  let ready = false
+  let gone = false
+  let wantTime = null
+  let wantPlay = false
+  let lastTime = 0
+  let lastAt = 0
+  let quietUntil = 0
+  const emit = type => box.dispatchEvent(new Event(type))
+  const state = () => (ready ? yt.getPlayerState() : -1)
+
+  const poll = setInterval(() => {
+    if (!ready) return
+    const t = yt.getCurrentTime()
+    const at = Date.now()
+    const expected = lastTime + (state() === 1 ? (at - lastAt) / 1000 : 0)
+    if (lastAt && at > quietUntil && Math.abs(t - expected) > 1.5) emit('seeked')
+    lastTime = t
+    lastAt = at
+  }, 500)
+
+  Object.defineProperties(box, {
+    paused: { get: () => { const st = state(); return st !== 1 && st !== 3 } },
+    currentTime: {
+      get: () => (ready ? yt.getCurrentTime() : wantTime || 0),
+      set: v => {
+        quietUntil = Date.now() + 1000
+        if (ready) yt.seekTo(v, true)
+        else wantTime = v
+        setTimeout(() => emit('seeked'), 300)
+      },
+    },
+    src: {
+      set: id => {
+        if (yt || gone) return
+        loadYouTubeApi().then(YT => {
+          if (gone) return
+          yt = new YT.Player(box.firstChild, {
+            videoId: id, width: '100%', height: '100%',
+            playerVars: { playsinline: 1, rel: 0, origin: location.origin },
+            events: {
+              onReady: () => {
+                ready = true
+                if (wantTime) yt.seekTo(wantTime, true)
+                if (wantPlay) yt.playVideo()
+              },
+              onStateChange: e => {
+                if (e.data === YT.PlayerState.PLAYING) emit('play')
+                else if (e.data === YT.PlayerState.PAUSED) emit('pause')
+              },
+              onError: () => emit('error'),
+            },
+          })
+        }).catch(() => emit('error'))
+      },
+    },
+  })
+  box.play = () => {
+    if (ready) yt.playVideo()
+    else wantPlay = true
+    return Promise.resolve()
+  }
+  box.pause = () => {
+    if (ready) yt.pauseVideo()
+    else wantPlay = false
+  }
+  box.destroy = () => {
+    gone = true
+    clearInterval(poll)
+    if (yt) yt.destroy()
+  }
+  return box
+}
+
+function enterRoom(room, source) {
+  inRoom = true
+  if (typeof hubActivity === 'function') hubActivity({ game: 'watch', code: room, label: `watch together: ${source.title}`, joinable: true })
+  const me = Account.profile()
+  const name = storedName() || (me && me.display)
+  if (name) return startPlayer(room, source, name)
+
+  backdrop.hidden = false
+  let draft = ''
+  const join = el('button', { type: 'submit', class: 'primary', disabled: true }, 'Join')
+  mount(el('main', { class: 'login' },
+    el('form', {
+      class: 'card stack',
+      onSubmit: e => {
+        e.preventDefault()
+        const n = draft.trim().slice(0, 24)
+        if (!n) return
+        storeName(n)
+        startPlayer(room, source, n)
+      },
+    },
+      el('div', null,
+        el('p', { class: 'tagline' }, 'Now showing'),
+        el('h1', { class: 'wordmark' }, source.title)),
+      el('label', { class: 'field' },
+        el('span', null, 'Your call sign'),
+        el('input', { autofocus: true, maxlength: 24, onInput: e => { draft = e.target.value; join.disabled = !draft.trim() } })),
+      join,
+      el('button', { type: 'button', class: 'link', onClick: exitRoom }, '‹ Back to search'))))
+}
+
+function exitRoom() {
+  if (typeof hubActivity === 'function') hubActivity(null)
+  if (leaveRoom) leaveRoom()
+  leaveRoom = null
+  inRoom = false
+  render()
+}
+
+function startPlayer(room, source, initialName) {
+  backdrop.hidden = true
+  let name = initialName
+  const sb = window.supabase.createClient(S.cfg.supabaseUrl, S.cfg.supabaseKey)
+  const clientId = randomId()
+  // A YouTube room's one "link" is its video id.
+  const first = source.youtube || source.src
+  const urls = [first, ...source.fallbacks.filter(f => f !== first)]
+
+  let channel = null
+  let subscribed = false
+  let applyingRemote = false
+  // Until we've heard from someone (or found we're alone) our heartbeats stay
+  // quiet, so a late joiner at 0:00 doesn't drag everyone back to the start.
+  let synced = false
+  let hasFirstSync = false
+  let connected = false
+  let viewers = []
+  let names = {}
+  let partner = null
+  let currentUrl = first
+  let aloneTimer
+
+  const rttSamples = []
+  const offsetSamples = []
+  let clockOffset = 0 // localTime - serverTime
+
+  // ── DOM ──
+  const video = source.youtube ? youtubeVideo() : el('video', { controls: true, playsinline: true, preload: 'auto' })
+  const viewersEl = el('div', { class: 'viewers' })
+  const statusEl = el('div', { class: 'sync-status' })
+  const fallbackEl = el('p', { class: 'pill fallback', hidden: true })
+  const chatEl = el('div', { class: 'chat-overlay' })
+  const overlays = el('div')
+  const chatInput = el('input', { placeholder: 'Say something…', maxlength: 300 })
+  const sendBtn = el('button', { type: 'submit', class: 'primary', disabled: true }, 'Send')
+  chatInput.addEventListener('input', () => { sendBtn.disabled = !chatInput.value.trim() })
+  const stage = el('div', { class: 'stage' }, video, overlays, fallbackEl, chatEl, statusEl)
+
+  mount(el('main', { class: 'room' },
+    el('header', { class: 'room-top' },
+      el('button', { type: 'button', class: 'link', 'aria-label': 'Back to search', onClick: exitRoom }, '‹'),
+      el('p', { class: 'name truncate' }, source.title),
+      viewersEl,
+      el('button', { type: 'button', class: 'invite', onClick: showInvite }, 'Invite')),
+    stage,
+    el('footer', { class: 'room-bottom' },
+      el('div', { class: 'emotes' },
+        EMOTES.map(emote => el('button', { type: 'button', onClick: () => send({ emote }) }, emote))),
+      el('form', { class: 'row', onSubmit: sendMessage }, chatInput, sendBtn))))
+
+  function others() {
+    return viewers.filter(v => v.id !== clientId)
+  }
+
+  function renderViewers() {
+    viewersEl.replaceChildren(
+      el('button', {
+        type: 'button', class: 'viewer me', title: 'Change your display name', onClick: showRename,
+      }, el('span', { class: `dot ${connected ? '' : 'wait'}` }), ` ${name} `, el('span', { 'aria-hidden': 'true' }, '✎')),
+      others().map(v => el('span', { class: 'viewer', title: `${v.name} · ${v.device}` },
+        el('span', { class: 'dot' }), ` ${v.name}`)))
+  }
+
+  function renderStatus() {
+    const n = others().length
+    statusEl.replaceChildren(
+      el('span', { class: 'pill' },
+        el('span', { class: `dot ${connected ? '' : 'wait'}` }),
+        connected ? (n ? 'Synced' : 'Waiting for others') : 'Connecting…'),
+      partner && n > 0 && el('span', { class: 'pill' },
+        `${partner.name} `, el('span', { class: 'mono' }, formatTime(partner.position)), partner.playing ? ' ▶' : ' ⏸'))
+  }
+
+  function renderFallback() {
+    fallbackEl.hidden = currentUrl === first
+    fallbackEl.textContent = `That link died, trying backup ${urls.indexOf(currentUrl)}/${urls.length - 1}…`
+  }
+
+  function overlay(node) {
+    overlays.replaceChildren(node || '')
+    const f = overlays.querySelector('[autofocus]')
+    if (f) f.focus()
+  }
+
+  // ── Clock sync ──
+  function pushSample(arr, val) {
+    arr.push(val)
+    if (arr.length > NTP_SAMPLES) arr.splice(0, arr.length - NTP_SAMPLES)
+  }
+
+  async function syncClock() {
+    try {
+      const sentAt = Date.now()
+      const t = await call('getTime')
+      const now = Date.now()
+      pushSample(rttSamples, now - sentAt)
+      pushSample(offsetSamples, now - Math.round(median(rttSamples) / 2) - t)
+      clockOffset = median(offsetSamples)
+    } catch (e) { /* keep the previous estimate */ }
+  }
+  syncClock()
+  const clockTimer = setInterval(syncClock, NTP_INTERVAL_MS)
+
+  const sentAt = () => Date.now() - clockOffset
+
+  function reconstructPos(p) {
+    if (p.state !== 'playing' || !p.sentAt) return p.position
+    return p.position + Math.max(0, sentAt() - p.sentAt) / 1000
+  }
+
+  function setSource(src) {
+    const at = video.currentTime
+    video.src = src
+    if (at) video.currentTime = at
+  }
+
+  function switchSource(src) {
+    if (src === currentUrl) return
+    currentUrl = src
+    setSource(src)
+    renderFallback()
+  }
+
+  function broadcast(event, payload) {
+    if (channel) channel.send({ type: 'broadcast', event, payload })
+  }
+
+  function snapshot(kind) {
+    return {
+      kind,
+      state: video.paused ? 'paused' : 'playing',
+      position: video.currentTime,
+      sentAt: sentAt(),
+      src: currentUrl,
+      from: clientId,
+    }
+  }
+
+  function pushState(state, position) {
+    if (applyingRemote) return
+    synced = true
+    broadcast('sync', { kind: 'action', state, position, sentAt: sentAt(), src: currentUrl, from: clientId })
+  }
+
+  // ── Apply a remote payload ──
+  function applySync(p) {
+    partner = { name: names[p.from] || 'Someone', position: p.position, playing: p.state === 'playing' }
+    renderStatus()
+
+    if (p.src !== currentUrl) {
+      // Links only ever move forward when one dies. If they're further down
+      // the list, follow and line up on the next beat; if we are, they'll
+      // follow us.
+      if (urls.indexOf(p.src) <= urls.indexOf(currentUrl)) return
+      switchSource(p.src)
+      hasFirstSync = false
+      return
+    }
+
+    const expected = reconstructPos(p)
+    const drift = Math.abs(video.currentTime - expected)
+    const threshold = p.kind === 'action' ? DRIFT_ACTION : DRIFT_THRESHOLD
+    if (!hasFirstSync || drift > threshold) {
+      hasFirstSync = true
+      applyingRemote = true
+      video.currentTime = expected
+      // the seeked handler clears applyingRemote
+    }
+    synced = true
+
+    if (p.state === 'playing' && video.paused) {
+      applyingRemote = true
+      overlay(null)
+      video.play().catch(() => {
+        applyingRemote = false
+        overlay(el('button', {
+          type: 'button', class: 'overlay tap',
+          onClick: () => { video.play().catch(() => {}); overlay(null) },
+        }, el('span', { class: 'primary' }, '▶ Tap to play')))
+      })
+      setTimeout(() => { applyingRemote = false }, 200)
+    } else if (p.state === 'paused' && !video.paused) {
+      applyingRemote = true
+      video.pause()
+      setTimeout(() => { applyingRemote = false }, 200)
+    }
+  }
+
+  video.addEventListener('play', () => pushState('playing', video.currentTime))
+  video.addEventListener('pause', () => pushState('paused', video.currentTime))
+  video.addEventListener('seeked', () => {
+    if (applyingRemote) { applyingRemote = false; return }
+    pushState(video.paused ? 'paused' : 'playing', video.currentTime)
+  })
+  video.addEventListener('error', () => {
+    const next = urls[urls.indexOf(currentUrl) + 1]
+    if (next) return switchSource(next) // others follow via our next heartbeat or action
+    fallbackEl.hidden = true
+    overlay(el('div', { class: 'overlay' },
+      el('p', null, source.youtube ? 'YouTube won\'t play this video here.' : 'None of the links for this one play in the browser.'),
+      el('button', { type: 'button', class: 'link', onClick: exitRoom }, '‹ Pick another stream')))
+  })
+
+  // ── Chat ──
+  function showChat(msg) {
+    if (msg.emote) {
+      const fe = el('span', { class: 'emote-float', style: `left: ${10 + Math.random() * 80}%` }, msg.emote)
+      stage.append(fe)
+      setTimeout(() => fe.remove(), 3200)
+    } else {
+      const line = el('p', { class: 'chat-line' },
+        el('strong', null, msg.from === clientId ? 'You' : msg.name), ` ${msg.body}`)
+      chatEl.append(line)
+      while (chatEl.children.length > 5) chatEl.firstChild.remove()
+      setTimeout(() => line.remove(), 6000)
+    }
+  }
+
+  function send(msg) {
+    const full = Object.assign({ id: randomId(), from: clientId, name }, msg)
+    broadcast('chat', full)
+    showChat(full)
+  }
+
+  function sendMessage(e) {
+    e.preventDefault()
+    const body = chatInput.value.trim().slice(0, 300)
+    if (!body) return
+    chatInput.value = ''
+    sendBtn.disabled = true
+    send({ body })
+  }
+
+  // The site copied its own link; here friends need the code instead.
+  async function showInvite() {
+    const copied = await copyText(room)
+    overlay(el('div', { class: 'overlay rename' },
+      el('div', { class: 'card stack' },
+        el('p', { class: 'tagline' }, copied ? 'Room code copied' : 'Room code'),
+        el('input', { value: room, readonly: true, autofocus: true, onFocus: e => e.target.select() }),
+        S.cfg.appUrl && el('input', { value: `${S.cfg.appUrl}?room=${room}`, readonly: true, onFocus: e => e.target.select() }),
+        el('p', { class: 'muted small' },
+          S.cfg.appUrl
+            ? 'Send the link, or friends enter the code under the search box. The room lasts six hours.'
+            : 'Friends open DEBROD → Open in this doc and enter the code under the search box. The room lasts six hours.'),
+        el('button', { type: 'button', class: 'primary', onClick: () => overlay(null) }, 'Done'))))
+  }
+
+  function showRename() {
+    let draft = name
+    const save = el('button', { type: 'submit', class: 'primary grow' }, 'Save')
+    overlay(el('div', {
+      class: 'overlay rename',
+      onKeyDown: e => { if (e.key === 'Escape') overlay(null) },
+    },
+      el('form', {
+        class: 'card stack',
+        onSubmit: e => {
+          e.preventDefault()
+          const n = draft.trim().slice(0, 24)
+          if (n && n !== name) {
+            name = n
+            storeName(n)
+            // A new name just updates our presence; the room stays connected.
+            if (subscribed && channel) channel.track({ id: clientId, name, device: detectDevice() })
+            renderViewers()
+          }
+          overlay(null)
+        },
+      },
+        el('label', { class: 'field' },
+          el('span', null, 'Display name'),
+          el('input', {
+            value: name, autofocus: true, maxlength: 24,
+            onInput: e => { draft = e.target.value; save.disabled = !draft.trim() },
+          })),
+        el('div', { class: 'row' },
+          el('button', { type: 'button', onClick: () => overlay(null) }, 'Cancel'),
+          save))))
+  }
+
+  // ── Channel: sync, hello, chat, presence ──
+  channel = sb.channel(`ds-watch:${room}`, {
+    config: { presence: { key: clientId }, broadcast: { self: false } },
+  })
+  const ch = channel
+  ch
+    .on('broadcast', { event: 'sync' }, ({ payload }) => applySync(payload))
+    .on('broadcast', { event: 'hello' }, () => {
+      // Someone new: tell them where we are right away.
+      if (synced) broadcast('sync', snapshot('heartbeat'))
+    })
+    .on('broadcast', { event: 'chat' }, ({ payload }) => showChat(payload))
+    .on('presence', { event: 'sync' }, () => {
+      // One entry per viewer: after a rename a key can briefly hold the old
+      // and new meta, and the newest is last.
+      viewers = Object.values(ch.presenceState()).map(metas => metas[metas.length - 1])
+      names = Object.fromEntries(viewers.map(v => [v.id, v.name]))
+      renderViewers()
+      renderStatus()
+    })
+    .subscribe(async st => {
+      subscribed = st === 'SUBSCRIBED'
+      connected = subscribed
+      renderViewers()
+      renderStatus()
+      if (!subscribed) return
+      await ch.track({ id: clientId, name, device: detectDevice() })
+      ch.send({ type: 'broadcast', event: 'hello', payload: { from: clientId } })
+      aloneTimer = setTimeout(() => { synced = true }, ALONE_AFTER_MS)
+    })
+
+  // ── Heartbeat ──
+  const heartbeat = setInterval(() => {
+    if (synced) broadcast('sync', snapshot('heartbeat'))
+  }, HEARTBEAT_MS)
+
+  setSource(currentUrl)
+  renderViewers()
+  renderStatus()
+  renderFallback()
+
+  leaveRoom = () => {
+    clearInterval(heartbeat)
+    clearInterval(clockTimer)
+    clearTimeout(aloneTimer)
+    subscribed = false
+    channel = null
+    video.pause()
+    video.removeAttribute('src')
+    if (video.destroy) video.destroy()
+    ch.untrack()
+    sb.removeChannel(ch)
+  }
+}
+
+// ── Start ───────────────────────────────────────────────────────────────────
+
+// Start once the whole page has loaded: the games and Study come after this
+// file, and a fast getConfig could otherwise answer before they exist.
+function boot() {
+  call('getConfig')
+    .then(cfg => {
+      S.cfg = cfg
+      return Account.start(cfg).then(() => cfg)
+    })
+    .then(cfg => {
+      if (typeof Hub !== 'undefined') Hub.start()
+      if (!cfg.hasTmdb || !cfg.hasDebrid) {
+        S.error = `Some keys are missing (${[!cfg.hasTmdb && 'TMDB', !cfg.hasDebrid && 'Real-Debrid or TorBox'].filter(Boolean).join(', ')}). Close this and open DEBROD → Settings.`
+      }
+      render()
+      // Opened from an invite link: straight into the room.
+      const code = document.body.dataset.room
+      if (code) {
+        S.roomCode = code
+        joinRoom({ preventDefault() {} })
+      }
+      for (const game of ['scribble', 'showdown', 'cards', 'sea', 'punch']) {
+        const invite = document.body.dataset[game]
+        if (invite && !code) {
+          S.tab = 'arcade'
+          render()
+          Arcade.open(game, { code: invite })
+          break
+        }
+      }
+    })
+    .catch(e => mount(el('main', { class: 'login' }, el('div', { class: 'card stack' }, el('p', { class: 'error' }, e.message)))))
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot)
+else boot()
+//# sourceURL=debrod/App.js
+</script>

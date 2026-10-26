@@ -1,0 +1,933 @@
+<style>
+/* ── Color Clash ── */
+.game-stage:has(.game-cards) { width: 100%; touch-action: auto; user-select: auto; -webkit-user-select: auto; }
+.page:has(.game-cards .cc-table) { max-width: 1100px; }
+.cc { --cc-r: #ef3b4e; --cc-y: #f7c62c; --cc-g: #2fbf62; --cc-b: #2f8ef2; display: flex; flex-direction: column; gap: 12px; }
+.cc-menu { max-width: 460px; margin: 0 auto; width: 100%; }
+.cc-menu .row { flex-wrap: wrap; align-items: center; }
+.cc-menu select { padding: 8px 10px; }
+.cc-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
+.cc-seats { display: flex; flex-direction: column; gap: 6px; }
+.cc-seat { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: rgba(13, 2, 33, 0.5); font-size: 14px; }
+.cc-seat .grow { flex: 1; min-width: 0; }
+.cc-code { font: 900 34px/1 var(--display); letter-spacing: 0.25em; text-align: center; color: var(--yellow); text-shadow: 0 0 14px rgba(255, 211, 25, 0.5); }
+.cc-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cc-top .grow { flex: 1; }
+.cc-table { position: relative; display: flex; flex-direction: column; gap: 14px; padding: 14px; border: 1px solid var(--magenta); border-radius: 10px; background: radial-gradient(ellipse at center, #123a2a, #0d1a1f 55%, #0d0221 100%); box-shadow: var(--glow-magenta, 0 0 18px rgba(255, 43, 214, 0.35)); }
+.cc-opps { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.cc-opp { min-width: 120px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); display: flex; flex-direction: column; gap: 6px; transition: box-shadow 0.25s, border-color 0.25s; }
+.cc-opp.turn { border-color: var(--yellow); box-shadow: 0 0 16px rgba(255, 211, 25, 0.45); }
+.cc-opp.gone { opacity: 0.7; }
+.cc-opp-name { display: flex; gap: 6px; align-items: center; font-size: 13px; font-weight: 600; }
+.cc-opp-name .muted { font-weight: 400; }
+.cc-tag { font: 700 9px var(--mono-font); text-transform: uppercase; padding: 1px 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); color: var(--muted); }
+.cc-tag.last { background: var(--yellow); color: #1a0420; animation: cc-pulse 0.9s ease-in-out infinite alternate; }
+.cc-tag.bad { background: var(--bad); color: #fff; }
+.cc-backs { display: flex; align-items: center; min-height: 30px; }
+.cc-back { width: 18px; height: 27px; border-radius: 3px; border: 1.5px solid #fff; background: repeating-linear-gradient(45deg, #2a0f47 0 3px, #4a1470 3px 6px); box-shadow: -1px 1px 3px rgba(0, 0, 0, 0.55); }
+.cc-back + .cc-back { margin-left: -11px; }
+.cc-count { margin-left: 8px; font: 700 13px var(--mono-font); color: var(--cyan); }
+.cc-center { display: flex; align-items: center; justify-content: center; gap: 22px; flex-wrap: wrap; }
+.cc-pile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.cc-pile .muted { font-size: 11px; }
+.cc-deck { width: 74px; height: 110px; padding: 0; border-radius: 10px; border: 3px solid #fff; background: repeating-linear-gradient(45deg, #2a0f47 0 8px, #3b0d5a 8px 16px); display: flex; align-items: center; justify-content: center; font: 900 16px var(--display); color: var(--yellow); text-shadow: 0 0 8px rgba(255, 211, 25, 0.6); }
+.cc-deck:not(:disabled):hover { transform: translateY(-3px); }
+.cc-deck:disabled { opacity: 0.85; }
+.cc-info { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 110px; }
+.cc-dir { font-size: 30px; line-height: 1; color: var(--cyan); text-shadow: 0 0 10px rgba(0, 240, 255, 0.6); }
+.cc-dir.spin { animation: cc-spin 0.6s ease-out; }
+.cc-color { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #fff; background: var(--cc); box-shadow: 0 0 16px var(--cc); }
+.cc-pending { font: 900 18px var(--display); color: var(--bad); text-shadow: 0 0 10px rgba(255, 77, 109, 0.7); animation: cc-pulse 0.7s ease-in-out infinite alternate; }
+.cc-status { text-align: center; font: 700 14px var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); min-height: 1.2em; }
+.cc-status.mine { color: var(--yellow); text-shadow: 0 0 10px rgba(255, 211, 25, 0.5); }
+.cc-timer { margin-left: 8px; color: var(--cyan); font-family: var(--mono-font); }
+.cc-timer.hurry { color: var(--bad); }
+.cc-log { display: flex; flex-direction: column; gap: 2px; font: 12px var(--mono-font); color: var(--muted); text-align: center; min-height: 4.4em; }
+.cc-log p { margin: 0; }
+.cc-log p:last-child { color: var(--text); }
+.cc-me { display: flex; flex-direction: column; gap: 10px; }
+.cc-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
+.cc-bar .grow { flex: 1; }
+.cc-call { background: var(--yellow); color: #1a0420; border-color: var(--yellow); font: 700 13px var(--display); }
+.cc-call.armed { box-shadow: 0 0 16px rgba(255, 211, 25, 0.7); }
+.cc-call.save { animation: cc-pulse 0.6s ease-in-out infinite alternate; }
+.cc-catch { background: var(--bad); color: #fff; border-color: var(--bad); font: 700 13px var(--display); animation: cc-pulse 0.6s ease-in-out infinite alternate; }
+.cc-hand { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 4px 0 2px; }
+.cc-card { --cc: #555; position: relative; flex: none; width: 70px; height: 105px; padding: 0; border-radius: 10px; border: 3px solid #fff; background: var(--cc); color: #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45); overflow: hidden; display: block; font-family: var(--display); transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s; }
+.cc-card.r { --cc: var(--cc-r); } .cc-card.y { --cc: var(--cc-y); } .cc-card.g { --cc: var(--cc-g); } .cc-card.b { --cc: var(--cc-b); }
+.cc-card.w { --cc: #111; }
+.cc-oval { position: absolute; inset: 14% 10%; border-radius: 50%; background: #fff; transform: rotate(28deg); }
+.cc-card.w .cc-oval { background: conic-gradient(var(--cc-r) 0 25%, var(--cc-b) 0 50%, var(--cc-y) 0 75%, var(--cc-g) 0); }
+.cc-big { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 34px; color: var(--cc); text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.25); }
+.cc-card.w .cc-big { color: #fff; text-shadow: 0 0 6px #000, 1px 1px 0 #000; font-size: 26px; }
+.cc-corner { position: absolute; top: 3px; left: 5px; font-weight: 900; font-size: 14px; color: #fff; text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5); }
+.cc-corner.b { top: auto; left: auto; bottom: 3px; right: 5px; transform: rotate(180deg); }
+.cc-card.small { width: 54px; height: 81px; border-width: 2px; border-radius: 8px; }
+.cc-card.small .cc-big { font-size: 26px; }
+.cc-card.small .cc-card.w .cc-big { font-size: 20px; }
+.cc-card.top { width: 82px; height: 123px; }
+.cc-card.top .cc-big { font-size: 40px; }
+.cc-card.top.wild-colored { box-shadow: 0 0 0 4px var(--cc-now), 0 0 22px var(--cc-now); }
+.cc-card.top.fresh { animation: cc-land 0.35s ease-out; }
+.cc-hand .cc-card.ok { cursor: pointer; }
+.cc-hand .cc-card.ok:hover:not(:disabled) { transform: translateY(-8px); box-shadow: 0 0 0 2px var(--yellow), 0 8px 18px rgba(0, 0, 0, 0.5); border-color: #fff; }
+.cc-hand .cc-card.no { opacity: 0.45; filter: saturate(0.6); }
+.cc-hand .cc-card.drawn { box-shadow: 0 0 0 3px var(--cyan), 0 0 16px var(--cyan); }
+.cc-hand .cc-card:disabled { cursor: default; opacity: 1; }
+.cc-hand .cc-card.no:disabled { opacity: 0.45; }
+.cc-overlay { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; padding: 12px; background: rgba(13, 2, 33, 0.78); border-radius: 10px; backdrop-filter: blur(3px); }
+.cc-overlay .card { max-width: 420px; width: 100%; }
+.cc-colors { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.cc-colors button { height: 64px; border-radius: 10px; border: 3px solid #fff; font: 700 14px var(--display); color: #fff; text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5); }
+.cc-scores { display: flex; flex-direction: column; gap: 4px; }
+.cc-scores p { display: flex; justify-content: space-between; gap: 12px; margin: 0; font-size: 14px; }
+.cc-scores p.lead { color: var(--yellow); }
+.cc-bar-fill { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.cc-bar-fill span { display: block; height: 100%; background: linear-gradient(90deg, var(--cyan), var(--magenta)); }
+@keyframes cc-pulse { to { opacity: 0.65; transform: scale(1.04); } }
+@keyframes cc-land { from { transform: scale(1.25) rotate(-8deg); opacity: 0.4; } to { transform: none; opacity: 1; } }
+@keyframes cc-spin { from { transform: rotate(-180deg); } to { transform: none; } }
+@media (max-width: 640px) {
+  .cc-table { padding: 10px 8px; gap: 10px; }
+  .cc-opp { min-width: 0; flex: 1 1 140px; padding: 6px 8px; }
+  .cc-card { width: 52px; height: 78px; border-width: 2px; border-radius: 8px; }
+  .cc-card .cc-big { font-size: 24px; }
+  .cc-card.w .cc-big { font-size: 18px; }
+  .cc-corner { font-size: 11px; }
+  .cc-card.top { width: 66px; height: 99px; }
+  .cc-card.top .cc-big { font-size: 32px; }
+  .cc-deck { width: 60px; height: 90px; }
+  .cc-hand { gap: 4px; }
+  .cc-center { gap: 14px; }
+}
+</style>
+<script>
+// Color Clash: the color-matching card game (Skips, Reverses, +2s, Wilds and
+// Wild +4s), against the CPU or 2 to 6 friends over Supabase Realtime.
+//
+// Online, the room's host runs the game: everyone else sends the moves they
+// want ('act'), the host checks them and broadcasts the whole state after
+// every change ('state'), plus a slow heartbeat. The state carries every
+// hand and the deck, so anyone can take over if the host leaves; that also
+// means it isn't cheat-proof (someone reading the network traffic could see
+// the other hands), like Pokémon Showdown here.
+//
+// Loaded after App.html (el, randomId, storedName, storeName) and
+// Party.html (partyRoom and friends), before Games.html, which lists it.
+
+function colorClash(host, ctx, opts) {
+  const COLORS = { r: 'Red', y: 'Yellow', g: 'Green', b: 'Blue' }
+  const CODES = Object.keys(COLORS)
+  const SYM = { s: '⊘', r: '⇄', d: '+2', w: '★', f: '+4' }
+  const HAND = 7
+  const TARGET = 500
+  const MAX_SEATS = 6
+  const TURN_MS = 30000
+  const BEAT_MS = 10000
+  const CPU_NAMES = ['Ace', 'Blitz', 'Comet', 'Dot', 'Echo', 'Fizz']
+  const RECORD_KEY = 'ds_cc_record'
+
+  const me = randomId()
+  const wrap = el('div', { class: 'cc' })
+  host.append(wrap)
+
+  let name = storedName() || ''
+  let mode = null         // 'cpu' | 'online'
+  let room = null         // the Party room, online
+  let G = null            // the game: the host's is the real one
+  let players = []        // who's in the room (presence), oldest first
+  let dead = false
+  let picking = null      // the wild being played, while you pick a color
+  let sentAt = 0          // when we last sent a move, to hold the buttons
+  let sentV = -1
+  let deadline = 0        // host: when the current human turn times out
+  let turnKey = ''
+  let shownDeadline = 0   // everyone: the same, as last heard
+  let lastPublish = 0
+  let lastTop = ''
+  let lastDir = 1
+  let cpuTimer = null
+  let catchTimer = null
+  let waitTimer = null
+  let notice = ''
+  const tick = setInterval(onTick, 1000)
+
+  // Like replaceChildren, minus the false/null that conditional pieces leave.
+  function fill(node, ...kids) {
+    node.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false && k !== ''))
+    return node
+  }
+  const rand = n => Math.floor(Math.random() * n)
+  const mod = (a, n) => ((a % n) + n) % n
+  function shuffle(list) {
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = rand(i + 1)
+      ;[list[i], list[j]] = [list[j], list[i]]
+    }
+    return list
+  }
+  const activity = info => { if (typeof hubActivity === 'function') hubActivity(info) }
+
+  // ── Cards ──
+  // Two letters: the color (r, y, g, b, or w for wild) and the value (0–9,
+  // s skip, r reverse, d draw two, w wild, f wild draw four).
+  function fullDeck() {
+    const out = []
+    for (const c of CODES) {
+      out.push(`${c}0`)
+      for (let k = 0; k < 2; k++) for (const v of ['1', '2', '3', '4', '5', '6', '7', '8', '9', 's', 'r', 'd']) out.push(c + v)
+    }
+    for (let k = 0; k < 4; k++) out.push('ww', 'wf')
+    return out
+  }
+  const isNum = c => /\d/.test(c[1])
+  const points = c => (isNum(c) ? Number(c[1]) : c[0] === 'w' ? 50 : 20)
+  function cardName(c) {
+    if (c === 'ww') return 'Wild'
+    if (c === 'wf') return 'Wild +4'
+    const v = { s: 'Skip', r: 'Reverse', d: '+2' }[c[1]] || c[1]
+    return `${COLORS[c[0]]} ${v}`
+  }
+
+  function cardEl(c, cls, attrs) {
+    const sym = isNum(c) ? c[1] : SYM[c[1]]
+    return el(attrs ? 'button' : 'div', Object.assign({ class: `cc-card ${c[0]} ${cls || ''}`, title: cardName(c) }, attrs || {}),
+      el('span', { class: 'cc-oval' }),
+      el('span', { class: 'cc-big' }, sym),
+      el('span', { class: 'cc-corner' }, sym),
+      el('span', { class: 'cc-corner b' }, sym))
+  }
+
+  // ── The rules ──
+  function newGame(hostId) {
+    return {
+      gid: randomId(), v: 0, hostId, phase: 'lobby', stack: false, cpus: 0,
+      seats: [], hands: [], deck: [], discard: [], color: 'r', dir: 1, turn: 0, moves: 0,
+      pending: 0, pendingKind: '', drawn: null, called: {}, exposed: null,
+      scores: [], round: 0, log: [], lastRound: null, winner: null, remain: 0,
+    }
+  }
+  function say(g, text) {
+    g.log.push(text)
+    if (g.log.length > 8) g.log = g.log.slice(-8)
+  }
+  const top = g => g.discard[g.discard.length - 1]
+  const seatName = (g, s) => (g.seats[s] ? g.seats[s].name : '?')
+
+  function drawInto(g, s, k) {
+    let got = 0
+    for (let i = 0; i < k; i++) {
+      if (!g.deck.length) {
+        // Out of cards: everything under the top card goes back in.
+        const keep = g.discard.pop()
+        g.deck = shuffle(g.discard)
+        g.discard = keep ? [keep] : []
+      }
+      if (!g.deck.length) break
+      g.hands[s].push(g.deck.pop())
+      got++
+    }
+    return got
+  }
+
+  function playable(g, s, c) {
+    if (!c) return false
+    if (g.pending > 0) return c === 'wf' || (c[1] === 'd' && c[0] !== 'w' && g.pendingKind === 'd')
+    if (c === 'wf') return !g.hands[s].some(x => x[0] === g.color)
+    if (c === 'ww') return true
+    return c[0] === g.color || c[1] === top(g)[1]
+  }
+  // What the player in seat s may play right now: indexes into their hand.
+  function options(g, s) {
+    if (g.phase !== 'play' || g.turn !== s) return []
+    const hand = g.hands[s]
+    if (g.drawn !== null) return playable(g, s, hand[g.drawn]) ? [g.drawn] : []
+    return hand.map((c, i) => i).filter(i => playable(g, s, hand[i]))
+  }
+
+  function advance(g, steps) {
+    g.turn = mod(g.turn + g.dir * steps, g.seats.length)
+    g.drawn = null
+    g.moves++
+  }
+
+  function startRound(g) {
+    g.round++
+    g.deck = shuffle(fullDeck())
+    g.hands = g.seats.map(() => g.deck.splice(0, HAND))
+    // The first card up is always a number.
+    const i = g.deck.findIndex(isNum)
+    g.discard = [g.deck.splice(i, 1)[0]]
+    g.color = top(g)[0]
+    g.dir = 1
+    g.turn = mod(g.round - 1, g.seats.length)
+    g.pending = 0
+    g.pendingKind = ''
+    g.drawn = null
+    g.called = {}
+    g.exposed = null
+    g.phase = 'play'
+    g.moves++
+    say(g, `Round ${g.round}: ${seatName(g, g.turn)} goes first.`)
+  }
+
+  function startGame(g) {
+    g.gid = randomId()
+    g.scores = g.seats.map(() => 0)
+    g.round = 0
+    g.winner = null
+    g.lastRound = null
+    g.log = []
+    startRound(g)
+  }
+
+  function endRound(g, s) {
+    let pts = 0
+    g.hands.forEach((h, k) => { if (k !== s) for (const c of h) pts += points(c) })
+    g.scores[s] += pts
+    g.lastRound = { winner: s, points: pts }
+    g.exposed = null
+    say(g, `${seatName(g, s)} went out and scores ${pts}.`)
+    if (g.scores[s] >= TARGET) {
+      g.phase = 'over'
+      g.winner = s
+    } else g.phase = 'round'
+  }
+
+  // One move by the player in seat s. Returns an error, or null if it
+  // happened.
+  function act(g, s, a) {
+    if (g.phase !== 'play' || !a || !g.seats[s]) return 'Not now.'
+    const who = seatName(g, s)
+    if (a.type === 'catch') {
+      if (g.exposed === null || g.exposed === s) return 'Nobody to catch.'
+      const caught = g.exposed
+      drawInto(g, caught, 2)
+      g.exposed = null
+      say(g, `${who} caught ${seatName(g, caught)} without a Last card! call: +2.`)
+      return null
+    }
+    if (a.type === 'call') {
+      if (g.exposed === s) { g.exposed = null; say(g, `${who}: Last card!`); return null }
+      if (g.turn !== s) return 'Not your turn.'
+      g.called[s] = true
+      return null
+    }
+    if (g.turn !== s) return 'Not your turn.'
+    // The next player has acted, so the last one can't be caught any more.
+    g.exposed = null
+    const hand = g.hands[s]
+    if (a.type === 'play') {
+      const i = a.i | 0
+      const c = hand[i]
+      if (!c || (a.card && a.card !== c)) return 'That card isn\'t in your hand any more.'
+      if (g.drawn !== null && i !== g.drawn) return 'Play the card you drew, or keep it.'
+      if (!playable(g, s, c)) return 'That card doesn\'t match.'
+      if (c[0] === 'w' && !COLORS[a.color]) return 'Pick a color.'
+      if (a.call) g.called[s] = true
+      hand.splice(i, 1)
+      g.discard.push(c)
+      g.color = c[0] === 'w' ? a.color : c[0]
+      g.drawn = null
+      say(g, `${who} played ${cardName(c)}${c[0] === 'w' ? `, calling ${COLORS[a.color]}` : ''}.`)
+      if (!hand.length) { endRound(g, s); return null }
+      if (hand.length === 1) {
+        if (g.called[s]) say(g, `${who}: Last card!`)
+        else g.exposed = s
+      }
+      delete g.called[s]
+      const n = g.seats.length
+      if (c[1] === 's') { say(g, `${seatName(g, mod(s + g.dir, n))} is skipped.`); advance(g, 2) }
+      else if (c[1] === 'r') {
+        g.dir = -g.dir
+        if (n === 2) advance(g, 2)
+        else advance(g, 1)
+      } else if (c[1] === 'd' || c === 'wf') {
+        const amt = c === 'wf' ? 4 : 2
+        if (g.stack) {
+          g.pending += amt
+          g.pendingKind = c === 'wf' ? 'f' : 'd'
+          advance(g, 1)
+        } else {
+          advance(g, 1)
+          drawInto(g, g.turn, amt)
+          say(g, `${seatName(g, g.turn)} draws ${amt} and is skipped.`)
+          advance(g, 1)
+        }
+      } else advance(g, 1)
+      return null
+    }
+    if (a.type === 'draw') {
+      if (g.drawn !== null) return 'You\'ve already drawn.'
+      if (g.pending > 0) {
+        const k = g.pending
+        drawInto(g, s, k)
+        g.pending = 0
+        g.pendingKind = ''
+        say(g, `${who} draws ${k}.`)
+        advance(g, 1)
+        return null
+      }
+      const got = drawInto(g, s, 1)
+      const c = hand[hand.length - 1]
+      if (got && playable(g, s, c)) {
+        g.drawn = hand.length - 1
+        say(g, `${who} drew a card.`)
+      } else {
+        say(g, `${who} drew a card and passes.`)
+        advance(g, 1)
+      }
+      return null
+    }
+    if (a.type === 'pass') {
+      if (g.drawn === null) return 'Draw first.'
+      say(g, `${who} keeps it.`)
+      advance(g, 1)
+      return null
+    }
+    return 'Unknown move.'
+  }
+
+  // ── The CPU ──
+  function bestColor(hand) {
+    const count = { r: 0, y: 0, g: 0, b: 0 }
+    for (const c of hand) if (count[c[0]] !== undefined) count[c[0]]++
+    let best = CODES[rand(4)]
+    for (const c of CODES) if (count[c] > count[best]) best = c
+    return best
+  }
+  function cpuMove(g, s) {
+    const hand = g.hands[s]
+    const opts = options(g, s)
+    if (g.drawn !== null) {
+      if (opts.length && Math.random() < 0.9) {
+        const c = hand[g.drawn]
+        return { type: 'play', i: g.drawn, card: c, color: c[0] === 'w' ? bestColor(hand.filter((x, k) => k !== g.drawn)) : undefined, call: hand.length === 2 && Math.random() < 0.85 }
+      }
+      return { type: 'pass' }
+    }
+    if (!opts.length) return { type: 'draw' }
+    const n = g.seats.length
+    const next = g.hands[mod(s + g.dir, n)] || []
+    const nextLow = next.length <= 2
+    const count = { r: 0, y: 0, g: 0, b: 0 }
+    for (const c of hand) if (count[c[0]] !== undefined) count[c[0]]++
+    let best = opts[0]
+    let bestScore = -Infinity
+    for (const i of opts) {
+      const c = hand[i]
+      let score = Math.random() * 4
+      if (c === 'ww') score -= 30
+      else if (c === 'wf') score -= nextLow ? 0 : 40
+      else {
+        score += count[c[0]] * 3
+        if (!isNum(c)) score += nextLow ? 40 : 4
+        else score += Number(c[1]) * 0.4
+      }
+      if (score > bestScore) { bestScore = score; best = i }
+    }
+    const c = hand[best]
+    return {
+      type: 'play', i: best, card: c,
+      color: c[0] === 'w' ? bestColor(hand.filter((x, k) => k !== best)) : undefined,
+      call: hand.length === 2 && Math.random() < 0.85,
+    }
+  }
+
+  // ── Running the game (the host, or you against the CPU) ──
+  const isHost = () => !!G && (mode === 'cpu' || G.hostId === me)
+  const mySeat = () => (G ? G.seats.findIndex(x => x.id === me) : -1)
+
+  function change() {
+    if (!G) return
+    G.v++
+    if (mode === 'online' && isHost()) publish()
+    schedule()
+    render()
+  }
+
+  function publish() {
+    if (!room || !isHost()) return
+    G.remain = deadline ? Math.max(0, deadline - Date.now()) : 0
+    lastPublish = Date.now()
+    room.send('state', { g: G })
+  }
+
+  // What happens next on its own: a CPU's move, a CPU catching someone,
+  // the turn clock.
+  function schedule() {
+    clearTimeout(cpuTimer)
+    clearTimeout(catchTimer)
+    if (!isHost() || !G || G.phase !== 'play') { deadline = 0; return }
+    const s = G.turn
+    const seat = G.seats[s]
+    const v = G.v
+    const key = `${G.gid}|${G.round}|${G.moves}|${G.drawn !== null}`
+    if (key !== turnKey) {
+      turnKey = key
+      deadline = mode === 'online' && !seat.cpu ? Date.now() + TURN_MS : 0
+    }
+    if (seat.cpu) {
+      cpuTimer = setTimeout(() => {
+        if (!G || G.v !== v || dead) return
+        if (!act(G, s, cpuMove(G, s))) change()
+      }, 650 + Math.random() * 700)
+    }
+    if (G.exposed !== null) {
+      const caught = G.exposed
+      const catchers = G.seats.map((x, k) => k).filter(k => G.seats[k].cpu && k !== caught)
+      if (catchers.length && Math.random() < 0.5) {
+        catchTimer = setTimeout(() => {
+          if (!G || G.exposed !== caught || G.phase !== 'play' || dead) return
+          if (!act(G, catchers[rand(catchers.length)], { type: 'catch' })) change()
+        }, 800 + Math.random() * 1400)
+      }
+    }
+  }
+
+  function onTick() {
+    if (dead || !G) return
+    if (isHost() && mode === 'online') {
+      if (G.phase === 'play' && deadline && Date.now() > deadline) {
+        // Out of time: the host draws (and keeps) for them.
+        const s = G.turn
+        say(G, `${seatName(G, s)} ran out of time.`)
+        if (G.drawn === null) act(G, s, { type: 'draw' })
+        if (G.phase === 'play' && G.turn === s && G.drawn !== null) act(G, s, { type: 'pass' })
+        change()
+        return
+      }
+      if (Date.now() - lastPublish > BEAT_MS) publish()
+    }
+    renderClock()
+  }
+
+  // Who's in which seat. In the lobby, everyone present (in the order they
+  // came) and then the CPUs; mid-game, anyone who left becomes a CPU until
+  // they're back.
+  function hostSeats() {
+    if (!isHost() || mode !== 'online') return
+    let changed = false
+    if (G.phase === 'lobby') {
+      const seats = []
+      const used = new Set()
+      for (const p of players.slice(0, MAX_SEATS)) {
+        let nm = String(p.name || 'Player').slice(0, 18)
+        for (let k = 2; used.has(nm); k++) nm = `${String(p.name || 'Player').slice(0, 15)} ${k}`
+        used.add(nm)
+        seats.push({ id: p.id, name: nm, cpu: false })
+      }
+      const cpus = Math.max(0, Math.min(G.cpus, MAX_SEATS - seats.length))
+      for (let k = 0; k < cpus; k++) seats.push({ id: `cpu-${k}`, name: `${CPU_NAMES[k]} (CPU)`, cpu: true, bot: true })
+      if (JSON.stringify(seats) !== JSON.stringify(G.seats)) { G.seats = seats; changed = true }
+    } else {
+      const here = new Set(players.map(p => p.id))
+      G.seats.forEach(seat => {
+        if (seat.bot || seat.gone || here.has(seat.id)) return
+        seat.gone = true
+        seat.cpu = true
+        say(G, `${seat.name} left. The CPU plays for them until they're back.`)
+        changed = true
+      })
+      for (const p of players) {
+        if (G.seats.some(x => x.id === p.id)) continue
+        const seat = G.seats.find(x => x.gone && x.name === p.name)
+        if (!seat) continue
+        seat.id = p.id
+        seat.gone = false
+        seat.cpu = false
+        say(G, `${seat.name} is back.`)
+        changed = true
+      }
+    }
+    if (changed) change()
+  }
+
+  // ── Moves from this page ──
+  function move(a) {
+    if (!G) return
+    const s = mySeat()
+    if (s < 0) return
+    if (isHost()) {
+      const err = act(G, s, a)
+      if (err) { notice = err; render(); return }
+      notice = ''
+      change()
+    } else {
+      sentAt = Date.now()
+      sentV = G.v
+      room.send('act', { a })
+      render()
+    }
+  }
+  const holding = () => mode === 'online' && !isHost() && G && sentV === G.v && Date.now() - sentAt < 3000
+
+  function playCard(i) {
+    const s = mySeat()
+    const c = G.hands[s][i]
+    if (!c) return
+    if (c[0] === 'w') { picking = { i, card: c }; render(); return }
+    move({ type: 'play', i, card: c, call: !!G.called[s] })
+  }
+
+  // ── Online ──
+  function connect(code, creating) {
+    leaveRoom()
+    mode = 'online'
+    G = null
+    players = []
+    notice = ''
+    loading(creating ? 'Making a room…' : `Joining room ${code}…`)
+    const r = partyRoom('cards', code, me, { name }, {
+      presence: list => { if (room === r) onPresence(list) },
+      message: (t, p) => { if (room === r) onMessage(t, p) },
+      ready: () => {
+        if (room !== r) return
+        activity({ game: 'cards', code, label: 'Color Clash', joinable: true })
+        if (creating) {
+          G = newGame(me)
+          hostSeats()
+          change()
+          return
+        }
+        r.send('hello', {})
+        waitTimer = setTimeout(() => {
+          if (room !== r || G) return
+          // Nobody's here to host: it's ours.
+          if (!players.length || players[0].id === me) {
+            G = newGame(me)
+            hostSeats()
+            change()
+          } else menu(`Nobody is hosting room ${code} right now.`)
+        }, 4500)
+      },
+      error: text => { if (room === r) { leaveRoom(); menu(text) } },
+    })
+    room = r
+  }
+
+  function leaveRoom() {
+    clearTimeout(waitTimer)
+    clearTimeout(cpuTimer)
+    clearTimeout(catchTimer)
+    if (room) { room.close(); room = null; activity(null) }
+  }
+
+  function onPresence(list) {
+    players = list
+    if (!G) return
+    const here = new Set(list.map(p => p.id))
+    if (!here.has(G.hostId) && list.length) {
+      // The host left: the longest-present player carries on.
+      if (list[0].id === me) {
+        G.hostId = me
+        turnKey = ''
+        say(G, `${name} is hosting now.`)
+        hostSeats()
+        change()
+        return
+      }
+    }
+    if (isHost()) hostSeats()
+    render()
+  }
+
+  function onMessage(t, p) {
+    if (t === 'state') {
+      const g = p.g
+      if (!g || g.hostId !== p.from) return
+      if (G && G.gid === g.gid && g.v < G.v && G.hostId === g.hostId) return
+      if (isHost() && G && G.hostId === me && g.hostId !== me && g.v <= G.v) return
+      G = g
+      shownDeadline = g.remain ? Date.now() + g.remain : 0
+      if (picking && (!G.hands[mySeat()] || G.hands[mySeat()][picking.i] !== picking.card)) picking = null
+      render()
+      return
+    }
+    if (!isHost()) return
+    if (t === 'hello') { publish(); return }
+    if (t === 'act') {
+      const s = G.seats.findIndex(x => x.id === p.from)
+      if (s < 0 || G.seats[s].cpu) return
+      if (!act(G, s, p.a)) change()
+      else publish()
+    }
+  }
+
+  // ── Against the CPU ──
+  function startCpu(count, stack) {
+    leaveRoom()
+    mode = 'cpu'
+    G = newGame(me)
+    G.stack = stack
+    G.seats = [{ id: me, name: name || 'You', cpu: false }]
+    for (let k = 0; k < count; k++) G.seats.push({ id: `cpu-${k}`, name: CPU_NAMES[k], cpu: true, bot: true })
+    activity({ game: 'cards', label: 'Color Clash', joinable: false })
+    startGame(G)
+    change()
+  }
+
+  // ── Records ──
+  function record(g) {
+    if (!g || g.phase !== 'over' || g.recorded) return
+    const s = mySeat()
+    if (s < 0) return
+    let rec = { games: 0, wins: 0, done: [] }
+    try { rec = Object.assign(rec, JSON.parse(localStorage.getItem(RECORD_KEY)) || {}) } catch (e) { /* private mode */ }
+    if (rec.done.includes(g.gid)) return
+    rec.done = rec.done.concat(g.gid).slice(-30)
+    rec.games++
+    if (g.winner === s) rec.wins++
+    try { localStorage.setItem(RECORD_KEY, JSON.stringify(rec)) } catch (e) { /* private mode */ }
+  }
+  function readRecord() {
+    try { return JSON.parse(localStorage.getItem(RECORD_KEY)) || null } catch (e) { return null }
+  }
+
+  // ── Screens ──
+  function loading(text) {
+    fill(wrap, el('div', { class: 'card stack cc-menu' }, el('p', { class: 'muted' }, text),
+      el('button', { type: 'button', class: 'link', onClick: () => { leaveRoom(); menu() } }, '‹ Cancel')))
+  }
+
+  function menu(err) {
+    leaveRoom()
+    if (mode === 'cpu') activity(null)
+    mode = null
+    G = null
+    picking = null
+    let draftName = name
+    let draftCode = (opts && opts.code) || ''
+    let cpus = 3
+    let stack = false
+    const nameInput = el('input', { value: draftName, maxlength: 18, placeholder: 'Your name', onInput: e => { draftName = e.target.value } })
+    const okName = () => {
+      const n = draftName.trim().slice(0, 18)
+      if (!n) { nameInput.focus(); return false }
+      name = n
+      storeName(n)
+      return true
+    }
+    const rec = readRecord()
+    const cpuSelect = el('select', { onChange: e => { cpus = Number(e.target.value) } },
+      [1, 2, 3, 4, 5].map(k => el('option', { value: k }, `${k} CPU${k > 1 ? 's' : ''}`)))
+    cpuSelect.value = String(cpus)
+    const online = partyCanOnline()
+    fill(wrap, el('div', { class: 'card stack cc-menu' },
+      el('div', null, el('p', { class: 'wordmark' }, 'Color Clash'), el('p', { class: 'tagline' }, 'Match the color or the symbol')),
+      err && el('p', { class: 'error' }, err),
+      el('label', { class: 'field' }, el('span', null, 'Your name'), nameInput),
+      el('div', { class: 'row' },
+        cpuSelect,
+        el('button', { type: 'button', class: 'primary grow', onClick: () => { if (okName()) startCpu(cpus, stack) } }, 'Play the CPU')),
+      el('label', { class: 'cc-check' }, el('input', { type: 'checkbox', onChange: e => { stack = e.target.checked } }), 'Stack +2 and +4 (house rule)'),
+      online
+        ? [
+          el('button', { type: 'button', onClick: () => { if (okName()) connect(partyCode(), true) } }, 'Make a room for friends'),
+          el('form', { class: 'row', onSubmit: e => {
+            e.preventDefault()
+            const c = partyCleanCode(draftCode)
+            if (c && okName()) connect(c, false)
+          } },
+            el('input', { class: 'grow', value: draftCode, maxlength: 8, placeholder: 'Room code', onInput: e => { draftCode = e.target.value } }),
+            el('button', { type: 'submit' }, 'Join')),
+        ]
+        : el('p', { class: 'muted small' }, 'Playing friends needs Supabase, like watch together (DEBROD → Settings).'),
+      rec && rec.games > 0 && el('p', { class: 'muted small' }, `Your record: ${rec.wins} won of ${rec.games} game${rec.games === 1 ? '' : 's'}.`),
+      el('p', { class: 'muted small' }, `Match the top card's color or symbol, or play a Wild. ⊘ skips the next player, ⇄ reverses, +2 and +4 make them draw. Press Last card! as you play your second-to-last card, or anyone can catch you for +2. First to ${TARGET} points wins.`)))
+    if (!draftName) nameInput.focus()
+  }
+
+  function lobby() {
+    const host = isHost()
+    const s = mySeat()
+    const watchers = players.filter(p => !G.seats.some(x => x.id === p.id))
+    const hostName = (players.find(p => p.id === G.hostId) || {}).name || 'the host'
+    fill(wrap, el('div', { class: 'card stack cc-menu' },
+      el('div', null, el('p', { class: 'wordmark' }, 'Color Clash'), el('p', { class: 'tagline' }, 'Room')),
+      el('p', { class: 'cc-code' }, room ? room.code : ''),
+      el('button', { type: 'button', onClick: async () => { ctx.toast(await partyInvite('cards', room.code, 'Color Clash')) } }, 'Invite friends'),
+      el('div', { class: 'cc-seats' }, G.seats.map((seat, k) => el('div', { class: 'cc-seat' },
+        el('span', { class: 'grow truncate' }, seat.name, seat.id === me ? ' (you)' : '', seat.id === G.hostId ? ' 👑' : ''),
+        host && seat.bot && el('button', { type: 'button', class: 'chip', title: 'Remove this CPU', onClick: () => { G.cpus = Math.max(0, G.cpus - 1); hostSeats(); render() } }, '✕')))),
+      watchers.length > 0 && el('p', { class: 'muted small' }, `Watching: ${watchers.map(p => p.name).join(', ')}`),
+      s < 0 && el('p', { class: 'muted small' }, 'The table is full, so you\'re watching.'),
+      host
+        ? [
+          el('div', { class: 'row' },
+            el('button', { type: 'button', disabled: G.seats.length >= MAX_SEATS, onClick: () => { G.cpus++; hostSeats(); render() } }, '+ Add a CPU'),
+            el('label', { class: 'cc-check' }, el('input', { type: 'checkbox', checked: G.stack, onChange: e => { G.stack = e.target.checked; change() } }), 'Stack +2/+4')),
+          el('button', { type: 'button', class: 'primary', disabled: G.seats.length < 2, onClick: () => { startGame(G); change() } },
+            G.seats.length < 2 ? 'Waiting for players…' : `Start with ${G.seats.length}`),
+        ]
+        : el('p', { class: 'muted' }, `Waiting for ${hostName} to start…${G.stack ? ' (Stacking +2/+4 is on.)' : ''}`),
+      el('button', { type: 'button', class: 'link', onClick: () => menu() }, '‹ Leave')))
+  }
+
+  let clockEl = null
+  function renderClock() {
+    if (!clockEl || !G || G.phase !== 'play') return
+    const end = isHost() ? deadline : shownDeadline
+    if (!end) { clockEl.textContent = ''; return }
+    const left = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+    clockEl.textContent = `0:${String(left).padStart(2, '0')}`
+    clockEl.classList.toggle('hurry', left <= 10)
+  }
+
+  function standings() {
+    const order = G.seats.map((x, k) => k).sort((a, b) => G.scores[b] - G.scores[a])
+    return el('div', { class: 'cc-scores' }, order.map((k, rank) => el('div', null,
+      el('p', { class: rank === 0 ? 'lead' : '' }, el('span', { class: 'truncate' }, `${G.seats[k].name}${G.seats[k].id === me ? ' (you)' : ''}`), el('strong', null, String(G.scores[k]))),
+      el('div', { class: 'cc-bar-fill' }, el('span', { style: `width: ${Math.min(100, (G.scores[k] / TARGET) * 100)}%` })))))
+  }
+
+  function table() {
+    const s = mySeat()
+    const n = G.seats.length
+    const mine = s >= 0
+    const myTurn = mine && G.phase === 'play' && G.turn === s
+    if (!myTurn) picking = null
+    const hold = holding()
+    const opts = myTurn && !hold ? new Set(options(G, s)) : new Set()
+    const t = top(G)
+    // Everyone else, in turn order after us.
+    const order = []
+    for (let k = 1; k <= n; k++) { const x = mod((mine ? s : -1) + k, n); if (x !== s) order.push(x) }
+    const freshTop = `${G.gid}|${G.discard.length}|${t}` !== lastTop
+    lastTop = `${G.gid}|${G.discard.length}|${t}`
+    const spun = G.dir !== lastDir
+    lastDir = G.dir
+    clockEl = el('span', { class: 'cc-timer' })
+
+    const opp = k => {
+      const hand = G.hands[k] || []
+      const seat = G.seats[k]
+      const backs = Math.min(hand.length, 12)
+      return el('div', { class: `cc-opp ${G.phase === 'play' && G.turn === k ? 'turn' : ''} ${seat.gone ? 'gone' : ''}` },
+        el('div', { class: 'cc-opp-name' },
+          el('span', { class: 'truncate' }, seat.name),
+          seat.id === G.hostId && mode === 'online' && el('span', { title: 'Host' }, '👑'),
+          seat.gone && el('span', { class: 'cc-tag' }, 'away · CPU'),
+          G.exposed === k && el('span', { class: 'cc-tag bad' }, 'No call!'),
+          hand.length === 1 && G.exposed !== k && G.phase === 'play' && el('span', { class: 'cc-tag last' }, 'Last card')),
+        el('div', { class: 'cc-backs' }, Array.from({ length: backs }, () => el('span', { class: 'cc-back' })), el('span', { class: 'cc-count' }, String(hand.length))),
+        el('span', { class: 'muted small' }, `${G.scores[k] || 0} pts`))
+    }
+
+    const status = G.phase !== 'play' ? '' : myTurn
+      ? (G.pending > 0 ? `Your turn: stack, or draw ${G.pending}` : G.drawn !== null ? 'Play the card you drew, or keep it' : 'Your turn')
+      : `${seatName(G, G.turn)}'s turn${G.pending > 0 ? ` · ${G.pending} to draw` : ''}`
+
+    const myHand = mine ? G.hands[s] : []
+    const sorted = myHand.map((c, i) => ({ c, i })).sort((a, b) => ('rygbw'.indexOf(a.c[0]) - 'rygbw'.indexOf(b.c[0])) || a.c[1].localeCompare(b.c[1]))
+    const canCall = myTurn && myHand.length === 2 && !G.called[s]
+    const deckCount = G.deck.length
+
+    const children = [
+      el('div', { class: 'cc-opps' }, order.map(opp)),
+      el('div', { class: 'cc-center' },
+        el('div', { class: 'cc-pile' },
+          el('button', { type: 'button', class: 'cc-deck', title: 'Draw', disabled: !myTurn || hold || G.drawn !== null, onClick: () => move({ type: 'draw' }) },
+            myTurn && G.drawn === null ? (G.pending > 0 ? `+${G.pending}` : 'Draw') : ''),
+          el('span', { class: 'muted' }, `${deckCount} left`)),
+        el('div', { class: 'cc-pile' },
+          (() => {
+            const node = cardEl(t, `top ${t[0] === 'w' ? 'wild-colored' : ''} ${freshTop ? 'fresh' : ''}`)
+            node.style.setProperty('--cc-now', `var(--cc-${G.color})`)
+            return node
+          })(),
+          el('span', { class: 'muted' }, `${G.discard.length} played`)),
+        el('div', { class: 'cc-info' },
+          el('span', { class: 'cc-color', style: `--cc: var(--cc-${G.color})`, title: `Color: ${COLORS[G.color]}` }),
+          el('span', { class: `cc-dir ${spun ? 'spin' : ''}`, title: G.dir === 1 ? 'Clockwise' : 'Counter-clockwise' }, G.dir === 1 ? '↻' : '↺'),
+          G.pending > 0 && el('span', { class: 'cc-pending' }, `+${G.pending}`))),
+      el('p', { class: `cc-status ${myTurn ? 'mine' : ''}` }, status, G.phase === 'play' && mode === 'online' && clockEl),
+      el('div', { class: 'cc-log', 'aria-live': 'polite' }, G.log.slice(-4).map(line => el('p', null, line))),
+      notice && el('p', { class: 'error', style: 'text-align: center' }, notice),
+      mine
+        ? el('div', { class: 'cc-me' },
+          el('div', { class: 'cc-bar' },
+            el('span', { class: 'muted small' }, `${name || 'You'} · ${G.scores[s] || 0} pts`),
+            G.exposed === s && el('button', { type: 'button', class: 'cc-call save', onClick: () => move({ type: 'call' }) }, 'Last card!'),
+            canCall && el('button', { type: 'button', class: 'cc-call', disabled: hold, onClick: () => move({ type: 'call' }) }, 'Last card!'),
+            myTurn && G.called[s] && myHand.length === 2 && el('span', { class: 'cc-tag last' }, 'Called'),
+            G.exposed !== null && G.exposed !== s && G.phase === 'play' && el('button', { type: 'button', class: 'cc-catch', onClick: () => move({ type: 'catch' }) }, `Catch ${seatName(G, G.exposed)}!`),
+            myTurn && G.drawn !== null && el('button', { type: 'button', disabled: hold, onClick: () => move({ type: 'pass' }) }, 'Keep it'),
+            myTurn && G.drawn === null && el('button', { type: 'button', disabled: hold, onClick: () => move({ type: 'draw' }) }, G.pending > 0 ? `Draw ${G.pending}` : 'Draw')),
+          el('div', { class: 'cc-hand' }, sorted.map(({ c, i }) => {
+            const ok = opts.has(i)
+            return cardEl(c, `${myTurn ? (ok ? 'ok' : 'no') : ''} ${G.drawn === i && myTurn ? 'drawn' : ''}`, {
+              type: 'button', disabled: !ok, 'aria-label': cardName(c), onClick: () => playCard(i),
+            })
+          })))
+        : el('p', { class: 'muted', style: 'text-align: center' }, 'You\'re watching.'),
+    ]
+
+    if (picking && myTurn) {
+      children.push(el('div', { class: 'cc-overlay' }, el('div', { class: 'card stack' },
+        el('p', { class: 'name' }, `${cardName(picking.card)}: pick a color`),
+        el('div', { class: 'cc-colors' }, CODES.map(code => el('button', {
+          type: 'button', style: `background: var(--cc-${code})`,
+          onClick: () => {
+            const p = picking
+            picking = null
+            move({ type: 'play', i: p.i, card: p.card, color: code, call: !!G.called[s] })
+          },
+        }, COLORS[code]))),
+        el('button', { type: 'button', class: 'link', onClick: () => { picking = null; render() } }, '‹ Not this one'))))
+    } else if (G.phase === 'round' || G.phase === 'over') {
+      record(G)
+      const w = G.phase === 'over' ? G.winner : G.lastRound && G.lastRound.winner
+      const can = isHost()
+      children.push(el('div', { class: 'cc-overlay' }, el('div', { class: 'card stack' },
+        el('p', { class: 'wordmark' }, G.phase === 'over'
+          ? (G.seats[w] && G.seats[w].id === me ? 'You win!' : `${seatName(G, w)} wins!`)
+          : (G.seats[w] && G.seats[w].id === me ? 'You went out!' : `${seatName(G, w)} went out`)),
+        G.lastRound && el('p', { class: 'muted' }, `Round ${G.round}: +${G.lastRound.points} points${G.phase === 'over' ? ` · first to ${TARGET}` : ''}`),
+        standings(),
+        can
+          ? el('button', { type: 'button', class: 'primary', onClick: () => {
+            if (G.phase === 'over') {
+              if (mode === 'online') { G.phase = 'lobby'; G.log = []; hostSeats(); change() } else { startGame(G); change() }
+            } else { startRound(G); change() }
+          } }, G.phase === 'over' ? (mode === 'online' ? 'Back to the lobby' : 'Play again') : 'Next round')
+          : el('p', { class: 'muted small' }, 'Waiting for the host…'),
+        el('button', { type: 'button', class: 'link', onClick: () => menu() }, '‹ Leave'))))
+    }
+
+    return el('div', { class: 'cc-table' }, children)
+  }
+
+  function render() {
+    if (dead) return
+    if (!G) return
+    if (G.phase === 'lobby') return lobby()
+    const bar = el('div', { class: 'cc-top' },
+      el('span', { class: 'pill' }, `Round ${G.round}`),
+      el('span', { class: 'pill' }, `First to ${TARGET}`),
+      G.stack && el('span', { class: 'pill' }, 'Stacking on'),
+      room && el('span', { class: 'pill' }, 'Room ', el('span', { class: 'mono' }, room.code)),
+      el('span', { class: 'grow' }),
+      room && el('button', { type: 'button', class: 'chip', onClick: async () => { ctx.toast(await partyInvite('cards', room.code, 'Color Clash')) } }, 'Invite'),
+      el('button', { type: 'button', class: 'chip', onClick: async () => { if (mode !== 'online' || G.phase !== 'play' || await ask('Leave this game? The CPU will play your seat.', 'Leave')) menu() } }, 'Leave'))
+    fill(wrap, bar, table())
+    renderClock()
+  }
+
+  // For tests: the game as this page sees it.
+  wrap._cc = { state: () => G, me }
+
+  if (opts && opts.code && name && partyCanOnline()) connect(partyCleanCode(opts.code), false)
+  else menu()
+
+  return {
+    stop() {
+      dead = true
+      clearInterval(tick)
+      leaveRoom()
+      activity(null)
+    },
+  }
+}
+//# sourceURL=debrod/Cards.js
+</script>

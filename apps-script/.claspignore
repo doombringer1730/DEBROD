@@ -1,0 +1,7 @@
+# clasp would push doom/doom.js and showdown/showdown.js as server scripts;
+# both load from jsDelivr instead.
+doom/**
+**/*.md
+showdown/**
+supabase/**
+words/**

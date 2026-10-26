@@ -1,0 +1,271 @@
+<style>
+/* ── Focus timer (a panel on Study's home; the punch-card look comes from Study's .st- styles) ── */
+.fc { display: flex; flex-direction: column; gap: 10px; }
+.fc-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.fc-clock { font: 700 clamp(44px, 9vw, 72px)/1 var(--mono-font); letter-spacing: 0.02em; text-align: center; font-variant-numeric: tabular-nums; }
+.fc-phase { text-align: center; font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase; }
+.fc-bar { height: 6px; background: rgba(0, 0, 0, 0.12); overflow: hidden; }
+.fc-bar > div { height: 100%; width: 0; background: currentColor; transition: width 1s linear; }
+.fc-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; justify-content: center; }
+.fc-row .chip.on { outline: 2px solid currentColor; }
+.fc-people { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.fc-person { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 2px 8px 2px 2px; border-radius: 999px; border: 1px solid rgba(0, 0, 0, 0.2); }
+.fc-av { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3); }
+.fc-join { display: flex; gap: 6px; }
+.fc-join input { flex: 1; min-width: 0; text-transform: uppercase; }
+.t-study .fc-clock { font-family: 'Courier Prime', monospace; color: #23262b; }
+.t-study .fc-bar > div { color: #2d5fa6; }
+.t-study .fc-person { background: #fbf8ee; border-color: rgba(35, 38, 43, 0.3); }
+.t-study .fc-phase { color: #b8322a; font-family: 'Archivo Narrow', sans-serif; font-weight: 700; }
+</style>
+<script>
+// Focus: a study timer on Study's home. Focus for 25, 50 or 90 minutes,
+// then a break; every minute focused is 1 XP (and coins, under Study's daily
+// cap), recorded through Study as a "focus" session. Solo, it carries on
+// across reloads. In a room (the always-open Study hall, or a code you share)
+// everyone runs the same timer: anyone can start, pause or stop it, and you
+// see who's there. Rooms are Supabase Realtime broadcast and presence on your
+// session; nothing about them is stored.
+
+const Focus = (() => {
+  const KEY = 'ds_focus'
+  const HALL = 'HALL'
+  const LENGTHS = [25, 50, 90]
+  const BREAKS = [5, 10]
+  const MIN_CREDIT = 5 // minutes; stopping sooner earns nothing
+
+  // phase: idle | focus | break; paused keeps `left` instead of `endsAt`.
+  const blank = () => ({ phase: 'idle', length: 25, brk: 5, endsAt: 0, left: 0, paused: false, creditFrom: 0 })
+  let st = (() => { try { return Object.assign(blank(), JSON.parse(localStorage.getItem(KEY)) || {}) } catch (e) { return blank() } })()
+  let ui = null      // Study: record(minutes, ms), pop(text), redraw()
+  let tick = null
+  let room = null    // { code, channel, people, synced }
+  let audio = null
+
+  const persist = () => { if (room) return; try { localStorage.setItem(KEY, JSON.stringify(st)) } catch (e) { /* private mode */ } }
+  const remaining = () => (st.phase === 'idle' ? st.length * 60000 : st.paused ? st.left : Math.max(0, st.endsAt - Date.now()))
+  const total = () => (st.phase === 'break' ? st.brk : st.length) * 60000
+  const mmss = ms => { const s = Math.ceil(ms / 1000); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` }
+  const safe = c => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '#888888')
+
+  function chime(up) {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)()
+      const notes = up ? [523, 659, 784] : [784, 659, 523]
+      notes.forEach((f, i) => {
+        const o = audio.createOscillator()
+        const g = audio.createGain()
+        o.frequency.value = f
+        o.type = 'sine'
+        g.gain.setValueAtTime(0.0001, audio.currentTime + i * 0.18)
+        g.gain.exponentialRampToValueAtTime(0.2, audio.currentTime + i * 0.18 + 0.02)
+        g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + i * 0.18 + 0.5)
+        o.connect(g).connect(audio.destination)
+        o.start(audio.currentTime + i * 0.18)
+        o.stop(audio.currentTime + i * 0.18 + 0.55)
+      })
+    } catch (e) { /* no sound here */ }
+  }
+
+  // ── Credit ──
+  function credit(force) {
+    if (st.phase !== 'focus' || !st.creditFrom) return
+    // Time paused right now doesn't count (earlier pauses already moved creditFrom).
+    const pausedFor = st.paused ? Date.now() - (st.pausedAt || Date.now()) : 0
+    const ms = Math.min(Date.now() - st.creditFrom - pausedFor, st.length * 60000)
+    const minutes = Math.floor(ms / 60000)
+    st.creditFrom = 0
+    if (minutes < MIN_CREDIT && !force) return
+    if (minutes < 1) return
+    if (ui) {
+      const a = ui.record(minutes, minutes * 60000)
+      ui.pop(`⏱ ${minutes} min focused · +${a.xp} XP${a.coins ? ` · +${a.coins} 🪙` : ''}`)
+    }
+  }
+
+  // ── Changes (from you, or from someone in your room) ──
+  function set(next, from) {
+    st = Object.assign(st, next)
+    persist()
+    if (room && !from) broadcast()
+    draw()
+  }
+  function start() {
+    if (audio && audio.state === 'suspended') audio.resume()
+    set({ phase: 'focus', endsAt: Date.now() + st.length * 60000, paused: false, left: 0, creditFrom: Date.now() })
+    activity()
+  }
+  function pause() { if (!st.paused) set({ paused: true, left: remaining(), pausedAt: Date.now() }) }
+  function resume() {
+    // Paused time doesn't count toward the credit.
+    const away = Date.now() - (st.pausedAt || Date.now())
+    set({ paused: false, endsAt: Date.now() + st.left, creditFrom: st.creditFrom ? st.creditFrom + away : 0 })
+  }
+  function stop() {
+    if (st.phase === 'focus') credit()
+    set({ phase: 'idle', paused: false, endsAt: 0, left: 0, creditFrom: 0 })
+    activity()
+  }
+  function skip() { set({ phase: 'idle', paused: false, endsAt: 0, left: 0 }); activity() }
+
+  function step() {
+    if (st.phase === 'idle' || st.paused || Date.now() < st.endsAt) return paint()
+    if (st.phase === 'focus') {
+      credit(true)
+      chime(false)
+      // Everyone in a room flips on their own clock, so this isn't broadcast.
+      st = Object.assign(st, { phase: 'break', endsAt: Date.now() + st.brk * 60000, creditFrom: 0 })
+    } else {
+      chime(true)
+      st = Object.assign(st, { phase: 'idle', endsAt: 0 })
+      if (ui) ui.pop('☕ Break\'s over. Ready for another?')
+    }
+    persist()
+    activity()
+    draw()
+  }
+
+  // ── Rooms ──
+  function snapshot() { return { phase: st.phase, length: st.length, brk: st.brk, paused: st.paused, left: remaining() } }
+  function broadcast() { if (room && room.channel) room.channel.send({ type: 'broadcast', event: 'state', payload: snapshot() }) }
+  function apply(p) {
+    if (!p || !['idle', 'focus', 'break'].includes(p.phase)) return
+    const now = Date.now()
+    // Credit runs from when you were there for it: the same focus carries
+    // on (resuming moves it past the pause); joining one already going
+    // counts from now.
+    let creditFrom = 0
+    let pausedAt = 0
+    if (p.phase === 'focus') {
+      if (st.phase === 'focus' && st.creditFrom) {
+        creditFrom = st.creditFrom
+        if (st.paused && !p.paused) creditFrom += now - (st.pausedAt || now)
+        pausedAt = p.paused ? (st.paused ? st.pausedAt : now) : 0
+      } else {
+        creditFrom = now
+        pausedAt = p.paused ? now : 0
+      }
+    }
+    if (st.phase === 'focus' && p.phase !== 'focus') credit()
+    set({
+      phase: p.phase, length: LENGTHS.includes(p.length) ? p.length : st.length, brk: BREAKS.includes(p.brk) ? p.brk : st.brk,
+      paused: !!p.paused, left: p.paused ? Math.max(0, p.left | 0) : 0, endsAt: p.paused ? 0 : now + Math.max(0, p.left | 0), pausedAt, creditFrom,
+    }, 'room')
+    room.synced = true
+    activity()
+  }
+
+  function joinRoom(code) {
+    const c = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || HALL
+    if (room && room.code === c) return
+    leaveRoom()
+    const auth = typeof Account !== 'undefined' && Account.ready() ? Account.client() : null
+    const me = auth && Account.profile()
+    if (!auth || !me) { if (ui) ui.pop('Sign in to study with others.'); return }
+    // Your solo timer stays put for when you leave.
+    try { localStorage.setItem(KEY, JSON.stringify(st)) } catch (e) { /* private mode */ }
+    st = Object.assign(blank(), { length: st.length, brk: st.brk })
+    const channel = auth.channel(`debrod-focus:${c}`, { config: { presence: { key: me.id }, broadcast: { self: false } } })
+    room = { code: c, channel, people: [], synced: false, me: me.id }
+    channel
+      .on('broadcast', { event: 'state' }, ({ payload }) => apply(payload))
+      .on('broadcast', { event: 'hello' }, () => { if (room && room.synced) broadcast() })
+      .on('presence', { event: 'sync' }, () => {
+        if (!room) return
+        room.people = Object.values(channel.presenceState()).map(m => m[m.length - 1])
+        // Alone in the room: nobody to ask, the timer is yours.
+        if (room.people.length <= 1) room.synced = true
+        draw()
+      })
+      .subscribe(async s => {
+        if (s !== 'SUBSCRIBED' || !room || room.channel !== channel) return
+        await channel.track({ id: me.id, name: me.display, avatar: me.avatar || '🙂', photo: me.photo || '', color: me.color || '' })
+        channel.send({ type: 'broadcast', event: 'hello', payload: {} })
+        setTimeout(() => { if (room && room.channel === channel) room.synced = true }, 2000)
+      })
+    activity()
+    draw()
+  }
+  function leaveRoom() {
+    if (!room) return
+    if (st.phase === 'focus') credit()
+    const auth = typeof Account !== 'undefined' ? Account.client() : null
+    try { room.channel.untrack(); if (auth) auth.removeChannel(room.channel) } catch (e) { /* gone */ }
+    room = null
+    st = (() => { try { return Object.assign(blank(), JSON.parse(localStorage.getItem(KEY)) || {}) } catch (e) { return blank() } })()
+    activity()
+    draw()
+  }
+
+  // What Home's "Online now" shows about you.
+  function activity() {
+    if (typeof hubActivity !== 'function') return
+    const busy = st.phase === 'focus' ? 'focusing' : st.phase === 'break' ? 'on a break' : 'in'
+    if (room) hubActivity({ game: 'study', code: room.code, label: `${room.code === HALL ? 'the Study hall' : `study room ${room.code}`} (${busy})`, joinable: true })
+    else if (st.phase !== 'idle') hubActivity({ game: 'study', label: st.phase === 'focus' ? 'a focus session' : 'a study break', joinable: false })
+  }
+
+  // ── Drawing ──
+  // The panel is rebuilt whenever Study redraws; the clock ticks in place.
+  let node = null
+  function paint() {
+    if (!node || !node.isConnected) return
+    const left = remaining()
+    const clock = node.querySelector('[data-fc-clock]')
+    const bar = node.querySelector('[data-fc-bar]')
+    if (clock) clock.textContent = mmss(left)
+    if (bar) bar.style.width = `${st.phase === 'idle' ? 0 : Math.min(100, (1 - left / total()) * 100)}%`
+  }
+  function draw() { if (ui && ui.redraw) ui.redraw() }
+
+  function panel(helpers) {
+    ui = helpers
+    if (!tick) tick = setInterval(step, 1000)
+    const running = st.phase !== 'idle'
+    const label = st.phase === 'focus' ? (st.paused ? 'Focus · paused' : 'Focus') : st.phase === 'break' ? (st.paused ? 'Break · paused' : 'Break') : 'Ready'
+    let code = ''
+    const today = ui.focusToday()
+    node = el('div', { class: 'st-w st-span2 fc', 'data-section': 'focus' },
+      el('div', { class: 'fc-top' },
+        el('h2', null, '⏱ Focus'),
+        el('div', { class: 'fc-row' },
+          el('button', { type: 'button', class: `chip ${!room ? 'on' : ''}`, onClick: leaveRoom }, 'Solo'),
+          el('button', { type: 'button', class: `chip ${room && room.code === HALL ? 'on' : ''}`, onClick: () => joinRoom(HALL) }, '🏛 Study hall'),
+          el('button', { type: 'button', class: `chip ${room && room.code !== HALL ? 'on' : ''}`, onClick: () => joinRoom(Math.random().toString(36).slice(2, 7)) }, '+ Room'))),
+      el('p', { class: 'fc-phase' }, label),
+      el('p', { class: 'fc-clock', 'data-fc-clock': '' }, mmss(remaining())),
+      el('div', { class: 'fc-bar' }, el('div', { 'data-fc-bar': '' })),
+      !running && el('div', { class: 'fc-row' },
+        LENGTHS.map(n => el('button', { type: 'button', class: `chip ${st.length === n ? 'on' : ''}`, onClick: () => set({ length: n }) }, `${n} min`)),
+        el('span', { class: 'st-sub' }, 'break'),
+        BREAKS.map(n => el('button', { type: 'button', class: `chip ${st.brk === n ? 'on' : ''}`, onClick: () => set({ brk: n }) }, `${n}`))),
+      el('div', { class: 'fc-row' },
+        !running && el('button', { type: 'button', class: 'primary', onClick: start }, room ? 'Start for everyone' : 'Start focusing'),
+        running && (st.paused
+          ? el('button', { type: 'button', class: 'primary', onClick: resume }, 'Resume')
+          : el('button', { type: 'button', onClick: pause }, 'Pause')),
+        st.phase === 'focus' && el('button', { type: 'button', onClick: stop, title: `Ends the session; ${MIN_CREDIT}+ minutes still count` }, 'Stop'),
+        st.phase === 'break' && el('button', { type: 'button', onClick: skip }, 'Skip break')),
+      room && el('div', { class: 'stack tight' },
+        el('p', { class: 'st-sub', style: 'text-align: center' }, room.code === HALL ? 'The Study hall: anyone can drop in. One timer for everyone here.' : `Room ${room.code}: friends join from Home, or with the code below.`),
+        el('div', { class: 'fc-people' }, room.people.map(p => el('span', { class: 'fc-person' }, el('span', { class: 'fc-av', style: `background: ${safe(p.color)}` }, face(p)), p.id === room.me ? `${p.name} (you)` : p.name)))),
+      el('form', { class: 'fc-join', onSubmit: e => { e.preventDefault(); if (code.trim()) joinRoom(code) } },
+        el('input', { placeholder: room && room.code !== HALL ? `In room ${room.code}` : 'Room code', maxlength: 8, onInput: e => { code = e.target.value } }),
+        el('button', { type: 'submit' }, 'Join')),
+      el('p', { class: 'st-sub', style: 'text-align: center' }, today.minutes
+        ? `Focused ${today.minutes >= 60 ? `${Math.floor(today.minutes / 60)}h ${today.minutes % 60}m` : `${today.minutes} min`} today in ${today.sessions} session${today.sessions === 1 ? '' : 's'}. 1 XP a minute.`
+        : `1 XP for every minute you focus. Stop early and ${MIN_CREDIT}+ minutes still count.`))
+    setTimeout(paint, 0)
+    return node
+  }
+
+  // For Home: what's running.
+  function status() {
+    if (st.phase === 'idle') return null
+    return { phase: st.phase, paused: st.paused, left: remaining(), room: room ? room.code : null }
+  }
+
+  return { panel, joinRoom, leaveRoom, status, inRoom: () => (room ? room.code : null) }
+})()
+//# sourceURL=debrod/Focus.js
+</script>

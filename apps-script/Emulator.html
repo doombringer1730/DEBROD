@@ -1,0 +1,206 @@
+<style>
+/* ── Emulator: retro consoles (EmulatorJS) and games that run on their own sites ── */
+.game-stage:has(.game-retro), .game-stage:has(.game-pokerogue), .game-stage:has(.game-oregon) {
+  width: min(100%, 960px); touch-action: auto; user-select: auto; -webkit-user-select: auto; }
+.em-frame { display: block; width: 100%; aspect-ratio: 4 / 3; max-height: 75vh; border: 1px solid var(--magenta); border-radius: 6px; background: #000; box-shadow: var(--glow-magenta); }
+.em-frame.wide { aspect-ratio: 16 / 9; }
+.em-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.em-row input[type='file'] { flex: 1; min-width: 0; width: auto; font-size: 13px; padding: 9px 10px; cursor: pointer; }
+.em-row select { font: 14px var(--mono-font); color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; }
+.em-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.em-list button { text-align: left; display: flex; flex-direction: column; gap: 2px; }
+.em-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+</style>
+<script>
+// Emulator: the arcade's Retro consoles (EmulatorJS, playing a file from
+// this device or from your games library through Code.gs) and the cards for
+// games that already run on the web (PokéRogue, The Oregon Trail).
+
+const Emulator = (() => {
+  // Pinned so an EmulatorJS release can't change the player under you.
+  const EMULATORJS = 'https://cdn.emulatorjs.org/4.2.3/data/'
+
+  // EmulatorJS core names. PSP and DOS are left out: their cores need
+  // SharedArrayBuffer, which Apps Script's frame can't turn on.
+  const SYSTEMS = [
+    { id: 'nes', name: 'NES', exts: ['nes', 'fds', 'unf', 'unif'] },
+    { id: 'snes', name: 'SNES', exts: ['sfc', 'smc', 'fig', 'swc'] },
+    { id: 'n64', name: 'Nintendo 64', exts: ['n64', 'z64', 'v64'] },
+    { id: 'gb', name: 'Game Boy / Color', exts: ['gb', 'gbc', 'dmg'] },
+    { id: 'gba', name: 'Game Boy Advance', exts: ['gba'] },
+    { id: 'nds', name: 'Nintendo DS', exts: ['nds'] },
+    { id: 'vb', name: 'Virtual Boy', exts: ['vb', 'vboy'] },
+    { id: 'segaMS', name: 'Master System', exts: ['sms'] },
+    { id: 'segaMD', name: 'Genesis / Mega Drive', exts: ['md', 'gen', 'smd'] },
+    { id: 'segaGG', name: 'Game Gear', exts: ['gg'] },
+    { id: 'segaCD', name: 'Sega CD', exts: [] },
+    { id: 'sega32x', name: '32X', exts: ['32x'] },
+    { id: 'segaSaturn', name: 'Saturn', exts: [] },
+    { id: 'psx', name: 'PlayStation', exts: ['pbp'] },
+    { id: 'pce', name: 'TurboGrafx-16', exts: ['pce'] },
+    { id: 'atari2600', name: 'Atari 2600', exts: ['a26'] },
+    { id: 'atari7800', name: 'Atari 7800', exts: ['a78'] },
+    { id: 'lynx', name: 'Atari Lynx', exts: ['lnx'] },
+    { id: 'jaguar', name: 'Atari Jaguar', exts: ['j64', 'jag'] },
+    { id: 'ws', name: 'WonderSwan', exts: ['ws', 'wsc'] },
+    { id: 'ngp', name: 'Neo Geo Pocket', exts: ['ngp', 'ngc'] },
+    { id: 'coleco', name: 'ColecoVision', exts: ['col'] },
+    { id: '3do', name: '3DO', exts: [] },
+    { id: 'arcade', name: 'Arcade (FBNeo)', exts: [] },
+  ]
+  const systemName = id => (SYSTEMS.find(s => s.id === id) || { name: id }).name
+
+  // A guess from the extension; .zip, .bin, .iso, .cue and .chd could be anything.
+  function guessSystem(filename) {
+    const ext = String(filename).split('.').pop().toLowerCase()
+    const s = SYSTEMS.find(x => x.exts.indexOf(ext) !== -1)
+    return s ? s.id : ''
+  }
+
+  // Safe inside a script tag: JSON, with < escaped so a name can't close it.
+  const js = v => JSON.stringify(v).replace(/</g, '\\u003c')
+
+  // EmulatorJS works through page globals, so each game gets a fresh
+  // document. srcdoc keeps it on this page's origin, so it can read the
+  // blob: URL made here. The name carries the extension EmulatorJS reads.
+  function emulatorDoc(system, url, name) {
+    return '<!doctype html><html><head><meta charset="utf-8"><style>' +
+      'html,body{margin:0;height:100%;background:#000}#game{width:100%;height:100%}' +
+      '</style></head><body><div id="game"></div><script>' +
+      "EJS_player = '#game'\n" +
+      'EJS_core = ' + js(system) + '\n' +
+      'EJS_gameUrl = ' + js(url) + '\n' +
+      'EJS_gameName = ' + js(name) + '\n' +
+      'EJS_pathtodata = ' + js(EMULATORJS) + '\n' +
+      "EJS_color = '#ff2bd6'\n" +
+      '<' + '/script><script src="' + EMULATORJS + 'loader.js"><' + '/script></body></html>'
+  }
+
+  function base64Blob(b64) {
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    return new Blob([bytes])
+  }
+
+  // ── Retro consoles ──
+  let library // undefined: not asked yet; null: none set up; an Error: it failed
+
+  function consoles(host) {
+    let url = null
+    const status = el('p', { class: 'muted small' })
+
+    function stop() {
+      // EmulatorJS revokes the URL once it has read it; this covers a game left early.
+      if (url) { URL.revokeObjectURL(url); url = null }
+    }
+
+    function play(blob, system, name) {
+      stop()
+      url = URL.createObjectURL(blob)
+      host.replaceChildren(
+        el('div', { class: 'em-top' },
+          el('div', null,
+            el('p', { class: 'name' }, name),
+            el('p', { class: 'muted small' }, systemName(system))),
+          el('button', { type: 'button', class: 'link', onClick: menu }, '‹ Consoles')),
+        el('iframe', {
+          class: 'em-frame', title: name, srcdoc: emulatorDoc(system, url, name),
+          allow: 'fullscreen; gamepad; autoplay', allowfullscreen: true,
+        }),
+        el('p', { class: 'muted small' }, 'Saves and states stay in this browser. Keys, gamepads and fullscreen are in the player\'s menu.'))
+    }
+
+    function playLibrary(game) {
+      status.className = 'muted small'
+      status.textContent = `Loading ${game.name}…`
+      member('getGameFile', game.file)
+        .then(f => play(base64Blob(f.data), game.system, f.name))
+        .catch(e => { status.className = 'error'; status.textContent = e.message })
+    }
+
+    function libraryView() {
+      if (library instanceof Error) return el('p', { class: 'error' }, library.message)
+      if (library === undefined) return el('p', { class: 'muted small' }, 'Looking for your games library…')
+      if (library === null) {
+        return el('p', { class: 'muted small' },
+          'Add a games library URL (and key, if it\'s private) in DEBROD → Settings to list your own games here.')
+      }
+      if (!library.length) return el('p', { class: 'muted small' }, 'Your games library\'s games.json lists no games.')
+      const list = el('div', { class: 'em-list' })
+      const search = el('input', { type: 'search', placeholder: `Search ${library.length} games…` })
+      function fill() {
+        const q = search.value.trim().toLowerCase()
+        list.replaceChildren(...library
+          .filter(g => !q || g.name.toLowerCase().indexOf(q) !== -1)
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map(g => el('button', { type: 'button', class: 'item', onClick: () => playLibrary(g) },
+            el('span', { class: 'name' }, g.name),
+            el('span', { class: 'muted small' }, systemName(g.system)))))
+      }
+      search.addEventListener('input', fill)
+      fill()
+      return el('div', { class: 'stack tight' }, el('p', { class: 'name' }, 'Your library'), search, list)
+    }
+
+    function menu() {
+      stop()
+      status.textContent = ''
+      const file = el('input', { type: 'file' })
+      const pick = el('select', { 'aria-label': 'System' },
+        el('option', { value: '' }, 'System…'),
+        SYSTEMS.map(s => el('option', { value: s.id }, s.name)))
+      const go = el('button', { type: 'button', class: 'primary', disabled: true }, 'Play')
+      const ready = () => { go.disabled = !(file.files[0] && pick.value) }
+      file.addEventListener('change', () => {
+        if (file.files[0]) pick.value = guessSystem(file.files[0].name)
+        ready()
+      })
+      pick.addEventListener('change', ready)
+      go.addEventListener('click', () => play(file.files[0], pick.value, file.files[0].name))
+      const lib = el('div', null, libraryView())
+      host.replaceChildren(el('div', { class: 'stack' },
+        el('div', { class: 'card stack tight' },
+          el('p', { class: 'name' }, 'Play a file'),
+          el('p', { class: 'muted small' }, 'A game you own, from this device. It never leaves your browser.'),
+          el('div', { class: 'em-row' }, file, pick, go)),
+        status,
+        lib))
+      if (library === undefined || library instanceof Error) {
+        library = undefined
+        member('listGames')
+          .then(list => { library = list }, e => { library = e })
+          .then(() => { if (lib.isConnected) lib.replaceChildren(libraryView()) })
+      }
+    }
+
+    menu()
+    // Keys belong to the emulator's frame; let the page leave them alone.
+    return { stop, key: () => false }
+  }
+
+  // ── Games that run on their own sites ──
+  function web(name, src, page, wide) {
+    return host => {
+      host.append(
+        el('div', { class: 'em-top' },
+          el('p', { class: 'muted small' }, 'Plays from ' + new URL(page).hostname + '. If saving or signing in doesn\'t work here, open it in a new tab.'),
+          el('a', { class: 'link', href: page, target: '_blank', rel: 'noopener noreferrer' }, 'New tab ↗')),
+        el('iframe', {
+          class: 'em-frame' + (wide ? ' wide' : ''), title: name, src,
+          allow: 'fullscreen; gamepad; autoplay', allowfullscreen: true,
+        }))
+      return { stop() {}, key: () => false }
+    }
+  }
+
+  return {
+    consoles,
+    pokerogue: web('PokéRogue', 'https://pokerogue.net/', 'https://pokerogue.net/', true),
+    oregon: web('The Oregon Trail',
+      'https://archive.org/embed/msdos_Oregon_Trail_The_1990',
+      'https://archive.org/details/msdos_Oregon_Trail_The_1990', false),
+  }
+})()
+//# sourceURL=debrod/Emulator.js
+</script>

@@ -1,0 +1,291 @@
+<style>
+/* Notify: sitewide pop-ups and the bell in the header. Its own look (a
+   dark enamel pager) so it reads the same over every page's theme. */
+.nt-stack { position: fixed; right: 16px; bottom: 16px; z-index: 70; display: flex; flex-direction: column-reverse; gap: 8px; width: min(340px, calc(100vw - 32px)); pointer-events: none; }
+.nt-toast { pointer-events: auto; display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: start; padding: 10px 10px 10px 12px; border-radius: 10px;
+  background: #1f2124; color: #f1efe8; border: 1px solid #3b3e43; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); font: 14px/1.35 'Libre Franklin', 'Helvetica Neue', Arial, sans-serif;
+  text-align: left; cursor: pointer; animation: nt-in 0.22s ease-out; }
+.nt-toast.out { animation: nt-out 0.2s ease-in forwards; }
+.nt-toast.loud { border-color: #e6a634; box-shadow: 0 0 0 1px #e6a634, 0 10px 28px rgba(0, 0, 0, 0.45); }
+.nt-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: #34373c; font-size: 16px; overflow: hidden; }
+.nt-title { font-weight: 700; font-size: 13px; letter-spacing: 0.01em; color: #fff; }
+.nt-body { color: #cfccc3; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.nt-x { background: none; border: none; box-shadow: none; color: #9a978f; font-size: 16px; line-height: 1; padding: 2px 4px; cursor: pointer; }
+.nt-x:hover { color: #fff; }
+@keyframes nt-in { from { opacity: 0; transform: translateY(10px); } }
+@keyframes nt-out { to { opacity: 0; transform: translateX(30px); } }
+
+.nt-panel { position: fixed; z-index: 69; top: 12px; right: 12px; width: min(380px, calc(100vw - 24px)); max-height: calc(100vh - 24px); display: flex; flex-direction: column;
+  border-radius: 12px; background: #1f2124; color: #f1efe8; border: 1px solid #3b3e43; box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  font: 14px/1.4 'Libre Franklin', 'Helvetica Neue', Arial, sans-serif; text-align: left; }
+.nt-panel[hidden] { display: none; }
+.nt-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid #34373c; }
+.nt-head b { flex: 1; font-size: 15px; }
+.nt-panel button { font: 600 12px 'Libre Franklin', sans-serif; color: #f1efe8; background: #34373c; border: 1px solid #4a4d53; border-radius: 999px; padding: 5px 11px; box-shadow: none; text-transform: none; letter-spacing: 0; cursor: pointer; }
+.nt-panel button:hover { background: #43464c; }
+.nt-panel button.on { background: #e6a634; border-color: #e6a634; color: #1f2124; }
+.nt-list { overflow-y: auto; flex: 1; min-height: 60px; }
+.nt-item { display: grid; grid-template-columns: 30px 1fr; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #2c2f33; cursor: pointer; }
+.nt-item:hover { background: #272a2e; }
+.nt-item.new { background: #2a2a22; }
+.nt-item time { display: block; font-size: 11px; color: #8d8a82; margin-top: 2px; }
+.nt-empty { padding: 22px 14px; color: #8d8a82; text-align: center; }
+.nt-prefs { padding: 10px 14px 12px; border-top: 1px solid #34373c; display: grid; gap: 8px; font-size: 12px; color: #b3b0a7; }
+.nt-pref { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nt-pref > span { min-width: 70px; }
+.nt-announce { display: grid; gap: 6px; padding: 10px 14px; border-top: 1px solid #34373c; }
+.nt-announce textarea { width: 100%; min-height: 54px; resize: vertical; font: 14px/1.35 'Libre Franklin', sans-serif; color: #f1efe8; background: #15171a; border: 1px solid #4a4d53; border-radius: 8px; padding: 7px 9px; box-shadow: none; }
+.nt-announce .row { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+.nt-announce small { flex: 1; color: #8d8a82; }
+@media (max-width: 560px) { .nt-stack { right: 12px; left: 12px; bottom: 12px; width: auto; } }
+</style>
+<script>
+// Notify: sitewide notifications. Pop-ups in the corner on any tab, and a
+// bell in the header that keeps the last 40. What pings you:
+// - chat messages while you're not looking at that channel (all, only
+//   @mentions, or nothing: your choice), from Chat.html;
+// - new work posted in your classes, and new whiteboards;
+// - for Huddy, new sign-ups waiting in Members;
+// - Huddy's announcements, which go to everyone and wait in the bell for
+//   anyone who was away (debrod_announcements, supabase/schema.sql).
+// The log and your choices stay in this browser.
+
+const Notify = (() => {
+  const LOG_KEY = 'ds_notify_log'
+  const PREF_KEY = 'ds_notify_prefs'
+  const SEEN_KEY = 'ds_notify_seen_announcement'
+  const KEEP = 40
+  const SHOW_MS = 6500
+
+  let auth = null
+  let me = null
+  let live = null
+  let started = false
+  let log = load(LOG_KEY, [])
+  let prefs = Object.assign({ chat: 'mentions', classes: true, sound: false }, load(PREF_KEY, {}))
+  const classNames = new Map()
+
+  const stack = el('div', { class: 'nt-stack', 'aria-live': 'polite' })
+  const panel = el('section', { class: 'nt-panel', hidden: true, role: 'dialog', 'aria-label': 'Notifications' })
+  document.body.append(stack, panel)
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !panel.hidden) close() })
+  document.addEventListener('pointerdown', e => {
+    if (!panel.hidden && !panel.contains(e.target) && !e.target.closest('[data-notify-bell]')) close()
+  })
+
+  function load(key, fallback) {
+    try { const v = JSON.parse(localStorage.getItem(key)); return v == null ? fallback : v } catch (e) { return fallback }
+  }
+  function save(key, v) {
+    try { localStorage.setItem(key, JSON.stringify(v)) } catch (e) { /* private mode */ }
+  }
+  const unread = () => log.filter(n => !n.read).length
+  const ago = t => {
+    const s = Math.max(0, (Date.now() - t) / 1000)
+    if (s < 60) return 'just now'
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`
+    if (s < 86400) return `${Math.floor(s / 3600)} h ago`
+    return new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' })
+  }
+
+  // ── Showing one ──
+  // n: { kind, title, body, icon (text or a node), tab, loud, sticky }
+  function push(n) {
+    const item = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, at: Date.now(), read: false,
+      kind: n.kind || 'note', title: String(n.title || ''), body: String(n.body || '').slice(0, 300), tab: n.tab || null,
+      icon: typeof n.icon === 'string' ? n.icon : '🔔', photo: n.photo || null }
+    log = [item].concat(log).slice(0, KEEP)
+    save(LOG_KEY, log)
+    badge()
+    if (!panel.hidden) drawPanel()
+    toast(item, n)
+    if (prefs.sound) beep(n.loud)
+  }
+
+  function toast(item, n) {
+    const t = el('div', { class: `nt-toast ${n.loud ? 'loud' : ''}`, role: 'status' },
+      el('span', { class: 'nt-icon' }, item.photo ? face({ photo: item.photo }) : item.icon),
+      el('div', null, el('div', { class: 'nt-title' }, item.title), item.body && el('div', { class: 'nt-body' }, item.body)),
+      el('button', { type: 'button', class: 'nt-x', 'aria-label': 'Dismiss', onClick: e => { e.stopPropagation(); dismiss(t) } }, '×'))
+    t.addEventListener('click', () => { markRead(item.id); go(item.tab); dismiss(t) })
+    stack.prepend(t)
+    while (stack.children.length > 4) stack.lastElementChild.remove()
+    if (!n.sticky) setTimeout(() => dismiss(t), SHOW_MS)
+  }
+
+  function dismiss(t) {
+    if (!t.isConnected || t.classList.contains('out')) return
+    t.classList.add('out')
+    setTimeout(() => t.remove(), 200)
+  }
+
+  function go(tab) {
+    if (!tab || typeof S === 'undefined') return
+    close()
+    S.tab = tab
+    render()
+  }
+
+  let audio = null
+  function beep(loud) {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)()
+      const o = audio.createOscillator()
+      const g = audio.createGain()
+      o.type = 'sine'
+      o.frequency.value = loud ? 880 : 660
+      g.gain.setValueAtTime(0.0001, audio.currentTime)
+      g.gain.exponentialRampToValueAtTime(0.12, audio.currentTime + 0.02)
+      g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.25)
+      o.connect(g).connect(audio.destination)
+      o.start()
+      o.stop(audio.currentTime + 0.26)
+    } catch (e) { /* no sound here */ }
+  }
+
+  function markRead(id) {
+    log = log.map(n => (id == null || n.id === id ? Object.assign({}, n, { read: true }) : n))
+    save(LOG_KEY, log)
+    badge()
+  }
+
+  // ── The bell ──
+  // header() makes a fresh one per page; they all show the same count.
+  function bell() {
+    const n = unread()
+    return el('button', {
+      type: 'button', class: 'link nt-bell', 'data-notify-bell': '', 'aria-label': n ? `Notifications, ${n} new` : 'Notifications',
+      onClick: () => (panel.hidden ? openPanel() : close()),
+    }, n ? `🔔 ${n > 99 ? '99+' : n}` : '🔔')
+  }
+  function badge() {
+    const n = unread()
+    for (const b of document.querySelectorAll('[data-notify-bell]')) {
+      b.textContent = n ? `🔔 ${n > 99 ? '99+' : n}` : '🔔'
+      b.setAttribute('aria-label', n ? `Notifications, ${n} new` : 'Notifications')
+    }
+  }
+
+  function openPanel() {
+    // New ones stay highlighted while the panel is open, but stop counting.
+    drawPanel()
+    panel.hidden = false
+    markRead()
+  }
+  function close() {
+    panel.hidden = true
+  }
+
+  function choice(label, key, options) {
+    return el('div', { class: 'nt-pref' }, el('span', null, label), options.map(([v, text]) => el('button', {
+      type: 'button', class: prefs[key] === v ? 'on' : '', onClick: () => { prefs[key] = v; save(PREF_KEY, prefs); drawPanel(); if (key === 'sound' && v) beep() },
+    }, text)))
+  }
+
+  function drawPanel() {
+    const announce = Account.isAdmin() && announceBox()
+    panel.replaceChildren(
+      el('div', { class: 'nt-head' }, el('b', null, 'Notifications'),
+        log.length > 0 && el('button', { type: 'button', onClick: () => { log = []; save(LOG_KEY, log); badge(); drawPanel() } }, 'Clear'),
+        el('button', { type: 'button', 'aria-label': 'Close', onClick: close }, '×')),
+      el('div', { class: 'nt-list' }, log.length
+        ? log.map(n => el('div', { class: `nt-item ${n.read ? '' : 'new'}`, onClick: () => go(n.tab) },
+          el('span', { class: 'nt-icon' }, n.photo ? face({ photo: n.photo }) : n.icon),
+          el('div', null, el('div', { class: 'nt-title' }, n.title), n.body && el('div', { class: 'nt-body' }, n.body), el('time', null, ago(n.at)))))
+        : el('p', { class: 'nt-empty' }, 'Nothing yet. Mentions, class work and announcements show up here.')),
+      el('div', { class: 'nt-prefs' },
+        choice('Chat', 'chat', [['all', 'Every message'], ['mentions', '@mentions'], ['off', 'Off']]),
+        choice('Classes', 'classes', [[true, 'On'], [false, 'Off']]),
+        choice('Sound', 'sound', [[true, 'On'], [false, 'Off']])),
+      announce)
+  }
+
+  function announceBox() {
+    const text = el('textarea', { maxlength: 500, placeholder: 'Announce something to everyone…', 'aria-label': 'Announcement' })
+    const note = el('small', null, 'Pops up for everyone signed in.')
+    const send = el('button', { type: 'button', class: 'on', onClick: async () => {
+      const body = text.value.trim()
+      if (!body) return
+      send.disabled = true
+      const { error } = await auth.from('debrod_announcements').insert({ body, created_by: me.id })
+      send.disabled = false
+      if (error) { note.textContent = error.message; return }
+      text.value = ''
+      note.textContent = 'Sent.'
+    } }, 'Announce')
+    return el('div', { class: 'nt-announce' }, text, el('div', { class: 'row' }, note, send))
+  }
+
+  // ── Sources ──
+  // Chat.html calls this for each new message you aren't looking at.
+  function chat(m, from, channel, mentioned) {
+    if (prefs.chat === 'off' || (prefs.chat === 'mentions' && !mentioned)) return
+    push({ kind: 'chat', title: mentioned ? `${from.display} mentioned you in #${channel}` : `${from.display} in #${channel}`,
+      body: m.body, icon: from.avatar || '💬', photo: from.photo, tab: 'chat', loud: mentioned })
+  }
+
+  async function className(id) {
+    if (classNames.has(id)) return classNames.get(id)
+    const { data } = await auth.from('debrod_classes').select('name').eq('id', id).maybeSingle()
+    const name = (data && data.name) || 'a class'
+    classNames.set(id, name)
+    return name
+  }
+
+  const KIND = { assignment: 'assignment', test: 'test', quiz: 'quiz', project: 'project', reading: 'reading' }
+  async function classWork(w) {
+    if (!prefs.classes || w.created_by === me.id) return
+    const due = new Date(`${w.due}T12:00:00`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+    push({ kind: 'class', title: `New ${KIND[w.kind] || 'assignment'} in ${await className(w.class_id)}`, body: `${w.title} · due ${due}`, icon: '📘', tab: 'study' })
+  }
+
+  async function board(b) {
+    if (!prefs.classes || b.created_by === me.id) return
+    push({ kind: 'board', title: 'New whiteboard', body: b.class_id ? `${b.name} · ${await className(b.class_id)}` : b.name, icon: '🖍️', tab: 'study' })
+  }
+
+  function signup(p) {
+    if (!Account.isAdmin() || p.status !== 'pending') return
+    push({ kind: 'signup', title: 'New sign-up', body: `${p.display} (@${p.username}) is waiting for you in Members.`, icon: '🪪', tab: 'admin', loud: true })
+  }
+
+  function announcement(a) {
+    let seen = 0
+    try { seen = Number(localStorage.getItem(SEEN_KEY)) || 0 } catch (e) { /* private mode */ }
+    if (a.id <= seen) return
+    try { localStorage.setItem(SEEN_KEY, String(a.id)) } catch (e) { /* private mode */ }
+    push({ kind: 'announcement', title: 'Announcement from Huddy', body: a.body, icon: '📣', loud: true, sticky: true })
+  }
+
+  // ── Lifecycle ──
+  // Starts with Chat (App.html render) once you're signed in and approved.
+  async function start() {
+    if (started || typeof Account === 'undefined' || !Account.ready()) return
+    started = true
+    auth = Account.client()
+    me = Object.assign({}, Account.profile())
+    live = auth.channel('debrod-notify')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'debrod_announcements' }, ({ new: a }) => announcement(a))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'debrod_class_work' }, ({ new: w }) => classWork(w))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'debrod_boards' }, ({ new: b }) => board(b))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'debrod_profiles' }, ({ new: p }) => signup(p))
+      .subscribe()
+    // Announcements from while you were away (the last week, newest three).
+    const since = new Date(Date.now() - 7 * 86400000).toISOString()
+    const { data } = await auth.from('debrod_announcements').select('id, body, created_at').gte('created_at', since).order('id', { ascending: false }).limit(3)
+    for (const a of (data || []).reverse()) announcement(a)
+  }
+
+  function stop() {
+    if (!started) return
+    started = false
+    if (live) auth.removeChannel(live)
+    live = null
+    close()
+    stack.replaceChildren()
+  }
+
+  return { start, stop, push, chat, bell, badge }
+})()
+//# sourceURL=debrod/Notify.js
+</script>
