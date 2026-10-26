@@ -34,6 +34,8 @@ keys live in the script's properties instead of environment variables.
 | `Themes.html` | Each page's look (see [Looks](#looks)). |
 | `appsscript.json` | The project manifest. |
 
+Changing these files or adding one? See [SCRIPTS-GUIDE.md](SCRIPTS-GUIDE.md).
+
 ## Set it up
 
 1. Create a Google Doc, then open **Extensions → Apps Script**.
