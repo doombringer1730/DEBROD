@@ -327,21 +327,3 @@ a { color: var(--cyan); }
 .rename { z-index: 4; }
 .rename .card { text-align: left; }
 .grow { flex: 1; }
-
-/* ── Games ────────────────────────────────────────────────────────────── */
-.nav { display: flex; gap: 18px; align-items: center; }
-.nav a.link { text-decoration: none; }
-.row.wrap { flex-wrap: wrap; align-items: center; }
-.panel { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--cyan); border-radius: 6px; padding: 14px; }
-select {
-  font: 14px var(--mono-font);
-  color: inherit;
-  background: rgba(13, 2, 33, 0.9);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 10px 12px;
-}
-select:focus { outline: none; border-color: var(--magenta); box-shadow: var(--glow-magenta); }
-input[type='file'] { width: auto; min-width: 0; font-size: 13px; padding: 9px 10px; cursor: pointer; }
-.poster .cover { aspect-ratio: 3 / 4; }
-.emulator { width: 100%; aspect-ratio: 4 / 3; max-height: 75dvh; border: 1px solid var(--magenta); border-radius: 6px; background: #000; box-shadow: var(--glow-magenta); }

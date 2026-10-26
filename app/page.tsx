@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import Backdrop from './backdrop'
 import Browser from './browser'
 import { logout } from './login/actions'
@@ -14,10 +13,7 @@ export default function Home() {
             <h1 className="wordmark">{siteName}</h1>
             <p className="tagline">Stream search · est. 1984</p>
           </div>
-          <nav className="nav">
-            <Link href="/games" className="link">Games</Link>
-            <form action={logout}><button type="submit" className="link">Sign out</button></form>
-          </nav>
+          <form action={logout}><button type="submit" className="link">Sign out</button></form>
         </header>
         <Browser />
       </main>
