@@ -2,6 +2,8 @@
 
 import { cookies } from 'next/headers'
 import { SESSION_COOKIE, isValidSession } from '@/lib/auth'
+import { parseManifest } from '@/lib/games'
+import { fetchLibrary, libraryBase } from '@/lib/library'
 
 // Server side: the TMDB key stays here, and only a signed-in browser is told
 // the Torrentio URLs (which carry the debrid keys, as its stream links do).
@@ -96,5 +98,18 @@ export async function getStreamSources(kind: Kind, tmdbId: number, season?: numb
     if (rd) sources.push({ service: 'Real-Debrid', url: `${TORRENTIO}/realdebrid=${encodeURIComponent(rd)}/${path}` })
     if (tb) sources.push({ service: 'TorBox', url: `${TORRENTIO}/torbox=${encodeURIComponent(tb)}/${path}` })
     return sources
+  })
+}
+
+// Your games library's games.json, read with GAMES_LIBRARY_KEY. Null when no
+// library is set up, so the page can offer local files only.
+export async function listGames() {
+  return run(async () => {
+    if (!libraryBase()) return null
+    const res = await fetchLibrary('games.json', { signal: AbortSignal.timeout(10_000) })
+    if (!res.ok) throw new Error(`Games library answered ${res.status} for games.json.`)
+    return parseManifest(await res.json().catch(() => {
+      throw new Error('games.json is not valid JSON.')
+    }))
   })
 }

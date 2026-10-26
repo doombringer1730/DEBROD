@@ -52,6 +52,8 @@ All of them are listed in [`.env.example`](.env.example).
 | `TORBOX_API_KEY` | one of these | From TorBox settings. With both set, results are merged. |
 | `SUPABASE_URL` | for watch together | Your Supabase Project URL. |
 | `SUPABASE_ANON_KEY` | for watch together | That project's anon / publishable key. |
+| `GAMES_LIBRARY_URL` | for a games library | A folder of your games with a `games.json` in it. See [Games](#games). |
+| `GAMES_LIBRARY_KEY` | no | The key for that folder, if it's private. |
 | `SITE_NAME` | no | The name in the wordmark and tab title. Defaults to `DEBROD`. |
 | `TORRENTIO_URL` | no | A different Torrentio instance. Defaults to `https://torrentio.strem.fun`. |
 
@@ -82,6 +84,51 @@ It uses Supabase Realtime **broadcast and presence only**: no tables, no
 accounts, nothing stored. Chat disappears on reload. Realtime's "allow public
 access" setting must stay on (it is by default).
 
+## Games
+
+**Games** (top right, or `/games`) is a retro game player in the style of
+gam.onl, built on [EmulatorJS](https://emulatorjs.org): NES, SNES, N64, Game
+Boy, GBA, DS, Genesis, Master System, Game Gear, Saturn, PlayStation,
+TurboGrafx-16, Atari, WonderSwan, Neo Geo Pocket, arcade and more. The
+emulator loads from EmulatorJS's CDN (pinned to 4.2.3); saves and save states
+stay in the browser.
+
+There are two ways to play:
+
+- **Play a file.** Pick a game file from your device. It is read in your
+  browser and never uploaded. The system is guessed from the extension; pick
+  it yourself for `.zip`, `.bin`, `.iso`, `.cue` or `.chd`.
+- **Your library.** Point `GAMES_LIBRARY_URL` at a folder of your own games on
+  any http(s) storage, with an optional `GAMES_LIBRARY_KEY`. The server reads
+  the folder with the key and streams files to signed-in browsers through
+  `/api/games/file/…`, so the key never reaches a browser. The folder needs a
+  `games.json` at its top:
+
+  ```json
+  [
+    { "name": "My Homebrew", "system": "nes", "file": "nes/my-homebrew.nes", "cover": "covers/my-homebrew.png" }
+  ]
+  ```
+
+  `file` and `cover` are paths inside the folder; `cover` is optional.
+  `system` is one of `nes`, `snes`, `n64`, `gb`, `gba`, `nds`, `vb`,
+  `segaMS`, `segaMD`, `segaGG`, `segaCD`, `sega32x`, `segaSaturn`, `psx`,
+  `pce`, `atari2600`, `atari7800`, `lynx`, `jaguar`, `ws`, `ngp`, `coleco`,
+  `3do` or `arcade`. Disc systems (PlayStation, Saturn, Sega CD) and arcade
+  may also need BIOS files, which EmulatorJS doesn't ship.
+
+  A private **Supabase Storage** bucket works well: create a bucket (say
+  `roms`), upload your files and `games.json`, then set
+  `GAMES_LIBRARY_URL=https://<project>.supabase.co/storage/v1/object/authenticated/roms/`
+  and `GAMES_LIBRARY_KEY` to the project's **service_role / secret** key
+  (keep that one server-side only; it can read and write everything in the
+  project). Vercel functions have time and size limits, so very large disc
+  images may not get through; cartridge games are small.
+
+PSP and DOS are left out: their cores need cross-origin isolation, which
+would break the rest of the site. Only play games you own and have the right
+to copy.
+
 ## How it works
 
 - `proxy.ts` sends anyone without a valid session cookie to `/login`. The
@@ -109,7 +156,7 @@ access" setting must stay on (it is by default).
 
 ## Legal
 
-This project hosts no media and links to none. It is a search interface for
+This project hosts no media or games and links to none. It is a search interface for
 services you subscribe to yourself. You are responsible for what you stream
 and for complying with the copyright law of your country and the terms of
 your debrid provider. Use it only for content you have the right to watch.
