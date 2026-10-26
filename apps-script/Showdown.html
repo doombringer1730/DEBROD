@@ -9,7 +9,9 @@
 // - Free-for-all battles for three or four, and 2 vs 2 Multi battles,
 //   against CPUs or friends (the host's page runs those too, with the CPU in
 //   any empty seat).
-// - Mega Evolution formats, where every trainer gets a Mega.
+// - Mega Evolution formats, where every trainer gets a Mega, and Draft
+//   Champions, a Free-for-all draft whose pool has Mega Stone holders
+//   (one each at most), in the spirit of Pokémon Champions.
 // - Random Pokémon (random battles, drafts, the tower) are sometimes shiny.
 // - A team builder with Showdown's import/export text, saved in this
 //   browser.
@@ -30,6 +32,8 @@ const SHOWDOWN_FORMATS = [
     ['debrod-draftfreeforall', 'Draft Free-for-all (4 players)'],
     ['debrod-draftfreeforall3', 'Draft Free-for-all (3 players)'],
     ['debrod-draftmulti', 'Draft Multi (2 vs 2)'],
+    ['debrod-draftchampionsfreeforall', 'Draft Champions (Free-for-all, 4 players, Megas in the pool)'],
+    ['debrod-draftchampionsfreeforall3', 'Draft Champions (Free-for-all, 3 players)'],
     ['debrod-tower', 'Battle Tower (a streak against the CPU)'],
   ]],
   ['Group battles', [
@@ -87,6 +91,8 @@ const SHOWDOWN_SIM_FORMATS = {
   'debrod-draftfreeforall': 'gen9freeforallrandombattle',
   'debrod-draftfreeforall3': 'gen9freeforallrandombattle',
   'debrod-draftmulti': 'gen9multirandombattle',
+  'debrod-draftchampionsfreeforall': 'gen9freeforallrandombattle',
+  'debrod-draftchampionsfreeforall3': 'gen9freeforallrandombattle',
   'debrod-freeforall3': 'gen9freeforallrandombattle',
   // Mega singles runs on Gen 7, where its sets come from; the group ones
   // are Gen 9 battles with a Mega slipped into each team.
@@ -222,6 +228,7 @@ function showdown(host, ctx, opts) {
   const isMulti = id => /multi/.test(id)
   const isThree = id => /freeforall3$/.test(id)
   const isMega = id => id.startsWith('debrod-mega')
+  const isChampions = id => id.startsWith('debrod-draftchampions')
   // Who plays: two, three or four seats (a three-way leaves p4 empty).
   const seatsOf = id => (isThree(id) ? ['p1', 'p2', 'p3'] : isFour(id) ? SHOWDOWN_FOUR : ['p1', 'p2'])
   const simFormat = id => SHOWDOWN_SIM_FORMATS[id] || id
@@ -402,7 +409,8 @@ function showdown(host, ctx, opts) {
           ? 'Three trainers, one Pokémon out each, everyone against everyone. Play with up to two friends; the CPU takes any empty seat.'
           : 'Four trainers, one Pokémon out each, everyone against everyone. Play with up to three friends; the CPU takes any empty seat.'),
       isDraft(format) && el('p', { class: 'muted small' }, isFour(format)
-        ? `${isThree(format) ? 'Three' : 'Four'} trainers take turns picking from ${SHOWDOWN_DRAFT_FOUR.pool} random Pokémon (snake order) until each has ${SHOWDOWN_DRAFT_FOUR.picks}, then it's ${isMulti(format) ? 'you and a partner against the other two' : 'everyone against everyone'}. Draft with up to ${isThree(format) ? 'two' : 'three'} friends; the CPU takes any empty seat.`
+        ? `${isThree(format) ? 'Three' : 'Four'} trainers take turns picking from ${SHOWDOWN_DRAFT_FOUR.pool} random Pokémon (snake order) until each has ${SHOWDOWN_DRAFT_FOUR.picks}, then it's ${isMulti(format) ? 'you and a partner against the other two' : 'everyone against everyone'}. Draft with up to ${isThree(format) ? 'two' : 'three'} friends; the CPU takes any empty seat.` +
+          (isChampions(format) ? ` ${seatsOf(format).length + 2} of the pool hold their Mega Stone, and each trainer can draft one Mega, so grab one early. Tap Mega Evolve before you pick a move (once a battle).` : '')
         : `Take turns picking from ${SHOWDOWN_DRAFT_POOL} random Pokémon (snake order) until you each have ${SHOWDOWN_DRAFT_PICKS}, then battle with what you drafted.`),
       el('div', { class: 'row pk-menu-buttons' },
         el('button', { type: 'button', class: 'primary grow', onClick: () => { if (okName()) startCpu() } }, isFour(format) ? `Play ${seatsOf(format).length - 1} CPUs` : 'Battle the CPU'),
@@ -774,20 +782,51 @@ function showdown(host, ctx, opts) {
     }
     return out
   }
+  const isMegaSet = set => !!(set && set.item && PS.Dex.items.get(set.item).megaStone)
+  // Draft Champions: ordinary sets plus a few Mega holders (all different
+  // species), shuffled together.
+  function championsPool(size, megas) {
+    const base = set => PS.Dex.species.get(set.species).baseSpecies
+    const out = []
+    const seen = new Set()
+    for (const m of megaPool()) {
+      if (out.length >= megas) break
+      if (seen.has(base(m))) continue
+      seen.add(base(m))
+      out.push(JSON.parse(JSON.stringify(m)))
+    }
+    for (let tries = 0; out.length < size && tries < 16; tries++) {
+      for (const set of PS.Teams.generate('gen9randombattle')) {
+        if (isMegaSet(set) || seen.has(base(set))) continue
+        seen.add(base(set))
+        out.push(set)
+        if (out.length >= size) break
+      }
+    }
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[out[i], out[j]] = [out[j], out[i]]
+    }
+    return shinify(out)
+  }
   // Two drafting (p1, p2, p2, p1…) or four (p1–p4, then back).
   function newDraft(fid, names) {
     const sides = seatsOf(fid)
     const each = isFour(fid) ? SHOWDOWN_DRAFT_FOUR.picks : SHOWDOWN_DRAFT_PICKS
     const order = []
     for (let r = 0; order.length < each * sides.length; r++) order.push(...(r % 2 ? sides.slice().reverse() : sides))
-    const pool = draftPool(isDoubles(fid), isFour(fid) ? SHOWDOWN_DRAFT_FOUR.pool : SHOWDOWN_DRAFT_POOL)
+    const pool = isChampions(fid)
+      ? championsPool(SHOWDOWN_DRAFT_FOUR.pool, sides.length + 2)
+      : draftPool(isDoubles(fid), isFour(fid) ? SHOWDOWN_DRAFT_FOUR.pool : SHOWDOWN_DRAFT_POOL)
     return { id: randomId(), fid, pool, picks: Object.fromEntries(sides.map(x => [x, []])), order, at: 0, names, sides, each }
   }
   const draftSides = D => D.sides || ['p1', 'p2']
   const draftDone = D => D.at >= D.order.length
   const draftTaken = D => new Set(draftSides(D).flatMap(x => D.picks[x] || []))
+  // In Draft Champions a side can hold one Mega Stone; nobody can use a second.
+  const draftAllowed = (D, side, idx) => !(isChampions(D.fid) && isMegaSet(D.pool[idx]) && (D.picks[side] || []).some(j => isMegaSet(D.pool[j])))
   function draftPick(D, side, idx) {
-    if (draftDone(D) || D.order[D.at] !== side || !D.pool[idx] || draftTaken(D).has(idx)) return false
+    if (draftDone(D) || D.order[D.at] !== side || !D.pool[idx] || draftTaken(D).has(idx) || !draftAllowed(D, side, idx)) return false
     D.picks[side].push(idx)
     D.at++
     return true
@@ -801,11 +840,12 @@ function showdown(host, ctx, opts) {
     let best = -1
     let bestScore = -Infinity
     D.pool.forEach((set, i) => {
-      if (taken.has(i)) return
+      if (taken.has(i) || !draftAllowed(D, side, i)) return
       const types = PS.Dex.species.get(set.species).types
       // Easy drafts loosely, Expert barely leaves it to chance.
       const noise = { easy: 400, normal: 90, hard: 60, expert: 25 }[level] || 90
-      const score = bst(set) * ((set.level || 100) / 100) + types.filter(t => !have.has(t)).length * 40 + Math.random() * noise
+      // A Mega is worth about a hundred base stats more than it shows.
+      const score = (bst(set) + (isMegaSet(set) ? 100 : 0)) * ((set.level || 100) / 100) + types.filter(t => !have.has(t)).length * 40 + Math.random() * noise
       if (score > bestScore) { bestScore = score; best = i }
     })
     return best
@@ -843,9 +883,10 @@ function showdown(host, ctx, opts) {
       el('div', { class: 'pk-draft-pool' }, D.pool.map((set, i) => {
         const sp = PS.Dex.species.get(set.species)
         const who = owner(i)
+        const blocked = !who && !opts.spectator && !draftAllowed(D, mySide, i)
         return el('button', {
-          type: 'button', class: `pk-draft-card ${who ? `taken ${who === mySide && !opts.spectator ? 'mine' : 'theirs'}` : ''}`,
-          disabled: !myTurn || taken.has(i),
+          type: 'button', class: `pk-draft-card ${who ? `taken ${who === mySide && !opts.spectator ? 'mine' : 'theirs'}` : ''} ${blocked ? 'blocked' : ''}`,
+          disabled: !myTurn || taken.has(i) || blocked,
           title: `${set.species} @ ${set.item || 'no item'}\n${set.ability}\n${set.moves.map(m => PS.Dex.moves.get(m).name).join(', ')}`,
           onClick: () => onPick(i),
         },
@@ -854,6 +895,7 @@ function showdown(host, ctx, opts) {
           el('span', { class: 'pk-types' }, sp.types.map(t => el('span', { class: 'pk-type', style: `background: ${TYPE_COLORS[t]}` }, t))),
           el('span', { class: 'muted small' }, `L${set.level || 100} · BST ${bst(set)}`),
           el('span', { class: 'muted small pk-draft-moves' }, set.moves.map(m => PS.Dex.moves.get(m).name).join(' · ')),
+          isChampions(D.fid) && isMegaSet(set) && el('span', { class: 'pk-draft-mega', title: blocked ? 'You already drafted a Mega' : `Holds ${set.item}` }, 'Mega'),
           who && el('span', { class: 'pk-draft-owner' }, who === mySide && !opts.spectator ? 'Yours' : D.names[who]))
       }))))
   }
@@ -2192,7 +2234,7 @@ function showdown(host, ctx, opts) {
       const pct = poke.maxhp ? Math.round((poke.hp / poke.maxhp) * 100) : 0
       return [
         el('p', { class: 'name' }, `${poke.name}${poke.name !== sp.name ? ` (${sp.name})` : ''} `, el('span', { class: 'muted' }, `L${poke.level}`)),
-        typeChips(poke.types && poke.types.length ? poke.types : sp.types),
+        typeChips(monTypes(poke)),
         el('p', null, `HP ${pct}%${poke.status ? ` · ${poke.status.toUpperCase()}` : ''}`),
         el('p', null, `${poke.ability ? 'Ability' : 'Possible abilities'}: ${abilities.join(', ')}`),
         el('p', null, `Item: ${poke.item ? PS.Dex.items.get(poke.item).name : poke.lastItem ? `none (had ${PS.Dex.items.get(poke.lastItem).name})` : 'unknown'}`),
@@ -2431,6 +2473,14 @@ function showdown(host, ctx, opts) {
     const typeOf = id => PS.Dex.moves.get(id).type || 'Normal'
 
     const genDex = () => PS.Dex.forGen((battle.gen && battle.gen.num) || 9)
+    // A Pokémon's types. The battle's own data throws for species it doesn't
+    // have (Pidgeot or Mawile from a Mega format, in a Gen 9 battle), so fall
+    // back on the full Pokédex.
+    function monTypes(f) {
+      let types = null
+      try { types = f.types } catch (e) { /* species missing from this gen's data */ }
+      return types && types.length ? types : genDex().species.get(f.speciesForme).types
+    }
     // How a move fares against each Pokémon across the field (null for
     // status moves).
     function matchup(id) {
@@ -2439,7 +2489,7 @@ function showdown(host, ctx, opts) {
       if (!move.exists || move.category === 'Status') return null
       const foes = four ? opponents().map(fieldMon) : slots.map(i => battle[foeSide].active[i])
       return foes.filter(f => f && !f.fainted).map(f => {
-        const types = f.types && f.types.length ? f.types : dex.species.get(f.speciesForme).types
+        const types = monTypes(f)
         if (!dex.getImmunity(move.type, types)) return 0
         return Math.pow(2, dex.getEffectiveness(move.type, types))
       })
@@ -2450,7 +2500,7 @@ function showdown(host, ctx, opts) {
       if (!move.exists) return 0
       if (move.category === 'Status') return 25
       const mine = myLive(slot)
-      const stab = mine && mine.types && mine.types.includes(move.type) ? 1.5 : 1
+      const stab = mine && monTypes(mine).includes(move.type) ? 1.5 : 1
       const best = Math.max(0, ...(matchup(id) || [1]))
       return (move.basePower || 70) * stab * best * (move.accuracy === true ? 1 : move.accuracy / 100)
     }

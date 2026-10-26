@@ -316,6 +316,12 @@ battle, the guest sends their moves, and anyone else in the room watches.
     of 24, then it's everyone against everyone. Draft against three CPUs or
     with up to three friends; the CPU picks for any empty seat, and for
     anyone who leaves mid-draft.
+  - **Draft Champions:** a Free-for-all draft (four players, or three) in
+    the spirit of Pokémon Champions: six of the 24 in the pool (five with
+    three players) hold their Mega Stone, marked **Mega**, and each trainer
+    can draft one, so grab one early. Showdown's engine doesn't have
+    Champions' own rules yet, so the battle itself is a Gen 9 Free-for-all
+    with Mega Evolution.
   - **4 players:** Free-for-all Random Battle (everyone against everyone,
     last one standing) and Multi Random Battle (2 vs 2, one Pokémon each).
     Play three CPUs, or open a room for up to three friends; the CPU takes
