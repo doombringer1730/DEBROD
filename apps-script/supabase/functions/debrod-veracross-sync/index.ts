@@ -1,3 +1,6 @@
+// @ts-nocheck: Deno code. The Next.js site type-checks every .ts file in
+// the repo and has no Deno types, so it skips this one. veracross.ts, which
+// holds the logic, is still checked by both.
 // debrod-veracross-sync: brings pilot students' homework in from Veracross
 // and pays coins for what they've turned in, as a Supabase Edge Function.
 //
