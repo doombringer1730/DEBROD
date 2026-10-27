@@ -1,0 +1,465 @@
+<style>
+/* ── Homework: school work from Veracross, inside Study (most of the look is Study's .st- styles) ── */
+.hw-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.hw-head .grow { flex: 1; min-width: 0; }
+.hw-coins { font: 700 16px var(--mono-font); color: var(--yellow); white-space: nowrap; }
+.hw-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hw-row .grow { flex: 1; min-width: 0; }
+.hw-earn { font: 700 12px var(--mono-font); color: var(--yellow); white-space: nowrap; }
+.hw-earn.off { color: var(--muted); font-weight: 400; }
+.hw-class { font-size: 12px; opacity: 0.8; }
+.hw-meter { height: 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.25); overflow: hidden; }
+.hw-meter > span { display: block; height: 100%; background: var(--yellow); }
+.hw-form { display: flex; flex-direction: column; gap: 10px; }
+.hw-form .row { gap: 8px; flex-wrap: wrap; }
+.hw-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.hw-form input[type=number] { width: 100px; }
+.hw-form label.hw-check { flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px; }
+.hw-form label.hw-check input { width: auto; flex: none; margin: 0; }
+.hw-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.hw-table th, .hw-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(127, 127, 127, 0.25); vertical-align: middle; }
+.hw-table th { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.75; }
+.hw-scroll { overflow-x: auto; }
+.hw-note { font-size: 13px; line-height: 1.5; opacity: 0.85; }
+.hw-gate { max-width: 460px; margin: 24px auto; text-align: center; align-items: center; }
+.hw-gate .hw-big { font: 700 40px var(--mono-font); color: var(--yellow); margin: 0; }
+.hw-timer { position: fixed; right: 16px; bottom: 16px; z-index: 40; padding: 6px 14px; border-radius: 20px; font: 700 14px var(--mono-font); background: var(--panel-solid, #160934); color: var(--yellow); border: 1px solid var(--yellow); box-shadow: 0 0 12px rgba(255, 211, 25, 0.35); }
+.hw-timer.low { color: var(--bad, #ff5a5a); border-color: currentColor; }
+.t-study .hw-coins, .t-study .hw-earn { color: #8a6100; }
+.t-study .hw-meter > span { background: #8a6100; }
+.t-study .hw-table th { font-family: var(--sc-label); color: var(--sc-blue); }
+</style>
+<script>
+// Homework: the school homework pilot. A student's assignments and due
+// dates come from Veracross through the debrod-veracross-sync Edge Function
+// (read-only), turning work in earns coins (paid by the database, once per
+// assignment), and coins buy arcade time up to a daily limit. Nothing here
+// can award coins or change a status: the page only reads its own rows and
+// calls debrod_hw_spend(). See supabase/homework.sql and
+// supabase/README-homework.md. Shown inside Study (Study.html calls view()
+// and panel()); the arcade asks gate() before starting a game.
+
+const Homework = (() => {
+  let auth = null
+  let started = false
+  let loaded = false
+  let loading = null
+  let error = ''
+  let me = null          // debrod_hw_me(): balance, today's minutes, settings; null if not in the pilot
+  let work = []          // { id, title, due, status, className }
+  let ledger = []
+  let ui = null          // Study's helpers
+  let timerEl = null
+  let timerTick = null
+  let onExpire = null    // the arcade's "back to the list"
+  let refreshTimer = null
+  // Huddy's page
+  let roster = null
+  let runs = []
+  let members = []
+  let syncing = false
+  let syncMsg = ''
+
+  const isAdmin = () => typeof Account !== 'undefined' && Account.isAdmin()
+  const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+  const when = iso => (iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'never')
+  const sessionEnds = () => (me && me.session_ends_at ? new Date(me.session_ends_at).getTime() : 0)
+  const inSession = () => sessionEnds() > Date.now()
+  const dueText = due => (ui && ui.dueLabel && due ? ui.dueLabel(due) : { text: due || 'no due date', tone: 'far' })
+  const REASONS = { on_time: 'Turned in on time', late: 'Turned in late', arcade: 'Arcade time', adjust: 'Adjustment' }
+
+  // ── Data ──
+  function load() {
+    if (!auth) return Promise.resolve()
+    if (loading) return loading
+    loading = (async () => {
+      const r = await auth.rpc('debrod_hw_me')
+      if (r.error) { error = r.error.message; return }
+      me = r.data || null
+      if (me) {
+        const [s, a, c, l] = await Promise.all([
+          auth.from('debrod_hw_status').select('assignment_id, status'),
+          auth.from('debrod_hw_assignments').select('id, class_id, title, due'),
+          auth.from('debrod_hw_classes').select('id, name'),
+          auth.from('debrod_hw_ledger').select('id, amount, reason, assignment_id, minutes, created_at').order('created_at', { ascending: false }).limit(50),
+        ])
+        const bad = [s, a, c, l].find(x => x.error)
+        if (bad) { error = bad.error.message; return }
+        const byId = new Map((a.data || []).map(x => [x.id, x]))
+        const names = new Map((c.data || []).map(x => [x.id, x.name]))
+        work = (s.data || []).map(x => {
+          const as = byId.get(x.assignment_id)
+          return as ? { id: as.id, title: as.title, due: as.due, status: x.status, className: names.get(as.class_id) || '' } : null
+        }).filter(Boolean)
+        ledger = l.data || []
+      } else { work = []; ledger = [] }
+      error = ''
+      loaded = true
+      drawTimer()
+    })().finally(() => { loading = null; if (ui) ui.refresh(); if (typeof hubRefresh === 'function') hubRefresh() })
+    return loading
+  }
+
+  // Once you're signed in (Study's connect).
+  function start() {
+    if (started || typeof Account === 'undefined' || !Account.ready()) return
+    auth = Account.client()
+    if (!auth) return
+    started = true
+    load()
+    // New turn-ins arrive with the sync, a few times a school day.
+    refreshTimer = setInterval(() => { if (!document.hidden) load() }, 5 * 60 * 1000)
+  }
+  function stop() {
+    clearInterval(refreshTimer)
+    started = loaded = false
+    auth = me = null
+    work = []; ledger = []; roster = null
+    stopTimer()
+  }
+
+  // ── Arcade time ──
+  async function spend() {
+    const { data, error: e } = await auth.rpc('debrod_hw_spend')
+    if (e) { tell(e.message); return false }
+    await load()
+    if (data && ui) ui.pop(`🕹️ Arcade open until ${new Date(data).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`)
+    return true
+  }
+
+  function stopTimer() {
+    clearInterval(timerTick)
+    timerTick = null
+    if (timerEl) timerEl.remove()
+    timerEl = null
+  }
+  // A countdown in the corner while a session runs. When it ends, the
+  // arcade goes back to its list.
+  function drawTimer() {
+    if (!inSession()) { stopTimer(); return }
+    if (!timerEl) { timerEl = el('div', { class: 'hw-timer', role: 'status' }); document.body.append(timerEl) }
+    const tick = () => {
+      const left = sessionEnds() - Date.now()
+      if (left <= 0) {
+        stopTimer()
+        if (me) me.session_ends_at = null
+        if (onExpire) { const f = onExpire; onExpire = null; f() }
+        tell('Arcade time is up. Turn in more homework to earn more.')
+        return
+      }
+      const s = Math.ceil(left / 1000)
+      timerEl.textContent = `🕹️ ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+      timerEl.classList.toggle('low', s <= 60)
+    }
+    tick()
+    if (!timerTick) timerTick = setInterval(tick, 1000)
+  }
+
+  // The arcade calls this before starting a game. True means it drew the
+  // "spend coins" card into `host` instead, and the game shouldn't start.
+  // Only pilot students are asked, and only while the lock is on.
+  // `resume` starts the game, `back` returns to the arcade's list.
+  function gate(host, resume, back) {
+    // If the pilot can't be checked (say Supabase has no homework tables
+    // yet), the arcade works as usual rather than locking everyone out.
+    if (!started || (!loaded && error)) return false
+    if (!loaded) {
+      host.replaceChildren(el('div', { class: 'card stack hw-gate' }, el('p', { class: 'muted' }, 'Checking your coins…')))
+      load().then(resume)
+      return true
+    }
+    if (!me || !me.settings.lock_arcade) return false
+    if (inSession()) { onExpire = back; drawTimer(); return false }
+    const st = me.settings
+    const left = Math.max(0, st.daily_cap_minutes - me.minutes_today)
+    const canAfford = me.balance >= st.session_cost
+    const canFit = left >= st.session_minutes
+    host.replaceChildren(el('div', { class: 'card stack hw-gate' },
+      el('p', { class: 'name' }, '🪙 Spend coins to play'),
+      el('p', { class: 'hw-big' }, me.balance.toLocaleString()),
+      el('p', { class: 'muted small' }, `${st.session_minutes} minutes of arcade costs ${st.session_cost} coins. You can play ${st.daily_cap_minutes} minutes a day; ${left} left today.`),
+      el('button', { type: 'button', class: 'primary', disabled: !canAfford || !canFit, onClick: async () => { if (await spend()) { onExpire = back; resume() } } },
+        `Spend ${st.session_cost} for ${st.session_minutes} minutes`),
+      !canAfford && el('p', { class: 'muted small' }, `Turn in homework to earn more: ${st.coins_on_time} coins on time, ${st.coins_late} late.`),
+      canAfford && !canFit && el('p', { class: 'muted small' }, 'That\'s today\'s arcade time used up. It resets at midnight.'),
+      el('button', { type: 'button', class: 'link', onClick: () => { if (typeof S !== 'undefined') { S.tab = 'study'; render(); if (typeof Study !== 'undefined') Study.open('homework') } } }, 'See my homework ›'),
+      el('button', { type: 'button', class: 'link', onClick: back }, '‹ Arcade')))
+    return true
+  }
+
+  // ── Study's home panel ──
+  function panel(helpers) {
+    ui = helpers
+    if (!started || (!loaded && error && !isAdmin())) return null
+    if (!loaded) return el('div', { class: 'st-w st-span4' }, el('h2', null, '🏫 Homework'), el('p', { class: 'st-sub' }, error ? `Couldn't load homework: ${error}` : 'Loading…'))
+    if (!me) {
+      if (!isAdmin()) return null
+      return el('button', { type: 'button', class: 'st-w st-span4', onClick: () => ui.go({ name: 'homework-admin' }) },
+        el('h2', null, '🏫 Homework pilot'), el('p', { class: 'st-sub' }, 'Link students, run a sync and change the coin rules ›'))
+    }
+    const today = todayKey()
+    const open = work.filter(w => w.status === 'pending' || w.status === 'missing')
+    const over = open.filter(w => w.due && w.due < today).length
+    const soon = open.filter(w => !w.due || w.due >= today).length
+    return el('button', { type: 'button', class: 'st-w st-span4', onClick: () => ui.go({ name: 'homework' }) },
+      el('h2', null, '🏫 Homework', over > 0 && el('span', { class: 'st-badge' }, String(over))),
+      el('div', { class: 'hw-row' },
+        el('span', { class: 'grow st-sub' }, [over && `${over} overdue`, `${soon} coming up`].filter(Boolean).join(' · ')),
+        el('span', { class: 'hw-coins' }, `🪙 ${me.balance.toLocaleString()}`)),
+      el('p', { class: 'st-sub' }, 'From Veracross. Turn work in to earn arcade time ›'))
+  }
+
+  // ── Pages ──
+  function view(v, helpers) {
+    ui = helpers
+    if (!started) return el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, 'Sign in to see your homework.'))
+    if (v.name === 'homework-admin') return isAdmin() ? adminPage() : studentPage()
+    return studentPage()
+  }
+  const back = (label, to) => el('button', { type: 'button', class: 'link st-back', onClick: () => ui.go(to) }, `‹ ${label}`)
+
+  function workRow(w) {
+    const done = w.status === 'turned_in' || w.status === 'late'
+    const dl = dueText(w.due)
+    const st = me.settings
+    const label = w.status === 'turned_in' ? 'turned in'
+      : w.status === 'late' ? 'turned in late'
+        : w.status === 'excused' ? 'excused'
+          : w.status === 'missing' ? `missing · ${dl.text}` : dl.text
+    const earn = w.status === 'turned_in' ? `+${st.coins_on_time}`
+      : w.status === 'late' ? `+${st.coins_late}`
+        : w.status === 'excused' ? '' : `+${st.coins_on_time} if on time`
+    return el('div', { class: `st-item ${done ? 'done' : dl.tone === 'over' || w.status === 'missing' ? 'over' : ''}` },
+      el('div', { class: 'main' },
+        el('p', null, w.title),
+        el('p', { class: `st-due ${done ? 'st-good' : w.status === 'missing' ? 'over' : dl.tone}` }, [w.className, label].filter(Boolean).join(' · '))),
+      earn && el('span', { class: `hw-earn ${done ? '' : 'off'}` }, earn))
+  }
+
+  function studentPage() {
+    if (!loaded) return el('div', { class: 'stack' }, back('Study', { name: 'home' }), el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, error ? `Couldn't load homework: ${error}` : 'Loading homework…')))
+    if (!me) {
+      return el('div', { class: 'stack' },
+        back('Study', { name: 'home' }),
+        el('div', { class: 'st-w stack' },
+          el('h2', null, '🏫 Homework pilot'),
+          el('p', { class: 'hw-note' }, 'This is a small, opt-in pilot: your assignments and due dates come from Veracross, and turning work in earns coins for arcade time. It never changes anything in Veracross and never sees grades.'),
+          el('p', { class: 'hw-note' }, 'You\'re not in it. To join, hand in the signed opt-in form, and Huddy will add you.'),
+          isAdmin() && el('button', { type: 'button', class: 'primary', onClick: () => ui.go({ name: 'homework-admin' }) }, 'Run the pilot ›')))
+    }
+    const today = todayKey()
+    const st = me.settings
+    const byDue = (a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999'))
+    const open = work.filter(w => w.status === 'pending' || w.status === 'missing')
+    const overdue = open.filter(w => w.due && w.due < today).sort(byDue)
+    const soon = open.filter(w => !w.due || w.due >= today).sort(byDue)
+    const done = work.filter(w => w.status === 'turned_in' || w.status === 'late' || w.status === 'excused').sort((a, b) => byDue(b, a)).slice(0, 20)
+    const left = Math.max(0, st.daily_cap_minutes - me.minutes_today)
+    const pct = st.daily_cap_minutes ? Math.min(100, Math.round((me.minutes_today / st.daily_cap_minutes) * 100)) : 100
+    const titles = new Map(work.map(w => [w.id, w.title]))
+
+    return el('div', { class: 'stack' },
+      back('Study', { name: 'home' }),
+      el('div', { class: 'st-head' },
+        el('div', { class: 'hw-head' },
+          el('div', { class: 'grow' }, el('p', { class: 'st-eyebrow' }, 'From Veracross'), el('h1', { class: 'st-title' }, 'Homework')),
+          el('span', { class: 'hw-coins' }, `🪙 ${me.balance.toLocaleString()}`)),
+        el('div', { class: 'row' },
+          isAdmin() && el('button', { type: 'button', onClick: () => ui.go({ name: 'homework-admin' }) }, 'Run the pilot'),
+          el('button', { type: 'button', onClick: () => load() }, '↻ Refresh'))),
+      el('div', { class: 'st-w' },
+        el('h2', null, `⏰ Overdue (${overdue.length})`),
+        overdue.length ? el('div', { class: 'st-list' }, overdue.map(workRow)) : el('p', { class: 'st-empty' }, 'Nothing overdue. Nice.')),
+      el('div', { class: 'st-w' },
+        el('h2', null, `📌 Due soon (${soon.length})`),
+        soon.length ? el('div', { class: 'st-list' }, soon.map(workRow)) : el('p', { class: 'st-empty' }, 'Nothing due in the next three weeks.')),
+      el('div', { class: 'st-w' },
+        el('h2', null, '🕹️ Arcade time'),
+        el('div', { class: 'hw-meter', role: 'img', 'aria-label': `${me.minutes_today} of ${st.daily_cap_minutes} minutes used today` }, el('span', { style: `width: ${pct}%` })),
+        el('p', { class: 'st-sub' }, `Today: ${me.minutes_today} of ${st.daily_cap_minutes} minutes. ${st.session_minutes} minutes cost ${st.session_cost} coins.`),
+        inSession()
+          ? el('p', { class: 'st-good' }, `Playing until ${new Date(me.session_ends_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}.`)
+          : el('div', { class: 'row' },
+            el('button', {
+              type: 'button', class: 'primary', disabled: me.balance < st.session_cost || left < st.session_minutes,
+              onClick: async () => { if (await spend() && typeof S !== 'undefined') { S.tab = 'arcade'; render() } },
+            }, `Spend ${st.session_cost} for ${st.session_minutes} minutes`),
+            me.balance < st.session_cost && el('span', { class: 'st-sub' }, `${st.session_cost - me.balance} more to go`),
+            me.balance >= st.session_cost && left < st.session_minutes && el('span', { class: 'st-sub' }, 'Used up for today'))),
+      el('div', { class: 'st-w' },
+        el('h2', null, `✅ Turned in (${done.length})`),
+        done.length ? el('div', { class: 'st-list' }, done.map(workRow)) : el('p', { class: 'st-empty' }, 'Nothing yet. Turn something in and it shows up after the next sync.')),
+      el('div', { class: 'st-w' },
+        el('h2', null, '🪙 Coins'),
+        ledger.length
+          ? el('div', { class: 'st-list' }, ledger.slice(0, 20).map(l => el('div', { class: 'st-item' },
+            el('div', { class: 'main' },
+              el('p', null, REASONS[l.reason] || l.reason),
+              el('p', { class: 'st-sub' }, [l.assignment_id && titles.get(l.assignment_id), l.minutes && `${l.minutes} min`, when(l.created_at)].filter(Boolean).join(' · '))),
+            el('span', { class: `hw-earn ${l.amount < 0 ? 'off' : ''}` }, `${l.amount > 0 ? '+' : ''}${l.amount}`))))
+          : el('p', { class: 'st-empty' }, `Coins arrive with each sync: ${st.coins_on_time} for on-time work, ${st.coins_late} for late.`)),
+      el('div', { class: 'st-w' },
+        el('p', { class: 'hw-note' }, `Last synced from Veracross: ${when(me.last_synced_at)}. Syncs run a few times each school day. Only due dates and whether work is turned in are copied; never grades or scores.`),
+        el('div', { class: 'row' },
+          el('span', { class: 'grow' }),
+          el('button', { type: 'button', onClick: async () => {
+            if (!(await ask('Leave the homework pilot? Your synced assignments and all your coins are deleted now, and can\'t be brought back.', 'Leave and delete'))) return
+            const { error: e } = await auth.rpc('debrod_hw_opt_out')
+            if (e) return tell(e.message)
+            await load()
+            ui.pop('You\'ve left the pilot. Your data is deleted.')
+          } }, 'Leave the pilot'))))
+  }
+
+  // ── Huddy's page ──
+  async function loadAdmin() {
+    const [r, s, p, set] = await Promise.all([
+      auth.rpc('debrod_hw_roster'),
+      auth.from('debrod_hw_sync_runs').select('id, started_at, finished_at, source, ok, students, assignments, awarded, error').order('started_at', { ascending: false }).limit(10),
+      auth.from('debrod_profiles').select('id, username, display').eq('status', 'approved').order('display'),
+      auth.from('debrod_hw_settings').select('*').eq('id', 1).single(),
+    ])
+    const bad = [r, s, p, set].find(x => x.error)
+    if (bad) { tell(bad.error.message); return }
+    roster = { students: r.data || [], settings: set.data }
+    runs = s.data || []
+    members = p.data || []
+    if (ui) ui.redraw()
+  }
+
+  async function syncNow() {
+    syncing = true
+    syncMsg = ''
+    if (ui) ui.redraw()
+    try {
+      const { data, error: e } = await auth.functions.invoke('debrod-veracross-sync', { body: {} })
+      if (e) {
+        let msg = e.message
+        try { const b = await e.context.json(); if (b && b.error) msg = b.error } catch (x) { /* no body */ }
+        syncMsg = `Sync failed: ${msg}`
+      } else {
+        syncMsg = `Synced ${plural(data.students, 'student')} from ${data.source === 'mock' ? 'made-up data' : 'Veracross'}: ${plural(data.assignments, 'assignment')}, ${plural(data.awarded, 'new payment')}.`
+      }
+    } finally {
+      syncing = false
+      await Promise.all([loadAdmin(), load()])
+    }
+  }
+
+  function adminPage() {
+    if (!roster) {
+      loadAdmin()
+      return el('div', { class: 'stack' }, back('Study', { name: 'home' }), el('div', { class: 'st-w' }, el('p', { class: 'st-empty' }, 'Loading the pilot…')))
+    }
+    const st = Object.assign({}, roster.settings)
+    const linked = new Set(roster.students.map(s => s.profile_id))
+    const free = members.filter(m => !linked.has(m.id))
+    const link = { profile: free.length ? free[0].id : '', vid: '', first: '' }
+    const last = runs[0]
+    const num = (key, label, min, max) => el('label', null, label,
+      el('input', { type: 'number', min, max, value: String(st[key]), required: true, onInput: e => { st[key] = Number(e.target.value) } }))
+
+    return el('div', { class: 'stack' },
+      back('Homework', { name: 'homework' }),
+      el('div', { class: 'st-head' }, el('div', null, el('p', { class: 'st-eyebrow' }, 'Huddy only'), el('h1', { class: 'st-title' }, 'Homework pilot'))),
+
+      el('div', { class: 'st-w stack' },
+        el('h2', null, '🔄 Sync'),
+        el('p', { class: 'hw-note' }, last
+          ? `Last run ${when(last.started_at)} from ${last.source === 'mock' ? 'made-up data' : 'Veracross'}: ${last.ok ? `${plural(last.students, 'student')}, ${plural(last.assignments, 'assignment')}, ${plural(last.awarded, 'payment')}` : last.ok === false ? `failed (${last.error || 'no reason given'})` : 'still running'}.`
+          : 'No syncs yet. Link a student below, then sync.'),
+        syncMsg && el('p', { class: 'hw-note' }, syncMsg),
+        el('div', { class: 'row' }, el('button', { type: 'button', class: 'primary', disabled: syncing, onClick: syncNow }, syncing ? 'Syncing…' : 'Sync now')),
+        runs.length > 1 && el('div', { class: 'hw-scroll' }, el('table', { class: 'hw-table' },
+          el('thead', null, el('tr', null, ['When', 'From', 'Result'].map(h => el('th', null, h)))),
+          el('tbody', null, runs.map(r => el('tr', null,
+            el('td', null, when(r.started_at)),
+            el('td', null, r.source === 'mock' ? 'made-up' : 'Veracross'),
+            el('td', null, r.ok ? `${r.students} students, ${r.assignments} assignments, ${r.awarded} paid` : r.ok === false ? `failed: ${r.error || ''}` : 'running'))))))),
+
+      el('div', { class: 'st-w stack' },
+        el('h2', null, `👥 Students (${roster.students.length})`),
+        roster.students.length
+          ? el('div', { class: 'hw-scroll' }, el('table', { class: 'hw-table' },
+            el('thead', null, el('tr', null, ['Member', 'Veracross ID', 'Joined', 'Synced', 'Coins', ''].map(h => el('th', null, h)))),
+            el('tbody', null, roster.students.map(s => el('tr', null,
+              el('td', null, `${s.display} (@${s.username})${s.first_name ? ` · ${s.first_name}` : ''}`),
+              el('td', null, String(s.veracross_id)),
+              el('td', null, when(s.opted_in_at)),
+              el('td', null, when(s.last_synced_at)),
+              el('td', null, String(s.balance)),
+              el('td', null, el('button', { type: 'button', onClick: async () => {
+                if (!(await ask(`Take ${s.display} out of the pilot? Their synced assignments and coins are deleted.`, 'Remove'))) return
+                const { error: e } = await auth.rpc('debrod_hw_unlink', { p_profile: s.profile_id })
+                if (e) return tell(e.message)
+                await loadAdmin()
+              } }, 'Remove')))))))
+          : el('p', { class: 'st-empty' }, 'Nobody yet.'),
+        el('form', { class: 'hw-form', onSubmit: async e => {
+          e.preventDefault()
+          const vid = Number(link.vid)
+          if (!link.profile || !Number.isInteger(vid) || vid <= 0) return tell('Pick a member and enter their Veracross student ID (a number).')
+          const { error: err } = await auth.rpc('debrod_hw_link', { p_profile: link.profile, p_veracross_id: vid, p_first_name: link.first })
+          if (err) return tell(err.message.includes('duplicate') ? 'That Veracross ID is already linked to someone.' : err.message)
+          await loadAdmin()
+          ui.pop('🏫 Added to the pilot')
+        } },
+          el('p', { class: 'hw-note' }, 'Only add someone who has handed in a signed opt-in form. Their Veracross student ID is on their Veracross profile; IT can confirm it. With made-up data, any number works.'),
+          el('div', { class: 'row' },
+            el('label', { style: 'flex: 2 1 180px' }, 'Member', (() => {
+              const sel = el('select', { onChange: e => { link.profile = e.target.value } }, free.map(m => el('option', { value: m.id }, `${m.display} (@${m.username})`)))
+              sel.value = link.profile
+              return sel
+            })()),
+            el('label', { style: 'flex: 1 1 120px' }, 'Veracross ID', el('input', { inputmode: 'numeric', pattern: '[0-9]+', required: true, onInput: e => { link.vid = e.target.value.trim() } })),
+            el('label', { style: 'flex: 1 1 120px' }, 'First name', el('input', { maxlength: 40, onInput: e => { link.first = e.target.value } }))),
+          el('div', { class: 'row' }, el('span', { class: 'grow' }), el('button', { type: 'submit', class: 'primary', disabled: !free.length }, 'Add to pilot')))),
+
+      el('form', { class: 'st-w hw-form', onSubmit: async e => {
+        e.preventDefault()
+        const row = {
+          coins_on_time: st.coins_on_time, coins_late: st.coins_late, session_cost: st.session_cost,
+          session_minutes: st.session_minutes, daily_cap_minutes: st.daily_cap_minutes, lock_arcade: !!st.lock_arcade, updated_at: new Date().toISOString(),
+        }
+        const { error: err } = await auth.from('debrod_hw_settings').update(row).eq('id', 1)
+        if (err) return tell(err.message)
+        await Promise.all([loadAdmin(), load()])
+        ui.pop('Saved')
+      } },
+        el('h2', null, '⚙️ Rules'),
+        el('div', { class: 'row' },
+          num('coins_on_time', 'Coins, on time', 0, 1000),
+          num('coins_late', 'Coins, late', 0, 1000),
+          num('session_cost', 'Session cost', 1, 1000),
+          num('session_minutes', 'Session minutes', 1, 120),
+          num('daily_cap_minutes', 'Minutes a day', 0, 600)),
+        el('label', { class: 'hw-check' }, el('input', { type: 'checkbox', checked: !!st.lock_arcade, onChange: e => { st.lock_arcade = e.target.checked } }),
+          'Pilot students spend coins to open the arcade'),
+        el('p', { class: 'hw-note' }, 'New amounts apply to payments from the next sync on; coins already paid stay as they are.'),
+        el('div', { class: 'row' }, el('span', { class: 'grow' }), el('button', { type: 'submit', class: 'primary' }, 'Save rules'))),
+
+      el('div', { class: 'st-w stack' },
+        el('h2', null, '🗑️ End of the pilot'),
+        el('p', { class: 'hw-note' }, 'Deletes every student link, synced assignment, coin and sync log entry. Then remove the Veracross secrets from Supabase and ask IT to revoke the client.'),
+        el('div', { class: 'row' }, el('span', { class: 'grow' }), el('button', { type: 'button', onClick: async () => {
+          if (!(await ask('Delete all homework pilot data for everyone? This can\'t be undone.', 'Delete everything'))) return
+          const { error: err } = await auth.rpc('debrod_hw_end_pilot')
+          if (err) return tell(err.message)
+          await Promise.all([loadAdmin(), load()])
+          ui.pop('All pilot data deleted')
+        } }, 'Delete all pilot data'))))
+  }
+
+  // For Home and the boot screen.
+  function summary() {
+    if (!loaded || !me) return null
+    const today = todayKey()
+    const open = work.filter(w => w.status === 'pending' || w.status === 'missing')
+    return { coins: me.balance, overdue: open.filter(w => w.due && w.due < today).length, upcoming: open.filter(w => !w.due || w.due >= today).length }
+  }
+
+  return { start, stop, load, view, panel, gate, summary }
+})()
+//# sourceURL=debrod/Homework.js
+</script>

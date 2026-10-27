@@ -1620,7 +1620,7 @@ function punchline(host, ctx, opts) {
             el('input', { class: 'grow', value: draftCode, maxlength: 8, placeholder: 'Room code', onInput: e => { draftCode = e.target.value } }),
             el('button', { type: 'submit' }, 'Join')),
         ]
-        : el('p', { class: 'muted small' }, 'Punchline plays over Supabase, like watch together (DEBROD → Settings).'),
+        : el('p', { class: 'muted small' }, 'Punchline plays over Supabase (DEBROD → Settings).'),
       rec && rec.games > 0 && el('p', { class: 'muted small' }, `Your record: ${rec.wins} won of ${rec.games} game${rec.games === 1 ? '' : 's'}.`),
       el('p', { class: 'muted small' }, 'Each round one player judges. Everyone else plays the funniest answer from their hand for the prompt; the judge picks a favourite without knowing whose it is. 3 to 10 players, and House bots can fill in.')))
     if (opts && opts.code && name && online && !err) {

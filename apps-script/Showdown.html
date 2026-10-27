@@ -423,7 +423,7 @@ function showdown(host, ctx, opts) {
         } },
           el('input', { value: draftCode, maxlength: 8, placeholder: 'Room code to join or watch', onInput: e => { draftCode = e.target.value } }),
           el('button', { type: 'submit' }, 'Join'))
-        : el('p', { class: 'muted small' }, 'Battling a friend needs Supabase, like watch together (DEBROD → Settings).'),
+        : el('p', { class: 'muted small' }, 'Battling a friend needs Supabase (DEBROD → Settings).'),
       el('div', { class: 'row pk-menu-links' },
         el('button', { type: 'button', class: 'link', onClick: () => builder(teamSelect.value || '') }, 'Team builder'),
         el('label', { class: 'pk-check' }, el('input', { type: 'checkbox', checked: sound.on, onChange: e => setSound(e.target.checked) }), ' Sound'),

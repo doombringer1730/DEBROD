@@ -5,7 +5,6 @@
    different decade's idea of the future, done the way it was printed or
    built at the time: flat inks, hard offset shadows, paper and plastic,
    no glow. App.html tags each page:
-   - .t-search   Search: a 1958 Atomic Age TV listings magazine.
    - .t-arcade   Arcade: a 1977 woodgrain home video console and its cartridges.
    - .t-study    Study: a 1964 punch-card computer room (styled in Study.html).
    - .t-members  Members: a 1961 space agency personnel file, for Huddy.
@@ -15,104 +14,15 @@
   --paper-noise-soft: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .08 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 /* None of them use the neon sky, grid or scanlines. */
-body:has(.page.t-search:not([hidden])) #backdrop, body:has(.page.t-search:not([hidden]))::after,
 body:has(.page.t-arcade:not([hidden])) #backdrop, body:has(.page.t-arcade:not([hidden]))::after,
 body:has(.page.t-study:not([hidden])) #backdrop, body:has(.page.t-study:not([hidden]))::after,
 body:has(.page.t-members:not([hidden])) #backdrop, body:has(.page.t-members:not([hidden]))::after,
 body:has(.t-gate) #backdrop, body:has(.t-gate)::after { display: none; }
 /* Shared resets: the base wordmark is chrome gradient text. */
-.t-search .wordmark, .t-arcade .wordmark, .t-members .wordmark, .t-gate .wordmark {
+.t-arcade .wordmark, .t-members .wordmark, .t-gate .wordmark {
   background: none; -webkit-background-clip: border-box; background-clip: border-box; filter: none; }
-.t-search .tagline, .t-arcade .tagline, .t-members .tagline, .t-gate .tagline { text-shadow: none; }
-.t-search .card::before, .t-arcade .card::before, .t-members .card::before { display: none; }
-
-/* ═══ Search: Atomic Age TV listings, 1958 ═══════════════════════════════
-   Newsprint, two spot inks that never quite line up, a starburst on the
-   masthead, every poster a little walnut TV set. */
-.t-search {
-  --ts-paper: #f2e8d2; --ts-card: #fbf5e6; --ts-ink: #231f1c; --ts-teal: #2c8783; --ts-coral: #df5236;
-  --ts-mustard: #e6a634; --ts-walnut: #5b3b27; --ts-soft: #6d6252;
-  --text: var(--ts-ink); --muted: var(--ts-soft); --cyan: var(--ts-teal); --magenta: var(--ts-coral); --yellow: var(--ts-mustard);
-  --good: #2f7d4f; --bad: #c23b22; --line: rgba(35, 31, 28, 0.35); --panel: var(--ts-card); --panel-solid: var(--ts-card);
-  position: relative; color: var(--ts-ink); font-family: 'Libre Franklin', system-ui, sans-serif;
-}
-html:has(.page.t-search:not([hidden])) {
-  background: var(--paper-noise), radial-gradient(rgba(35, 31, 28, 0.07) 1px, transparent 1.3px) 0 0 / 6px 6px, #f2e8d2;
-}
-body:has(.page.t-search:not([hidden])) { color: #231f1c; }
-.t-search .top { position: relative; padding-bottom: 14px; border-bottom: 4px double var(--ts-ink); }
-.t-search .top::before { /* the starburst behind the masthead */
-  content: ''; position: absolute; left: -30px; top: -34px; width: 84px; height: 84px; z-index: -1;
-  background: var(--ts-mustard); transform: rotate(9deg);
-  clip-path: polygon(50% 0%, 56.7% 20.8%, 71.7% 5%, 68.7% 26.5%, 89.1% 18.8%, 77% 37%, 98.7% 38.9%, 80% 50%, 98.7% 61.1%, 77% 63%, 89.1% 81.2%, 68.7% 73.5%, 71.7% 95%, 56.7% 79.2%, 50% 100%, 43.3% 79.2%, 28.3% 95%, 31.3% 73.5%, 10.9% 81.2%, 23% 63%, 1.3% 61.1%, 20% 50%, 1.3% 38.9%, 23% 37%, 10.9% 18.8%, 31.3% 26.5%, 28.3% 5%, 43.3% 20.8%);
-}
-.t-search .top::after { /* a small four-point sparkle off to the side */
-  content: ''; position: absolute; left: 240px; top: 2px; width: 18px; height: 18px; background: var(--ts-teal);
-  clip-path: polygon(50% 0%, 58.5% 41.5%, 100% 50%, 58.5% 58.5%, 50% 100%, 41.5% 58.5%, 0% 50%, 41.5% 41.5%);
-}
-.t-search .wordmark { font: 400 34px/0.95 'Archivo Black', system-ui, sans-serif; letter-spacing: 0.02em; color: var(--ts-ink); text-shadow: 3px 2px 0 var(--ts-coral); }
-.t-search .tagline { font: 400 21px/1 'Yellowtail', cursive; letter-spacing: 0; text-transform: none; color: var(--ts-coral); margin-top: 4px; }
-.t-search .tabs { gap: 14px; }
-.t-search .tabs .link { font: 400 12px 'Archivo Black', sans-serif; letter-spacing: 0.08em; color: var(--ts-ink); }
-.t-search .tabs .link:hover:not(:disabled) { color: var(--ts-coral); text-shadow: none; }
-.t-search .tabs .on, .t-search .tabs .on:hover:not(:disabled) { background: var(--ts-coral); color: #fff; padding: 3px 9px; border-radius: 2px; transform: rotate(-2deg); text-shadow: none; }
-
-.t-search button, .t-search .actions a {
-  font-family: 'Libre Franklin', sans-serif; font-weight: 600; color: var(--ts-ink); background: var(--ts-card);
-  border: 2px solid var(--ts-ink); border-radius: 999px; box-shadow: 3px 3px 0 var(--ts-ink); }
-.t-search button:hover:not(:disabled), .t-search .actions a:hover { border-color: var(--ts-ink); color: var(--ts-ink); background: #fff; transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ts-ink); }
-.t-search button:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ts-ink); }
-.t-search .primary, .t-search .primary:hover:not(:disabled) { background: var(--ts-coral); color: #fff; font: 400 13px/1 'Archivo Black', sans-serif; letter-spacing: 0.06em; }
-.t-search .link, .t-search .link:hover:not(:disabled) { background: none; border: none; box-shadow: none; transform: none; font: 600 12px 'Libre Franklin', sans-serif; letter-spacing: 0.12em; color: var(--ts-soft); }
-.t-search .link:hover:not(:disabled) { color: var(--ts-coral); text-shadow: none; }
-.t-search input { background: #fffdf6; color: var(--ts-ink); border: 2px solid var(--ts-ink); border-radius: 10px; font: 16px 'Libre Franklin', sans-serif; caret-color: var(--ts-coral); }
-.t-search input::placeholder { color: #9a8f7c; font-style: italic; }
-.t-search input:focus { border-color: var(--ts-ink); box-shadow: 3px 3px 0 var(--ts-teal); }
-.t-search .error { color: var(--bad); font: 600 14px 'Libre Franklin', sans-serif; text-shadow: none; }
-.t-search .mono { color: var(--ts-teal); font-family: 'Courier Prime', monospace; }
-.t-search .muted.mono { font-style: italic; }
-
-/* Movies / TV / YouTube: the channel selector */
-.t-search .toggle { background: var(--ts-ink); border: none; border-radius: 999px; padding: 5px; box-shadow: 3px 3px 0 var(--ts-coral); }
-.t-search .toggle button, .t-search .toggle button:hover:not(:disabled) { border: none; box-shadow: none; transform: none; background: none; color: var(--ts-paper); font: 400 12px/1 'Archivo Black', sans-serif; letter-spacing: 0.1em; border-radius: 999px; }
-.t-search .toggle button:hover:not(.on) { color: var(--ts-mustard); }
-.t-search .toggle button.on { background: var(--ts-mustard); color: var(--ts-ink); }
-
-/* Posters: little TV sets with a walnut cabinet and a bulging screen */
-.t-search .grid { gap: 22px 18px; }
-.t-search .poster, .t-search .poster:hover:not(:disabled) { border: none; box-shadow: none; background: none; border-radius: 0; }
-.t-search .poster img, .t-search .noposter {
-  border: 7px solid var(--ts-walnut); border-radius: 18px / 24px; background: #2b2723;
-  box-shadow: 0 0 0 2px var(--ts-ink), 4px 5px 0 2px var(--ts-ink); transition: transform 0.15s; }
-.t-search .noposter { color: #d8ccb2; font: 600 13px 'Libre Franklin', sans-serif; }
-.t-search .poster:hover:not(:disabled) { transform: rotate(-1.5deg) translateY(-3px); }
-.t-search .poster:hover img, .t-search .poster:hover .noposter { border-color: var(--ts-walnut); box-shadow: 0 0 0 2px var(--ts-ink), 6px 7px 0 2px var(--ts-coral); }
-.t-search .poster .name { font: 700 14px/1.2 'Libre Franklin', sans-serif; color: var(--ts-ink); text-shadow: none; margin-top: 6px; }
-.t-search .poster .muted { font: 600 11px 'Libre Franklin', sans-serif; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ts-coral); }
-.t-search .grid.wide .poster img, .t-search .grid.wide .noposter { border-radius: 16px / 20px; }
-
-.t-search .heading img { border: 4px solid var(--ts-walnut); border-radius: 8px; box-shadow: 3px 3px 0 var(--ts-ink); }
-.t-search .heading .name { font: 400 22px/1.15 'Archivo Black', sans-serif; letter-spacing: 0; }
-.t-search .heading .muted { color: var(--ts-coral); font: 600 13px 'Libre Franklin', sans-serif; letter-spacing: 0.12em; }
-.t-search .item, .t-search .item:hover:not(:disabled) { border-radius: 10px; text-align: left; }
-.t-search .item .muted.mono { color: var(--ts-coral); font: 700 13px 'Courier Prime', monospace; font-style: normal; }
-.t-search > .stack > .name { font: 400 22px 'Archivo Black', sans-serif; }
-
-/* Streams read like the evening's listings: bold time slot, dotted rules */
-.t-search .stream { background: none; border: none; border-bottom: 2px dotted rgba(35, 31, 28, 0.45); border-radius: 0; padding: 12px 2px; }
-.t-search .stream strong { font: 400 15px 'Archivo Black', sans-serif; letter-spacing: 0.02em; }
-.t-search .stream .muted { font: 13px 'Libre Franklin', sans-serif; color: var(--ts-soft); }
-.t-search .tag { font: 700 10px 'Libre Franklin', sans-serif; letter-spacing: 0.1em; color: var(--ts-ink); border: 1.5px solid var(--ts-ink); border-radius: 999px; padding: 1px 7px; }
-.t-search .tag.good { background: var(--ts-teal); color: #fff; border-color: var(--ts-teal); }
-.t-search .tag.bad { background: var(--ts-coral); color: #fff; border-color: var(--ts-coral); }
-.t-search .actions button, .t-search .actions a { font: 700 11px 'Libre Franklin', sans-serif; letter-spacing: 0.08em; box-shadow: 2px 2px 0 var(--ts-ink); }
-.t-search .actions .together, .t-search .actions .together:hover:not(:disabled) { background: var(--ts-mustard); color: var(--ts-ink); border: 2px solid var(--ts-ink); }
-.t-search .chip.on, .t-search .chip.on:hover:not(:disabled) { background: var(--ts-teal); color: #fff; border-color: var(--ts-ink); }
-.t-search .player video, .t-search .player iframe {
-  border: 14px solid var(--ts-walnut); border-radius: 26px / 34px; background: #000;
-  box-shadow: 0 0 0 3px var(--ts-ink), 7px 8px 0 3px var(--ts-ink); }
-.t-search .player p { color: var(--ts-soft); margin-top: 14px; }
-.t-search .card { background: var(--ts-card); border: 2px solid var(--ts-ink); border-radius: 14px; box-shadow: 5px 5px 0 var(--ts-ink); backdrop-filter: none; }
+.t-arcade .tagline, .t-members .tagline, .t-gate .tagline { text-shadow: none; }
+.t-arcade .card::before, .t-members .card::before { display: none; }
 
 /* ═══ Arcade: the woodgrain console, 1977 ════════════════════════════════
    Ribbed black plastic, a walnut-veneer header with the rainbow stripe,
@@ -304,8 +214,6 @@ html:has(.t-gate) {
   background: repeating-linear-gradient(90deg, #1f2a44 0 2px, transparent 2px 3px, #1f2a44 3px 4px, transparent 4px 7px, #1f2a44 7px 10px, transparent 10px 11px, #1f2a44 11px 12px, transparent 12px 15px); }
 
 /* ═══ Boot screens, one per page (App.html bootScreen) ═══════════════════ */
-.boot.boot-search { background: #1f1c19; color: #f2e8d2; }
-.boot.boot-search .boot-text { font-family: 'Courier Prime', monospace; text-shadow: none; }
 .boot.boot-arcade { background: repeating-linear-gradient(90deg, #1b1815 0 3px, #24201c 3px 7px); color: #f3a521; }
 .boot.boot-arcade .boot-text { font: 600 18px/1.55 'Barlow Condensed', sans-serif; letter-spacing: 0.12em; text-shadow: none; }
 .boot.boot-study { background: #0b120d; color: #79e08f; }
@@ -314,9 +222,6 @@ html:has(.t-gate) {
 .boot.boot-admin .boot-text { font-family: 'Special Elite', monospace; text-shadow: none; }
 
 @media (max-width: 560px) {
-  .t-search .wordmark { font-size: 28px; }
-  .t-search .top::after { display: none; }
-  .t-search .top::before { left: -12px; top: -22px; width: 62px; height: 62px; }
   .t-arcade .wordmark, .t-members .wordmark { font-size: 26px; }
   .t-arcade .top { padding: 14px; }
 }

@@ -555,9 +555,11 @@ const Study = (() => {
     sync.state = 'saving'
     pull(true)
     if (typeof Classes !== 'undefined') Classes.start(mirrorClassWork)
+    if (typeof Homework !== 'undefined') Homework.start()
   }
   function disconnect() {
     if (typeof Classes !== 'undefined') Classes.stop()
+    if (typeof Homework !== 'undefined') Homework.stop()
     if (typeof Boards !== 'undefined') Boards.stop()
     clearTimeout(sync.timer)
     sync.user = null
@@ -778,6 +780,7 @@ const Study = (() => {
     } else if (view.name === 'shop') fill(root, shopView())
     else if (['classes', 'class', 'work', 'post'].includes(view.name)) fill(root, typeof Classes !== 'undefined' ? Classes.view(view, classUi) : homeView())
     else if (['boards', 'board'].includes(view.name)) fill(root, typeof Boards !== 'undefined' ? Boards.view(view, boardUi) : homeView())
+    else if (['homework', 'homework-admin'].includes(view.name)) fill(root, typeof Homework !== 'undefined' ? Homework.view(view, homeworkUi) : homeView())
     else if (view.name === 'mode') {
       // Modes draw themselves; this is only for a fresh start.
       fill(root, view.node)
@@ -816,6 +819,16 @@ const Study = (() => {
     go: v => go(v),
     pop: t => pop(t),
     refresh: () => { if (visible && (view.name === 'home' || view.name === 'boards')) render() },
+  }
+  // What Homework.html needs from Study.
+  const homeworkUi = {
+    go: v => go(v),
+    pop: t => pop(t),
+    dueLabel,
+    // Fresh data: redraw, but never under a form someone's typing in.
+    refresh: () => { if (visible && ['home', 'homework'].includes(view.name)) render() },
+    // After something on Huddy's page (its forms included) was done on purpose.
+    redraw: () => { if (visible && ['homework', 'homework-admin'].includes(view.name)) render() },
   }
   function pop(text) {
     const n = el('div', { class: 'st-pop' }, text)
@@ -869,6 +882,7 @@ const Study = (() => {
         typeof Focus !== 'undefined' && Focus.panel(focusUi),
         el('div', { class: 'st-w st-span2', 'data-section': 'assignments' }, assignmentsPanel()),
         el('div', { class: 'st-w st-span2', 'data-section': 'calendar' }, calendarWidget()),
+        typeof Homework !== 'undefined' && Homework.panel(homeworkUi),
         classesPanel(),
         typeof Boards !== 'undefined' && Boards.panel(boardUi),
         el('div', { class: 'st-w st-span4' }, el('h2', null, '🕘 Activity'), activityLog())),
@@ -1694,8 +1708,9 @@ const Study = (() => {
     disconnect,
     hide() { visible = false },
     summary,
-    // 'assignments', 'calendar', 'decks', 'review', 'shop' or 'home'.
+    // 'assignments', 'calendar', 'decks', 'review', 'shop', 'homework' or 'home'.
     open(section) {
+      if (section === 'homework') return go({ name: 'homework' })
       if (section === 'review') return allDue().length ? startReview(null) : go({ name: 'home' }, 'decks')
       if (section === 'shop') return go({ name: 'shop' })
       if (['assignments', 'calendar', 'decks'].includes(section)) return go({ name: 'home' }, section)

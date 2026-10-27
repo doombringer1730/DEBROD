@@ -1,3 +1,5 @@
+// @ts-nocheck: Deno code. The Next.js site type-checks every .ts file in
+// the repo and has no Deno types, so it skips this one.
 // debrod-auth: DEBROD's account desk, as a Supabase Edge Function.
 //
 // - signup { username, password, display? } → creates the login and a
