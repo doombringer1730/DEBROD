@@ -132,7 +132,7 @@ const Thing = (() => {
 - **Prefix your CSS classes** (`.ch-` Chat, `.st-` Study, `.bd-` Boards,
   `.nt-` Notify, `.wg-` word games, `.pk-` Showdown) so they don't collide.
 - **Build the page with `el()`**, never `innerHTML`, so text from people (and
-  TMDB) can't inject markup.
+  Veracross) can't inject markup.
 
 ### Adding the new file everywhere it needs to go
 
@@ -235,7 +235,9 @@ through `debrod_clean()` in a trigger so the word filter applies.
 Main tables: `debrod_profiles` (accounts), `debrod_chat` / `debrod_channels`,
 `debrod_study`, `debrod_classes` / `debrod_class_members` /
 `debrod_class_work`, `debrod_boards` / `debrod_board_strokes`,
-`debrod_announcements`, `debrod_pk_results`, `debrod_banned_words`. Profile
+`debrod_announcements`, `debrod_pk_results`, `debrod_banned_words`. The
+homework pilot's `debrod_hw_*` tables are in `supabase/homework.sql`, kept
+apart so the pilot can be reviewed on its own. Profile
 photos are in the `debrod-avatars` storage bucket.
 
 ## Saving things in the browser
@@ -266,15 +268,14 @@ commit's ID. Don't paste these files into Apps Script.
 
 ## Keys and secrets
 
-- **Never commit keys.** `Code.gs` in the repo has
-  `const DEFAULT_YOUTUBE_API_KEY = ''` on purpose. Put the real key only in
-  the Apps Script copy, or in **DEBROD → Settings** (stored in Script
-  Properties).
+- **Never commit keys.** Put them in **DEBROD → Settings** (stored in
+  Script Properties), or for the homework pilot's Veracross client, in
+  Supabase's Edge Function secrets (see [HOMEWORK.md](HOMEWORK.md)).
 - The Supabase URL and publishable (anon) key in `Code.gs` are fine to
   share; they're meant for browsers, and row-level security does the
   protecting.
-- TMDB, Real-Debrid, TorBox and games library keys live in Script Properties through
-  **DEBROD → Settings**, and never go back to the page.
+- The games library key lives in Script Properties through
+  **DEBROD → Settings**, and never goes back to the page.
 
 ## Before you paste
 

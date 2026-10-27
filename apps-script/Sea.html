@@ -312,7 +312,7 @@ function seaBattle(host, ctx, opts) {
         const c = partyCleanCode(draftCode)
         if (c && okName()) joinRoom(c, false)
       } }, el('input', { value: draftCode, maxlength: 8, placeholder: 'Room code', onInput: e => { draftCode = e.target.value } }), el('button', { type: 'submit' }, 'Join')),
-      !online && el('p', { class: 'muted small' }, 'Playing a friend needs Supabase, like watch together (DEBROD → Settings).'),
+      !online && el('p', { class: 'muted small' }, 'Playing a friend needs Supabase (DEBROD → Settings).'),
       el('p', { class: 'muted small' }, `Won ${rec.w} · Lost ${rec.l}${rec.best ? ` · Best win: ${rec.best} shots` : ''}`)))
   }
 

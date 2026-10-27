@@ -1,20 +1,25 @@
 # DEBROD for Google Apps Script
 
-The same search, player and watch together as the Next.js site, plus a
-little arcade for procrastinating, running as a Google Apps Script bound to a
-Google Doc. It opens from a **DEBROD** menu in
-the doc, and can also be deployed as a web app. There's no Vercel, and the
-keys live in the script's properties instead of environment variables.
+Study, the school homework pilot, chat and a little arcade for
+procrastinating, running as a Google Apps Script bound to a Google Doc. It
+opens from a **DEBROD** menu in the doc, and can also be deployed as a web
+app. The keys live in the script's properties instead of environment
+variables.
+
+This version has **no streaming**: the movie and TV search, debrid
+accounts, YouTube and watch together are only on the Next.js site (the rest
+of this repo), which this folder doesn't touch.
 
 | File | What it is |
 | --- | --- |
-| `Code.gs` | Server side: the menu, settings, TMDB lookups, Torrentio URLs and room codes. |
+| `Code.gs` | Server side: the menu, settings, the member check and the games library. |
 | `Index.html` | The page shell. |
 | `Account.html` | Sign in, sign up, the approval queue and Huddy's Members tab. |
 | `Chat.html` | The public chat: channels, messages, profiles and who's online. |
-| `App.html` | The search, player and watch-together room (from `app/browser.tsx` and `app/watch/[room]/room.tsx`). |
+| `App.html` | The page frame: shared helpers, the header and tabs, and switching between pages. |
 | `Hub.html` | Home: the hub, styled as a 70s mission-control console. |
 | `Classes.html` | Classes and their shared assignments, inside Study. |
+| `Homework.html` | The homework pilot inside Study: Veracross assignments, coins, and coins for arcade time (see [HOMEWORK.md](HOMEWORK.md)). |
 | `Focus.html` | The focus timer and study rooms, on Study's home. |
 | `Study.html` | The Study tab: assignments with due dates and turn-in, flashcards, coins and the shop (from Hiranda's old Study section). |
 | `Party.html` | The Supabase rooms Color Clash and Sea Battle share. |
@@ -41,13 +46,12 @@ Changing these files or adding one? See [SCRIPTS-GUIDE.md](SCRIPTS-GUIDE.md).
 
 1. Create a Google Doc, then open **Extensions → Apps Script**.
 2. Replace `Code.gs` with the one here. Add the HTML files with **+ → HTML**,
-   named `Index`, `App`, `Account`, `Notify`, `Chat`, `Themes`, `Hub`, `Study`, `Classes`, `Focus`, `Boards`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Words`, `Emulator`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
+   named `Index`, `App`, `Account`, `Notify`, `Chat`, `Themes`, `Hub`, `Study`, `Classes`, `Homework`, `Focus`, `Boards`, `Party`, `Cards`, `Sea`, `PunchCAH`, `Punch`, `Words`, `Emulator`, `Games`, `Scribble`, `Showdown`, `StarSling`, `Settings` and `Styles` (no `.html`), and paste each
    one in. To edit `appsscript.json`, turn on **Project Settings → Show
    "appsscript.json" manifest file in editor**.
 3. Save, reload the doc, and open **DEBROD → Settings**. Approve the
-   permissions, then add your TMDB key, a Real-Debrid and/or TorBox key, and
-   the Supabase URL and anon key if you want watch together. A YouTube Data
-   API key adds YouTube to Search.
+   permissions, then add the Supabase URL and anon key (or leave them blank
+   to use the built-in project).
 4. Open **DEBROD → Open**.
 
 Or push it with [clasp](https://github.com/google/clasp): run
@@ -69,7 +73,7 @@ them in on its own the moment they're approved). Huddy gets a **Members**
 tab, with a count of who's waiting, to approve or turn down sign-ups, lock
 someone out, reset a forgotten password, or delete an account.
 
-It's more than a screen: every search, stream lookup and room in `Code.gs`
+It's more than a screen: every server call in `Code.gs` (the games library)
 checks the caller's session with Supabase and answers approved members
 only, so a shared web app link gets nobody in on its own. For friends
 without access to the doc, deploy the web app with **Execute as: Me** and
@@ -115,11 +119,11 @@ messages in 10 seconds gets a "Slow down" too.
 ## Home
 
 DEBROD opens on **Home**, a hub dressed as a 70s mission-control console.
-It shows what's due in Study,
-games to jump back into (with Star Sling's endless level), a quick search
-and watch-party join, and **Online now**: everyone else on your DEBROD,
+It shows what's due in Study, your homework pilot coins and what's overdue
+(for students in the pilot), games to jump back into (with Star Sling's
+endless level), and **Online now**: everyone else on your DEBROD,
 what they're doing, and a **Join** button for their Scribble, Showdown,
-Color Clash or Sea Battle room or watch party. That's live Supabase presence,
+Color Clash or Sea Battle room or study room. That's live Supabase presence,
 nothing stored; flip **Show me** off to hide (you then see nobody either).
 
 ## Looks
@@ -131,32 +135,14 @@ which lives in `Study.html`):
 | Page | Look |
 | --- | --- |
 | Home | A 70s mission-control console: charcoal panels, amber screens, chunky keys. |
-| Search | A 1958 TV listings magazine: newsprint, two inks slightly off register, a starburst masthead, every poster a walnut TV set. |
 | Arcade | A 1977 woodgrain console: ribbed black plastic, the rainbow stripe, aluminium switches, games as cartridges, and the game itself on a woodgrain TV. |
 | Study | A 1964 punch-card computer room: manila cards with the corner cut, green-bar printout, keypunch keys, and flashcards with holes punched. |
 | Chat | A 1984 one-bit desktop: dithered grey, white windows with pinstriped title bars, inverted selections. The only colour is people's avatars. |
 | Members | A 1961 personnel file: a manila folder, typewritten index cards and rubber stamps for who's cleared. |
 | Sign in | A Space Clipper boarding pass with a torn-off stub. |
 
-The watch-together room keeps the original neon, like a cinema.
-
 Every tab opens with a second of an old terminal booting it up; a click or
 any key skips it, and it's off for anyone with reduced motion turned on.
-
-## YouTube
-
-**Search** has a **YouTube** tab next to Movies and TV shows. Pick a video
-to play it right there, or **Watch together** to open a room for it: the
-same room, chat and invite code as a stream, kept in sync through
-YouTube's own player.
-
-It needs a YouTube Data API key (enable **YouTube Data API v3** in Google
-Cloud, then make a key under **Credentials**). Put it in **DEBROD →
-Settings**, or in `DEFAULT_YOUTUBE_API_KEY` at the top of `Code.gs` so
-everyone on your DEBROD can search without one. The key stays on the
-server either way. It's empty here because this repo is public; keep a
-filled-in `Code.gs` out of GitHub. Each search uses 100 of the key's
-10,000 free daily units, so about 100 searches a day.
 
 ## The arcade
 
@@ -164,8 +150,9 @@ filled-in `Code.gs` out of GitHub. Each search uses 100 of the key's
 Minesweeper, Memory, Star Sling, Doom, Scribble, Punchline, Color Clash,
 Sea Battle, Pokémon Showdown, Retro consoles, PokéRogue, The Oregon Trail
 and Tic-tac-toe. They work with the keyboard, mouse or touch. Best scores are kept in your browser, and a
-timer shows how long you've been procrastinating. Switching back to
-**Search** pauses whatever's running.
+timer shows how long you've been procrastinating. Switching to another tab
+pauses whatever's running. Students in the homework pilot spend coins for
+arcade time (see [Study](#study)).
 
 **Retro consoles** plays games for NES, SNES, N64, Game Boy and Color,
 GBA, DS, Virtual Boy, Master System, Genesis, Game Gear, Sega CD, 32X,
@@ -278,7 +265,7 @@ on-screen buttons. Doom's code is GPL v2: see [`doom/README.md`](doom/README.md)
 
 **Scribble** is DEBROD's own skribbl.io: take turns drawing a word while
 everyone else races to guess it, 2 to 12 players. It runs over the same
-Supabase Realtime as watch together, with nothing stored. **Create a room**,
+Supabase Realtime as the other multiplayer games, with nothing stored. **Create a room**,
 then **Invite** copies a `?scribble=CODE` link (in the web app) or the room
 code (in the doc). Friends sign in to your DEBROD and land in the room. The
 room's creator hosts: they set the rounds and draw time, can add their own
@@ -287,7 +274,7 @@ and scores. Everyone picks an icon, and the board sizes itself to fit the
 screen. If they leave, the longest-present player takes over. The word
 only goes out as a salted hash until the turn ends, so nobody can read it
 off the network by accident, but it isn't cheat-proof. Your room survives a
-trip to **Search**; going back to the arcade's game list leaves it.
+trip to another tab; going back to the arcade's game list leaves it.
 
 **Pokémon Showdown** runs Showdown's own battle simulator right in the page
 (play.pokemonshowdown.com won't load inside other sites), against the CPU or
@@ -364,7 +351,7 @@ four-player and draft ones included. The Battle Tower ramps on its own.
 
 `DEFAULT_SUPABASE_URL` and `DEFAULT_SUPABASE_ANON_KEY` at the top of
 `Code.gs` are used when Settings leaves the Supabase fields blank, so a copy
-can ship ready for watch together and Scribble. They point at DEBROD's own
+can ship ready for accounts, chat, Study and the multiplayer games. They point at DEBROD's own
 Supabase project (`zppygyfzbwbusidmqlru`); the publishable key is meant for
 browsers. Everyone who opens your DEBROD uses your settings, so friends
 never need a key of their own.
@@ -408,6 +395,15 @@ backup file and **Import** loads one.
   it, and Home's Online now shows who's in with a Join button.
 - **Study leaderboard** on Home: XP this week, focus time, cards reviewed,
   streak and all-time XP for everyone, from what their Study sync reports.
+- **Homework (the school pilot).** For students who opted in, Study shows
+  their real assignments and due dates from Veracross, read-only, synced a
+  few times a school day. Work turned in on time earns 10 coins, late work
+  3, paid once by the database; coins buy 10 minutes of arcade for 20, up
+  to 30 minutes a day. These "school coins" are separate from Study's own
+  coins, since only the database can pay them. Huddy links students,
+  syncs and changes the amounts from **Run the pilot**. Until the school
+  issues a Veracross client it runs on made-up data. Setup, and what it
+  reads, stores and deletes, are in [HOMEWORK.md](HOMEWORK.md).
 
 ## Apps Script gotchas
 
@@ -424,25 +420,11 @@ Two things about how Google serves these pages, learned the hard way:
   `ask()`, `tell()` and `showText()` from App.html instead; they draw the
   box on the page.
 
-## How it differs from the site
-
-- **No site password.** Whoever can edit the doc, or reach the web app
-  deployment, can use it.
-- **Rooms are codes.** **Watch together** keeps what's playing in the script
-  cache under an 8-character code for six hours (CacheService's maximum).
-  **Invite** shows the code, and the web app link when it's deployed. Friends
-  enter the code under the search box.
-- **The clock** for sync is the script's `getTime` instead of `/api/time`.
-  That's a slower round trip, but the rolling median absorbs it.
-- Torrentio and Supabase are still reached from the page itself, as on the
-  site.
-
 ## Keep it private
 
-- Deploy the web app with **Execute as: Me** and **Who has access: Only
-  myself**, or only to people you'd trust with your debrid account.
-  Everyone who can open it can fetch stream links, and those carry your
-  debrid key. Only the account the script runs as can read or change the
-  settings.
-- The rest of [Keep it private](../README.md#keep-it-private) in the main
-  README applies here too.
+- Deploy the web app with **Execute as: Me** and **Who has access:
+  Anyone**; the sign-in screen and Huddy's approval are the gate. Only the
+  account the script runs as can read or change the settings.
+- The homework pilot's Veracross secret never touches this script or the
+  page: it's a Supabase Edge Function secret. See [HOMEWORK.md](HOMEWORK.md)
+  for everything the pilot reads, stores and deletes.

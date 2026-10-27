@@ -128,19 +128,19 @@ body:has(.page.mc:not([hidden])) { color: #2d2f33; }
 </style>
 <script>
 // Home: the hub. One page that pulls DEBROD together: what's due in Study,
-// games to jump back into, quick search and watch-party join, and who else
+// school homework and coins, games to jump back into, and who else
 // is on this DEBROD right now (over Supabase presence, with one-click join
 // into their room). Nothing is stored on a server; "online now" is live
 // presence only, and you can hide yourself from it. It's dressed as a 70s
 // mission-control console; the rest of DEBROD keeps its neon look.
 //
-// Loaded after App.html (el, S, render, storedName, joinRoom) and before
+// Loaded after App.html (el, S, render, storedName) and before
 // the games, which report what they're doing with hubActivity().
 
 const HUB_SHOW_KEY = 'ds_hub_visible'
 
 // What this page is doing right now: { game, code, label, joinable } or null.
-// Games and watch together call it; the hub shares it in presence.
+// The games and Focus call it; the hub shares it in presence.
 let hubActivityNow = null
 function hubActivity(a) {
   hubActivityNow = a ? { game: a.game, code: a.code || '', label: a.label || a.game, joinable: !!(a.joinable && a.code) } : null
@@ -162,9 +162,6 @@ const Hub = (() => {
   let subscribed = false
   let tick = null
   let clockTick = null
-  let query = ''
-  let kind = 'movie'
-  let watchCode = ''
 
   const read = (key, fallback) => { try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v) } catch (e) { return fallback } }
   const write = (key, v) => { try { localStorage.setItem(key, JSON.stringify(v)) } catch (e) { /* private mode */ } }
@@ -209,11 +206,6 @@ const Hub = (() => {
   function join(p) {
     const a = p.act
     if (!a || !a.joinable || !a.code) return
-    if (a.game === 'watch') {
-      S.roomCode = a.code
-      joinRoom({ preventDefault() {} })
-      return
-    }
     if (a.game === 'study') {
       S.tab = 'study'
       render()
@@ -293,33 +285,17 @@ const Hub = (() => {
       } }, el('input', { placeholder: 'Your name', maxlength: 18 }), el('button', { type: 'submit', class: 'primary' }, 'Sign in')))
   }
 
-  function watchPanel() {
-    const go = e => {
-      e.preventDefault()
-      if (!query.trim()) return
-      S.kind = kind
-      S.query = query
-      S.results = []
-      S.title = null
-      S.tab = 'search'
-      render()
-      onSearch({ preventDefault() {} })
-    }
-    return panel('hub-wide', 'A1', 'Watch something',
-      el('div', { class: 'hub-rocker' }, [['movie', 'Movies'], ['tv', 'TV']].map(([k, t]) =>
-        el('button', { type: 'button', class: kind === k ? 'on' : '', onClick: () => { kind = k; draw() } }, t))),
-      el('form', { class: 'hub-row', onSubmit: go },
-        el('input', { type: 'search', value: query, placeholder: kind === 'movie' ? 'Search movies…' : 'Search TV shows…', onInput: e => { query = e.target.value } }),
-        el('button', { type: 'submit', class: 'primary' }, 'Search')),
-      el('form', { class: 'hub-row', onSubmit: e => {
-        e.preventDefault()
-        if (!watchCode.trim()) return
-        S.roomCode = watchCode
-        watchCode = ''
-        joinRoom({ preventDefault() {} })
-      } },
-        el('input', { value: watchCode, maxlength: 32, placeholder: 'Watch-party code', onInput: e => { watchCode = e.target.value } }),
-        el('button', { type: 'submit', class: 'go' }, 'Join')))
+  // The homework pilot (Homework.html), for students in it.
+  function homeworkPanel() {
+    const h = typeof Homework !== 'undefined' && Homework.summary()
+    if (!h) return null
+    const goHomework = () => { S.tab = 'study'; render(); if (Study.open) Study.open('homework') }
+    return panel('hub-wide', 'A1', 'Homework', el('button', { type: 'button', class: 'link', onClick: goHomework }, 'Homework ›'),
+      el('div', { class: 'hub-screen' },
+        el('ul', { class: 'hub-list' },
+          el('li', null, el('span', { class: 'what' }, '▸ Coins'), el('span', { class: 'hub-tone soon' }, String(h.coins))),
+          el('li', null, el('span', { class: 'what' }, '▸ Overdue'), el('span', { class: `hub-tone ${h.overdue ? 'over' : 'far'}` }, String(h.overdue))),
+          el('li', null, el('span', { class: 'what' }, '▸ Coming up'), el('span', { class: 'hub-tone far' }, String(h.upcoming))))))
   }
 
   function studyPanel(sum) {
@@ -461,11 +437,11 @@ const Hub = (() => {
   }
 
   function draw() {
-    // Keep a half-typed search across redraws (presence can redraw at any time).
+    // Keep a half-typed name across redraws (presence can redraw at any time).
     const active = document.activeElement
     const typing = active && root.contains(active) && active.tagName === 'INPUT' && active.type !== 'checkbox' ? active.placeholder : null
     const sum = study()
-    fill(root, strip(sum), log(sum), watchPanel(), studyPanel(sum), gamesPanel(), crewPanel(), studyBoardPanel(), boardPanel())
+    fill(root, strip(sum), log(sum), homeworkPanel(), studyPanel(sum), gamesPanel(), crewPanel(), studyBoardPanel(), boardPanel())
     if (typing) {
       const back = [...root.querySelectorAll('input')].find(i => i.placeholder === typing)
       if (back) { back.focus(); const n = back.value.length; try { back.setSelectionRange(n, n) } catch (e) { /* not a text input */ } }
