@@ -165,7 +165,11 @@ test('describeStatusRows keeps field names and status values, never scores', () 
 })
 
 test('number codes: only confirmed ones count, the rest are not turned in', () => {
-  assert.equal(toStatus(3), 'pending')
-  assert.equal(toStatus('3'), 'pending')
+  assert.equal(toStatus(0), 'pending')
+  assert.equal(toStatus(2), 'missing')
+  assert.equal(toStatus(3), 'turned_in')
+  assert.equal(toStatus('3'), 'turned_in')
+  assert.equal(toStatus(6), 'turned_in')
+  assert.equal(toStatus(5), 'pending')
   assert.equal(toStatus(99), 'pending')
 })

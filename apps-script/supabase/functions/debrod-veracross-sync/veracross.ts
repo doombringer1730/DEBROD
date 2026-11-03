@@ -126,8 +126,12 @@ export function describeStatusRows(rows: Row[], studentId: number) {
 // Some schools' Veracross sends a number code instead of words. Only codes
 // confirmed against what Veracross shows the student are listed; any other
 // number counts as not turned in, so a guess never pays coins.
+// Checked Nov 2026 against a student's own Veracross page:
 export const COMPLETION_CODES: Record<number, Status> = {
-  3: 'pending', // "not turned in", checked Nov 2026
+  0: 'pending',   // "Pending": nothing recorded yet
+  2: 'missing',   // "Incomplete"
+  3: 'turned_in', // "Done!", or scored
+  6: 'turned_in', // "Turned In/Not Graded"
 }
 export function toStatus(raw: unknown): Status {
   if (typeof raw === 'number' || (typeof raw === 'string' && /^\s*\d+\s*$/.test(raw))) return COMPLETION_CODES[Number(raw)] ?? 'pending'
