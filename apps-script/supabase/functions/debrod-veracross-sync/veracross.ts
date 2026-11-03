@@ -24,6 +24,7 @@ export const SCOPES = [
 // the scope names; check each one against api-docs.veracross.com in the
 // school's sandbox before going live, and change it here if it differs.
 export const PATHS = {
+  students: 'students',
   enrollments: 'academics/enrollments',
   classes: 'classes',
   assignments: (classId: number) => `academics/classes/${classId}/assignments`,
@@ -72,6 +73,51 @@ const day = (r: Row, ...keys: string[]): string | null => {
   const v = str(r, ...keys)
   const m = /^(\d{4}-\d{2}-\d{2})/.exec(v)
   return m ? m[1] : null
+}
+
+// Finding a student's number from their Veracross username (or school
+// email), for linking them. Only the ids of exact matches come back, plus,
+// when nothing matches, the field names (never values) of a student row, so
+// the matching can be fixed if the school's API names things differently.
+const LOGIN_FIELDS = ['username', 'user_name', 'login', 'email', 'email_1', 'email_address', 'school_email', 'primary_email']
+export function matchStudents(rows: Row[], wanted: string): { ids: number[]; fields: string[] } {
+  const w = wanted.trim().toLowerCase()
+  const ids: number[] = []
+  if (w) {
+    for (const r of rows) {
+      const id = num(r, 'id', 'person_id', 'student_id')
+      if (id == null) continue
+      const hit = LOGIN_FIELDS.some(k => {
+        const v = r[k]
+        if (typeof v !== 'string') return false
+        const low = v.trim().toLowerCase()
+        return low === w || low.split('@')[0] === w
+      })
+      if (hit && !ids.includes(id)) ids.push(id)
+    }
+  }
+  return { ids, fields: ids.length || !rows.length ? [] : Object.keys(rows[0]).sort() }
+}
+
+// For checking the matching above against the school's API: a pilot
+// student's grade rows cut down to their field names, plus the values of
+// fields that look like a completion status. Scores and comments never
+// come back.
+const STATUSISH = /status|complet|submi|turn|late|missing|excus|exempt/i
+const SCOREISH = /score|grade|points|percent|comment|note|mark/i
+export function describeStatusRows(rows: Row[], studentId: number) {
+  const mine = rows.filter(r => num(r, 'student_id', 'person_id', 'student') === studentId)
+  const fields = [...new Set(mine.flatMap(r => Object.keys(r)))].sort()
+  const values: Record<string, unknown[]> = {}
+  for (const k of fields) {
+    if (!STATUSISH.test(k) || SCOREISH.test(k)) continue
+    values[k] = [...new Set(mine.map(r => {
+      const v = r[k]
+      return v && typeof v === 'object' ? JSON.stringify(v).slice(0, 200) : v
+    }))].slice(0, 10)
+  }
+  // If none matched the student, the field names of any row, to see why.
+  return { rows: mine.length, total: rows.length, fields: mine.length ? fields : Object.keys(rows[0] || {}).sort(), values }
 }
 
 // Completion status, in whatever words the school's Veracross uses, down to

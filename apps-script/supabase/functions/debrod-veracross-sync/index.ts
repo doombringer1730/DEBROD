@@ -25,7 +25,7 @@
 // Deploy with "Verify JWT" OFF: the schedule has no user session, and the
 // function checks the secret or the admin session itself.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
-import { mockSource, syncWindow, veracrossSource, type Source } from './veracross.ts'
+import { describeStatusRows, matchStudents, mockSource, PATHS, syncWindow, veracrossSource, type Source } from './veracross.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -77,6 +77,37 @@ Deno.serve(async (req) => {
 
   let src: Source
   try { src = source() } catch (e) { return reply(500, { error: (e as Error).message }) }
+
+  // { "find": "<username>" }: look up a student's Veracross number to link
+  // them. Returns only the matching ids; nothing is saved.
+  const body = await req.json().catch(() => ({})) as { find?: unknown; inspect?: unknown }
+  if (typeof body.find === 'string') {
+    if (src.name !== 'veracross') return reply(400, { error: 'Set VERACROSS_MODE to veracross to look students up.' })
+    try {
+      const rows = await (src as ReturnType<typeof veracrossSource>).client.list(PATHS.students)
+      return reply(200, { ok: true, ...matchStudents(rows, body.find.slice(0, 100)) })
+    } catch (e) {
+      return reply(502, { error: String((e as Error).message || e).slice(0, 500) })
+    }
+  }
+
+  // { "inspect": true }: what a linked student's grade rows look like for
+  // the first few synced assignments (field names and status values only),
+  // to check the status matching. Nothing is saved.
+  if (body.inspect === true) {
+    if (src.name !== 'veracross') return reply(400, { error: 'Set VERACROSS_MODE to veracross to inspect.' })
+    try {
+      const { data: st } = await db.from('debrod_hw_students').select('veracross_id').limit(1)
+      const { data: work } = await db.from('debrod_hw_assignments').select('id').order('due').limit(3)
+      if (!st || !st.length || !work || !work.length) return reply(400, { error: 'Link a student and sync first.' })
+      const sid = Number(st[0].veracross_id)
+      const out = []
+      for (const w of work) out.push(describeStatusRows(await (src as ReturnType<typeof veracrossSource>).client.list(PATHS.grades(Number(w.id))), sid))
+      return reply(200, { ok: true, assignments: out })
+    } catch (e) {
+      return reply(502, { error: String((e as Error).message || e).slice(0, 500) })
+    }
+  }
 
   const { data: run, error: runErr } = await db.from('debrod_hw_sync_runs').insert({ source: src.name }).select('id').single()
   if (runErr) return reply(500, { error: runErr.message })

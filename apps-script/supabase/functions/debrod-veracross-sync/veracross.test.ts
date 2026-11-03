@@ -6,7 +6,7 @@
 //   node --experimental-strip-types --test supabase/functions/debrod-veracross-sync/veracross.test.ts
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mockSource, pickStatus, SCOPES, syncWindow, toStatus, VeracrossClient, veracrossSource } from './veracross.ts'
+import { describeStatusRows, matchStudents, mockSource, pickStatus, SCOPES, syncWindow, toStatus, VeracrossClient, veracrossSource } from './veracross.ts'
 
 type Call = { url: string; init?: RequestInit }
 
@@ -140,4 +140,26 @@ test('mock data is the same every time for the same day', async () => {
   assert.ok(a.statuses.every(s => s.status === 'pending' || a.assignments.find(x => x.id === s.assignment_id)!.due! < '2026-10-27'))
   // Only the students asked about.
   assert.deepEqual([...new Set(a.statuses.map(s => s.veracross_id))].sort(), [1001, 1002])
+})
+
+test('matchStudents finds a username or school email, and nothing else', () => {
+  const rows = [
+    { id: 11, username: 'someone_else', email: 'other@school.org', first_name: 'A' },
+    { id: 42, email: '28Hudson_Yeager@school.org', first_name: 'B' },
+  ]
+  assert.deepEqual(matchStudents(rows, '28hudson_yeager'), { ids: [42], fields: [] })
+  assert.deepEqual(matchStudents(rows, 'nobody'), { ids: [], fields: ['email', 'first_name', 'id', 'username'] })
+  assert.deepEqual(matchStudents([], 'x'), { ids: [], fields: [] })
+})
+
+test('describeStatusRows keeps field names and status values, never scores', () => {
+  const rows = [
+    { student_id: 7, assignment_id: 1, completion_status: 'Turned In', score: 95, comment: 'great' },
+    { student_id: 8, assignment_id: 1, completion_status: 'Missing', score: 0 },
+  ]
+  const d = describeStatusRows(rows, 7)
+  assert.equal(d.rows, 1)
+  assert.equal(d.total, 2)
+  assert.deepEqual(d.fields, ['assignment_id', 'comment', 'completion_status', 'score', 'student_id'])
+  assert.deepEqual(d.values, { completion_status: ['Turned In'] })
 })
