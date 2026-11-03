@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  :root {
+    --bg: #0f1020; --panel: #1a1b33; --line: #2c2e52; --text: #eef0ff;
+    --muted: #9a9cc4; --gold: #ffcc33; --good: #3ddc97; --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center;
+           justify-content: space-between; padding: 14px 16px; background: var(--bg);
+           border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font-size: 20px; }
+  .coins { font-size: 18px; font-weight: 700; color: var(--gold); }
+  nav { display: flex; gap: 8px; max-width: 760px; margin: 0 auto; padding: 14px 16px 0; }
+  nav button { flex: 1; padding: 10px; border: 1px solid var(--line); border-radius: 10px;
+               background: var(--panel); color: var(--muted); font: inherit; font-weight: 600; cursor: pointer; }
+  nav button.on { color: var(--text); border-color: var(--gold); }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  h2 { margin: 22px 0 8px; font-size: 15px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .banner { margin-bottom: 12px; padding: 10px 14px; border-radius: 10px; font-weight: 600;
+            background: var(--panel); border: 1px solid var(--line); }
+  .banner.good { border-color: var(--good); color: var(--good); }
+  .banner.bad { border-color: var(--bad); color: var(--bad); }
+  .card { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+          margin-bottom: 8px; padding: 12px 14px; border-radius: 12px; background: var(--panel);
+          border: 1px solid var(--line); border-left-width: 4px; }
+  .card.missing { border-left-color: var(--bad); }
+  .card.due { border-left-color: var(--gold); }
+  .card.turned_in { border-left-color: var(--good); opacity: .75; }
+  .title { font-weight: 600; }
+  .side { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .reward { color: var(--gold); font-weight: 700; white-space: nowrap; }
+  button.act { padding: 8px 12px; border: 0; border-radius: 8px; background: var(--gold);
+               color: #1a1300; font: inherit; font-weight: 700; cursor: pointer; }
+  button.act:disabled { opacity: .4; cursor: default; }
+  button.link { padding: 0; border: 0; background: none; color: var(--muted); font: inherit;
+                text-decoration: underline; cursor: pointer; }
+  .games { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .game { padding: 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); text-align: center; }
+  .game .icon { font-size: 40px; }
+  .game h3 { margin: 6px 0 4px; }
+  .game p { margin: 0 0 14px; }
+  #stage { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+           align-items: center; justify-content: center; gap: 12px; padding: 16px; background: rgba(5, 6, 15, .96); }
+  #stage[hidden], [hidden] { display: none !important; }
+  .stage-top { display: flex; justify-content: space-between; align-items: center; width: min(92vw, 400px); font-weight: 700; }
+  canvas { width: min(92vw, 400px); height: auto; border-radius: 10px; border: 1px solid var(--line); touch-action: none; }
+  .pad { display: grid; grid-template-columns: repeat(3, 56px); gap: 6px; }
+  .pad button { height: 48px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+                color: var(--text); font-size: 20px; }
+  #over { text-align: center; }
+  #over p { font-size: 20px; margin: 0 0 12px; }
+  #over button { margin: 0 4px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>🕹️ Homework Arcade</h1>
+    <div class="coins">🪙 <span id="coins">–</span></div>
+  </header>
+  <nav>
+    <button data-tab="work" class="on">Assignments</button>
+    <button data-tab="arcade">Arcade</button>
+  </nav>
+  <main>
+    <div id="banner" class="banner" hidden></div>
+
+    <section id="work">
+      <p id="who" class="muted"></p>
+      <p class="muted">Turn in a missing assignment for <b>+5</b> coins, or a coming-up one on time for <b>+10</b>.</p>
+      <div id="lists" class="muted">Loading your assignments…</div>
+    </section>
+
+    <section id="arcade" hidden>
+      <p class="muted">Each play costs <b class="cost">3</b> coins.</p>
+      <div class="games">
+        <div class="game">
+          <div class="icon">🐍</div><h3>Snake</h3>
+          <p class="muted">Eat, grow, and don't run into yourself.</p>
+          <button class="act" data-game="snake">Play · <span class="cost">3</span> 🪙</button>
+        </div>
+        <div class="game">
+          <div class="icon">🧱</div><h3>Breakout</h3>
+          <p class="muted">Bounce the ball and break every brick.</p>
+          <button class="act" data-game="breakout">Play · <span class="cost">3</span> 🪙</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="stage" hidden>
+    <div class="stage-top"><span id="score"></span><button class="link" id="quit">Quit</button></div>
+    <canvas id="canvas" width="400" height="400"></canvas>
+    <div id="pad" class="pad">
+      <span></span><button data-dir="up">▲</button><span></span>
+      <button data-dir="left">◀</button><button data-dir="down">▼</button><button data-dir="right">▶</button>
+    </div>
+    <div id="over" hidden>
+      <p>Game over! Score <b id="final"></b></p>
+      <button class="act" id="again">Play again · <span class="cost">3</span> 🪙</button>
+      <button class="link" id="back">Back to arcade</button>
+    </div>
+  </div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  let state = null;
+
+  function call(fn, ...args) {
+    return new Promise((resolve, reject) =>
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](...args));
+  }
+
+  function banner(text, kind) {
+    const b = $('banner');
+    b.textContent = text;
+    b.className = 'banner ' + (kind || '');
+    b.hidden = false;
+    clearTimeout(banner.timer);
+    banner.timer = setTimeout(() => { b.hidden = true; }, 6000);
+  }
+
+  function showError(err) {
+    banner((err && err.message) || String(err), 'bad');
+  }
+
+  function setCoins(coins) {
+    state.coins = coins;
+    $('coins').textContent = coins;
+    document.querySelectorAll('[data-game]').forEach(b => { b.disabled = coins < state.costPerPlay; });
+  }
+
+  function formatDate(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function card(a) {
+    const row = el('div', 'card ' + a.status);
+    const info = el('div');
+    info.append(el('div', 'title', a.title), el('div', 'muted', a.className + ' · due ' + formatDate(a.dueDate)));
+    const side = el('div', 'side');
+    if (a.status === 'turned_in') {
+      side.append(el('span', 'reward', a.paid ? '+' + a.paid + ' 🪙' : '✓'));
+    } else {
+      side.append(el('span', 'reward', '+' + a.reward + ' 🪙'));
+      if (state.demo) {
+        const b = el('button', 'act', 'Mark turned in');
+        b.onclick = () => run(b, 'demoTurnIn', a.id);
+        side.append(b);
+      }
+    }
+    row.append(info, side);
+    return row;
+  }
+
+  function render(s) {
+    state = s;
+    setCoins(s.coins);
+    document.querySelectorAll('.cost').forEach(c => { c.textContent = s.costPerPlay; });
+    $('who').textContent = 'Signed in as ' + s.email +
+      (s.demo ? '. Practice mode: these are placeholder assignments, not your real ones.' : '');
+    if (s.earned) banner('+' + s.earned + ' coins! Nice work.', 'good');
+
+    const lists = $('lists');
+    lists.className = '';
+    lists.innerHTML = '';
+    for (const [status, label] of [['missing', 'Missing'], ['due', 'Coming up'], ['turned_in', 'Turned in']]) {
+      const items = s.assignments.filter(a => a.status === status);
+      if (!items.length) continue;
+      lists.append(el('h2', null, label));
+      items.forEach(a => lists.append(card(a)));
+    }
+    if (!s.assignments.length) lists.append(el('p', 'muted', 'No assignments right now.'));
+    if (s.demo) {
+      const reset = el('button', 'link', 'Start practice mode over');
+      reset.onclick = () => run(reset, 'demoReset');
+      lists.append(el('p'), reset);
+    }
+  }
+
+  async function run(btn, fn, ...args) {
+    btn.disabled = true;
+    try {
+      render(await call(fn, ...args));
+    } catch (err) {
+      showError(err);
+      btn.disabled = false;
+    }
+  }
+
+  document.querySelectorAll('nav button').forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+      $('work').hidden = b.dataset.tab !== 'work';
+      $('arcade').hidden = b.dataset.tab !== 'arcade';
+    };
+  });
+
+  // Games
+
+  const canvas = $('canvas');
+  const ctx = canvas.getContext('2d');
+  const held = {};
+  let game = null, gameId = null, loop = null;
+
+  function setScore(text) { $('score').textContent = text; }
+
+  async function playGame(id) {
+    document.querySelectorAll('[data-game], #again').forEach(b => { b.disabled = true; });
+    try {
+      const r = await call('startGame', id);
+      setCoins(r.coins);
+      if (!r.ok) {
+        closeStage();
+        banner('You need ' + state.costPerPlay + ' coins to play. Turn in an assignment to earn more!', 'bad');
+        return;
+      }
+      openStage(id);
+    } catch (err) {
+      closeStage();
+      showError(err);
+    } finally {
+      setCoins(state.coins);
+      $('again').disabled = false;
+    }
+  }
+
+  function openStage(id) {
+    clearInterval(loop);
+    gameId = id;
+    game = id === 'snake' ? snake() : breakout();
+    $('stage').hidden = false;
+    $('over').hidden = true;
+    $('pad').hidden = !game.usesPad;
+    game.start();
+    game.draw();
+    loop = setInterval(() => {
+      if (!game.tick()) return gameOver();
+      game.draw();
+    }, game.speed);
+  }
+
+  function gameOver() {
+    clearInterval(loop);
+    loop = null;
+    $('final').textContent = game.score;
+    $('over').hidden = false;
+    $('pad').hidden = true;
+  }
+
+  function closeStage() {
+    clearInterval(loop);
+    loop = null;
+    game = null;
+    $('stage').hidden = true;
+  }
+
+  document.querySelectorAll('[data-game]').forEach(b => { b.onclick = () => playGame(b.dataset.game); });
+  $('again').onclick = () => playGame(gameId);
+  $('back').onclick = closeStage;
+  $('quit').onclick = closeStage;
+
+  const KEYS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down',
+                 a: 'left', d: 'right', w: 'up', s: 'down' };
+  document.addEventListener('keydown', e => {
+    const k = KEYS[e.key];
+    if (!k || !game || !loop) return;
+    e.preventDefault();
+    held[k] = true;
+    game.key(k);
+  });
+  document.addEventListener('keyup', e => { const k = KEYS[e.key]; if (k) held[k] = false; });
+  document.querySelectorAll('[data-dir]').forEach(b => {
+    b.onpointerdown = e => { e.preventDefault(); if (game && loop) game.key(b.dataset.dir); };
+  });
+  function pointerX(e) {
+    const r = canvas.getBoundingClientRect();
+    return (e.clientX - r.left) * canvas.width / r.width;
+  }
+  canvas.addEventListener('pointermove', e => { if (game && game.pointer) game.pointer(pointerX(e)); });
+  canvas.addEventListener('pointerdown', e => { if (game && game.pointer) game.pointer(pointerX(e)); });
+
+  function snake() {
+    const N = 20, C = canvas.width / N;
+    const DIRS = { left: { x: -1, y: 0 }, right: { x: 1, y: 0 }, up: { x: 0, y: -1 }, down: { x: 0, y: 1 } };
+    let body, dir, next, food;
+    const place = () => {
+      do {
+        food = { x: Math.floor(Math.random() * N), y: Math.floor(Math.random() * N) };
+      } while (body.some(p => p.x === food.x && p.y === food.y));
+    };
+    const g = {
+      score: 0, speed: 110, usesPad: true,
+      start() {
+        body = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }];
+        dir = next = DIRS.right;
+        g.score = 0;
+        setScore('Score 0');
+        place();
+      },
+      key(k) {
+        const d = DIRS[k];
+        if (d && (d.x !== -dir.x || d.y !== -dir.y)) next = d;
+      },
+      tick() {
+        dir = next;
+        const head = { x: body[0].x + dir.x, y: body[0].y + dir.y };
+        if (head.x < 0 || head.y < 0 || head.x >= N || head.y >= N) return false;
+        const eating = head.x === food.x && head.y === food.y;
+        const rest = eating ? body : body.slice(0, -1);
+        if (rest.some(p => p.x === head.x && p.y === head.y)) return false;
+        body.unshift(head);
+        if (eating) {
+          g.score++;
+          setScore('Score ' + g.score);
+          place();
+        } else {
+          body.pop();
+        }
+        return true;
+      },
+      draw() {
+        ctx.fillStyle = '#0b0c1a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#ff6b6b';
+        ctx.fillRect(food.x * C + 3, food.y * C + 3, C - 6, C - 6);
+        body.forEach((p, i) => {
+          ctx.fillStyle = i ? '#3ddc97' : '#b6ffe0';
+          ctx.fillRect(p.x * C + 1, p.y * C + 1, C - 2, C - 2);
+        });
+      },
+    };
+    return g;
+  }
+
+  function breakout() {
+    const W = canvas.width, H = canvas.height, COLS = 8, ROWS = 5, BW = W / COLS, BH = 18, R = 6;
+    const COLORS = ['#ff6b6b', '#ff9f43', '#ffcc33', '#3ddc97', '#5aa9ff'];
+    let paddle, ball, bricks, lives, level;
+    const build = () => {
+      bricks = [];
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) bricks.push({ x: c * BW, y: 40 + r * BH, r: r, alive: true });
+      }
+    };
+    const serve = () => {
+      const speed = 4 + level * 0.5;
+      ball = { x: W / 2, y: H - 60, vx: speed * 0.6 * (Math.random() < 0.5 ? -1 : 1), vy: -speed * 0.8 };
+    };
+    const status = () => setScore('Score ' + g.score + ' · ' + '♥'.repeat(lives));
+    const g = {
+      score: 0, speed: 16, usesPad: false,
+      start() {
+        paddle = { x: W / 2 - 40, w: 80 };
+        lives = 3;
+        level = 0;
+        g.score = 0;
+        build();
+        serve();
+        status();
+      },
+      key() {},
+      pointer(x) { paddle.x = Math.max(0, Math.min(W - paddle.w, x - paddle.w / 2)); },
+      tick() {
+        if (held.left) g.pointer(paddle.x + paddle.w / 2 - 7);
+        if (held.right) g.pointer(paddle.x + paddle.w / 2 + 7);
+        ball.x += ball.vx;
+        ball.y += ball.vy;
+        if (ball.x < R || ball.x > W - R) {
+          ball.vx = -ball.vx;
+          ball.x = Math.max(R, Math.min(W - R, ball.x));
+        }
+        if (ball.y < R) ball.vy = Math.abs(ball.vy);
+
+        const paddleY = H - 20;
+        if (ball.vy > 0 && ball.y + R >= paddleY && ball.y + R <= paddleY + 12 &&
+            ball.x >= paddle.x - R && ball.x <= paddle.x + paddle.w + R) {
+          const hit = (ball.x - (paddle.x + paddle.w / 2)) / (paddle.w / 2);
+          const speed = Math.hypot(ball.vx, ball.vy);
+          ball.vx = speed * Math.max(-0.85, Math.min(0.85, hit));
+          ball.vy = -Math.sqrt(speed * speed - ball.vx * ball.vx);
+        }
+
+        if (ball.y > H + R) {
+          lives--;
+          status();
+          if (!lives) return false;
+          serve();
+        }
+
+        for (const b of bricks) {
+          if (b.alive && ball.x > b.x && ball.x < b.x + BW && ball.y - R < b.y + BH && ball.y + R > b.y) {
+            b.alive = false;
+            ball.vy = -ball.vy;
+            g.score++;
+            status();
+            break;
+          }
+        }
+        if (bricks.every(b => !b.alive)) {
+          level++;
+          build();
+          serve();
+        }
+        return true;
+      },
+      draw() {
+        ctx.fillStyle = '#0b0c1a';
+        ctx.fillRect(0, 0, W, H);
+        for (const b of bricks) {
+          if (!b.alive) continue;
+          ctx.fillStyle = COLORS[b.r];
+          ctx.fillRect(b.x + 2, b.y + 2, BW - 4, BH - 4);
+        }
+        ctx.fillStyle = '#eef0ff';
+        ctx.fillRect(paddle.x, H - 20, paddle.w, 8);
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, R, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffcc33';
+        ctx.fill();
+      },
+    };
+    return g;
+  }
+
+  call('getState').then(render).catch(showError);
+</script>
+</body>
+</html>
