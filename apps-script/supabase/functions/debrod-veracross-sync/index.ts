@@ -92,17 +92,17 @@ Deno.serve(async (req) => {
   }
 
   // { "inspect": true }: what a linked student's grade rows look like for
-  // the first few synced assignments (field names and status values only),
+  // the synced assignments (field names and status values only),
   // to check the status matching. Nothing is saved.
   if (body.inspect === true) {
     if (src.name !== 'veracross') return reply(400, { error: 'Set VERACROSS_MODE to veracross to inspect.' })
     try {
       const { data: st } = await db.from('debrod_hw_students').select('veracross_id').limit(1)
-      const { data: work } = await db.from('debrod_hw_assignments').select('id').order('due').limit(3)
+      const { data: work } = await db.from('debrod_hw_assignments').select('id').order('due').limit(60)
       if (!st || !st.length || !work || !work.length) return reply(400, { error: 'Link a student and sync first.' })
       const sid = Number(st[0].veracross_id)
       const out = []
-      for (const w of work) out.push(describeStatusRows(await (src as ReturnType<typeof veracrossSource>).client.list(PATHS.grades(Number(w.id))), sid))
+      for (const w of work) out.push({ assignment_id: Number(w.id), ...describeStatusRows(await (src as ReturnType<typeof veracrossSource>).client.list(PATHS.grades(Number(w.id))), sid) })
       return reply(200, { ok: true, assignments: out })
     } catch (e) {
       return reply(502, { error: String((e as Error).message || e).slice(0, 500) })

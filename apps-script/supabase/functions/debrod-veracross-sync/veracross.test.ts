@@ -163,3 +163,9 @@ test('describeStatusRows keeps field names and status values, never scores', () 
   assert.deepEqual(d.fields, ['assignment_id', 'comment', 'completion_status', 'score', 'student_id'])
   assert.deepEqual(d.values, { completion_status: ['Turned In'] })
 })
+
+test('number codes: only confirmed ones count, the rest are not turned in', () => {
+  assert.equal(toStatus(3), 'pending')
+  assert.equal(toStatus('3'), 'pending')
+  assert.equal(toStatus(99), 'pending')
+})
