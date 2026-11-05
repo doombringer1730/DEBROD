@@ -76,6 +76,16 @@ export class BasePart extends Instance {
     return this._aabb
   }
   get shapeName() { return 'Block' }
+  // Moves the part without firing Changed (physics, joints, humanoids).
+  _setPhysicsCFrame(cf) {
+    this._p.CFrame = cf
+    this._aabbDirty = true
+    const e = this._ws && this._engine
+    if (e) {
+      e.physics.movedSilently(this)
+      e.markRender(this)
+    }
+  }
   _onProp(key) {
     if (key === 'CFrame' || key === 'Size') {
       this._aabbDirty = true

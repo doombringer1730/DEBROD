@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brickframe Sandbox</title>
+<link rel="stylesheet" href="demo/demo.css">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="game"></div>
+<header class="bar">
+  <strong>Brickframe</strong>
+  <button id="play">Play</button>
+  <button id="stop" disabled>Stop</button>
+  <span class="sep"></span>
+  <label class="btn">Import Roblox file<input id="import" type="file" accept=".rbxl,.rbxm,.rbxlx,.rbxmx" hidden></label>
+  <button id="save">Save</button>
+  <button id="load">Load</button>
+  <button id="export">Export</button>
+  <span class="sep"></span>
+  <button id="panelToggle">Studio</button>
+</header>
+<div id="hotbar" class="hotbar"></div>
+<aside id="panel" class="panel" hidden>
+  <nav><button data-tab="explorer" class="on">Explorer</button><button data-tab="script">Script</button><button data-tab="output">Output</button></nav>
+  <section data-tab="explorer"><div id="tree" class="tree"></div></section>
+  <section data-tab="script" hidden>
+    <select id="examples"></select>
+    <textarea id="source" spellcheck="false"></textarea>
+    <div class="row"><button id="run">Run as Script</button><button id="stopScripts">Remove my scripts</button></div>
+  </section>
+  <section data-tab="output" hidden><div id="output" class="output"></div></section>
+</aside>
+<div id="help" class="help">WASD move · Space jump · right-drag or arrows orbit · wheel zoom · Shift shift-lock · 1–9 tools · click to use</div>
+<script type="module" src="demo/demo.js"></script>
+</body>
+</html>
