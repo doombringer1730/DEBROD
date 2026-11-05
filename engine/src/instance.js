@@ -10,14 +10,24 @@ const registry = new Map()
 const propCache = new Map()
 let nextId = 1
 
-const childLookup = {
-  get(target, key, receiver) {
-    if (typeof key === 'string' && !(key in target)) {
-      const child = target._childByName(key)
-      if (child) return child
-    }
-    return Reflect.get(target, key, receiver)
-  },
+// Children are reachable as properties (workspace.Coins). Each parent gets a
+// getter for every child name that doesn't clash with a real member.
+function exposeChild(parent, name) {
+  if (!name || name in parent) return
+  if (!parent._exposed) parent._exposed = new Set()
+  parent._exposed.add(name)
+  Object.defineProperty(parent, name, { configurable: true, enumerable: false, get() { return this._childByName(name) } })
+}
+function unexposeChild(parent, name) {
+  if (!parent._exposed || !parent._exposed.has(name)) return
+  if (parent._childByName(name)) return
+  parent._exposed.delete(name)
+  delete parent[name]
+}
+export function adoptChild(parent, child) {
+  child._parent = parent
+  parent._children.push(child)
+  exposeChild(parent, child._p.Name)
 }
 
 function sameValue(a, b) {
@@ -75,7 +85,6 @@ export class Instance {
     this.AncestryChanged = new Signal()
     this.AttributeChanged = new Signal()
     this.Destroying = new Signal()
-    return new Proxy(this, childLookup)
   }
 
   // Registers a class so Instance.new can create it, and turns its static
@@ -133,9 +142,13 @@ export class Instance {
       for (let a = old; a; a = a._parent) a.DescendantRemoving.Fire(this)
       const i = old._children.indexOf(this)
       if (i >= 0) old._children.splice(i, 1)
+      unexposeChild(old, this._p.Name)
     }
     this._parent = p
-    if (p) p._children.push(this)
+    if (p) {
+      p._children.push(this)
+      exposeChild(p, this._p.Name)
+    }
     this._refreshContext()
     if (old) old.ChildRemoved.Fire(this)
     this._propChanged('Parent', p, old)
@@ -181,6 +194,10 @@ export class Instance {
   get _engine() { return this._dm ? this._dm._engine : null }
 
   _propChanged(key, v, old) {
+    if (key === 'Name' && this._parent) {
+      unexposeChild(this._parent, old)
+      exposeChild(this._parent, v)
+    }
     this._onProp(key, v, old)
     this.Changed.Fire(key)
     const s = this._propSignals.get(key)
@@ -320,9 +337,7 @@ export class Instance {
     copy._afterClone(this)
     for (const c of this._children) {
       if (!c._p.Archivable || isNotCreatable(c.constructor)) continue
-      const cc = c._cloneInto(map)
-      cc._parent = copy
-      copy._children.push(cc)
+      adoptChild(copy, c._cloneInto(map))
     }
     return copy
   }

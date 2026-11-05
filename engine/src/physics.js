@@ -5,20 +5,27 @@ import { Vector3, CFrame } from './math.js'
 
 const EPS = 1e-4
 const CELL = 16
+const key3 = (x, y, z) => ((x + 4096) * 8192 + (y + 4096)) * 8192 + (z + 4096)
 const LARGE = 400 // parts spanning more grid cells than this are checked directly
+let stamp = 0 // shared by every grid so a query over two grids never skips a part
 
 class Grid {
   constructor() {
     this.cells = new Map()
     this.large = new Set()
     this.keys = new Map()
-    this.stamp = 0
   }
-  insert(p) {
+  clear() {
+    this.cells.clear()
+    this.large.clear()
+    this.keys.clear()
+  }
+  // margin widens the cells a part is filed under, for parts that move during a step.
+  insert(p, margin = 0) {
     const a = p.getAABB()
-    const x0 = Math.floor(a.min[0] / CELL), x1 = Math.floor(a.max[0] / CELL)
-    const y0 = Math.floor(a.min[1] / CELL), y1 = Math.floor(a.max[1] / CELL)
-    const z0 = Math.floor(a.min[2] / CELL), z1 = Math.floor(a.max[2] / CELL)
+    const x0 = Math.floor((a.min[0] - margin) / CELL), x1 = Math.floor((a.max[0] + margin) / CELL)
+    const y0 = Math.floor((a.min[1] - margin) / CELL), y1 = Math.floor((a.max[1] + margin) / CELL)
+    const z0 = Math.floor((a.min[2] - margin) / CELL), z1 = Math.floor((a.max[2] + margin) / CELL)
     if ((x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1) > LARGE) {
       this.large.add(p)
       this.keys.set(p, null)
@@ -28,7 +35,7 @@ class Grid {
     for (let x = x0; x <= x1; x++)
       for (let y = y0; y <= y1; y++)
         for (let z = z0; z <= z1; z++) {
-          const k = `${x},${y},${z}`
+          const k = key3(x, y, z)
           let c = this.cells.get(k)
           if (!c) this.cells.set(k, (c = []))
           c.push(p)
@@ -52,7 +59,7 @@ class Grid {
     }
   }
   query(min, max, fn) {
-    const s = ++this.stamp
+    const s = ++stamp
     for (const p of this.large) fn(p)
     const x0 = Math.floor(min[0] / CELL), x1 = Math.floor(max[0] / CELL)
     const y0 = Math.floor(min[1] / CELL), y1 = Math.floor(max[1] / CELL)
@@ -60,7 +67,7 @@ class Grid {
     for (let x = x0; x <= x1; x++)
       for (let y = y0; y <= y1; y++)
         for (let z = z0; z <= z1; z++) {
-          const c = this.cells.get(`${x},${y},${z}`)
+          const c = this.cells.get(key3(x, y, z))
           if (!c) continue
           for (const p of c) {
             if (p._qstamp === s) continue
@@ -83,6 +90,7 @@ export class Physics {
     this.parts = new Set()
     this.staticGrid = new Grid() // anchored parts
     this.dynamic = new Set() // unanchored parts
+    this.dynGrid = new Grid() // unanchored parts, refiled every step
     this.bodies = new Set() // humanoid bodies: { min, max, humanoid }
     this.contacts = new Map() // mover part -> Set<part>
     this.moved = new Set() // anchored parts moved this step
@@ -96,6 +104,7 @@ export class Physics {
     this.parts.delete(part)
     this.staticGrid.remove(part)
     this.dynamic.delete(part)
+    this.dynGrid.remove(part)
     const c = this.contacts.get(part)
     if (c) {
       for (const o of c) o.TouchEnded.Fire(part)
@@ -106,13 +115,21 @@ export class Physics {
   _classify(part) {
     this.staticGrid.remove(part)
     this.dynamic.delete(part)
+    this.dynGrid.remove(part)
     // Humanoid roots move with their body; welded parts move with their
     // assembly and only collide when that assembly is anchored.
     if (part._controlled) return
     if (part._jointed) {
       if (part._assemblyStatic) this.staticGrid.insert(part)
     } else if (part._p.Anchored) this.staticGrid.insert(part)
-    else this.dynamic.add(part)
+    else {
+      this.dynamic.add(part)
+      this.dynGrid.insert(part, 2)
+    }
+  }
+  _refileDynamic() {
+    this.dynGrid.clear()
+    for (const p of this.dynamic) this.dynGrid.insert(p, 2)
   }
   reclassify(part) { if (this.parts.has(part)) this._classify(part) }
   // A part's CFrame was moved by the engine (not by a script).
@@ -153,7 +170,7 @@ export class Physics {
       if (overlaps(min, max, a.min, a.max)) fn(a.min, a.max, p)
     }
     this.staticGrid.query(min, max, test)
-    for (const p of this.dynamic) test(p)
+    this.dynGrid.query(min, max, test)
     for (const b of this.bodies) {
       if (skip && skip(b)) continue
       if (overlaps(min, max, b.min, b.max)) fn(b.min, b.max, b)
@@ -205,6 +222,7 @@ export class Physics {
     for (const h of this.engine.humanoids) h._step(dt)
     for (const p of this.moved) p._moveDelta = [0, 0, 0]
     this.moved.clear()
+    this._refileDynamic()
 
     for (const p of [...this.dynamic]) {
       if (p._destroyed) continue
@@ -262,7 +280,7 @@ export class Physics {
         if (overlaps(min, max, a.min, a.max, 0)) now.add(o)
       }
       this.staticGrid.query(min, max, test)
-      for (const o of this.dynamic) test(o)
+      this.dynGrid.query(min, max, test)
       const before = this.contacts.get(part) || new Set()
       for (const o of now) {
         if (before.has(o)) continue
@@ -290,7 +308,7 @@ export class Physics {
       if (overlaps(min, max, b.min, b.max, 0)) out.push(o)
     }
     this.staticGrid.query(min, max, test)
-    for (const o of this.dynamic) test(o)
+    this.dynGrid.query(min, max, test)
     return out
   }
 
@@ -301,7 +319,7 @@ export class Physics {
       if (overlaps(min, max, b.min, b.max, 0)) out.push(o)
     }
     this.staticGrid.query(min, max, test)
-    for (const o of this.dynamic) test(o)
+    this.dynGrid.query(min, max, test)
     return out
   }
 

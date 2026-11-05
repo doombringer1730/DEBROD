@@ -16,6 +16,8 @@ import { savePlace, loadPlace } from './serialize.js'
 import { importRoblox } from './rbxl.js'
 
 const STEP = 1 / 60
+const _mat = new THREE.Matrix4()
+const _col = new THREE.Color()
 const MAX_LIGHTS = 12
 
 export class Engine {
@@ -55,6 +57,7 @@ export class Engine {
     this.scene.fog = new THREE.Fog(0xc0d2e6, 0, 100000)
 
     this.meshes = new Map()
+    this.batches = new Map()
     this.renderDirty = new Set()
     this.humanoids = new Set()
     this.lightCount = 0
@@ -220,11 +223,72 @@ export class Engine {
     this.physics.remove(part)
     this.renderDirty.delete(part)
     const r = this.meshes.get(part)
-    if (r) {
-      this.scene.remove(r.mesh)
-      if (r.lights) this.lightCount -= r.lights
-      this.meshes.delete(part)
+    if (r) this._dropRender(part, r)
+  }
+  _dropRender(part, r) {
+    this.meshes.delete(part)
+    if (r.batch) {
+      const b = this.batches.get(r.batch)
+      const last = b.parts.length - 1
+      const moved = b.parts[last]
+      if (r.index !== last) {
+        b.parts[r.index] = moved
+        b.mesh.getMatrixAt(last, _mat)
+        b.mesh.setMatrixAt(r.index, _mat)
+        b.mesh.getColorAt(last, _col)
+        b.mesh.setColorAt(r.index, _col)
+        this.meshes.get(moved).index = r.index
+      }
+      b.parts.pop()
+      b.mesh.count = b.parts.length
+      b.dirty = true
+      return
     }
+    this.scene.remove(r.mesh)
+    if (r.lights) this.lightCount -= r.lights
+  }
+  // Anchored, opaque parts with nothing attached are drawn together, one
+  // instanced mesh per shape and material, so big places stay fast.
+  _batchKey(part, look) {
+    if (!part._p.Anchored || part._controlled || part._jointed && !part._assemblyStatic) return null
+    if (look.decorated || look.glass || look.offset || part._p.Transparency > 0 || part._localTransparency) return null
+    const def = MAT[part._p.Material]
+    if (def && def.neon) return null
+    return `${look.shape}|${def ? part._p.Material : 'Other'}`
+  }
+  _batchAdd(part, key) {
+    let b = this.batches.get(key)
+    if (!b) {
+      const [shape, matName] = key.split('|')
+      const def = MAT[matName] || { roughness: 0.85, metalness: 0 }
+      const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: def.roughness, metalness: def.metalness })
+      b = { parts: [], mesh: null, geo: geometry(shape), mat, dirty: true }
+      this._growBatch(b, 256)
+      this.batches.set(key, b)
+    }
+    if (b.parts.length >= b.mesh.instanceMatrix.count) this._growBatch(b, b.mesh.instanceMatrix.count * 2)
+    const r = { batch: key, index: b.parts.length }
+    b.parts.push(part)
+    b.mesh.count = b.parts.length
+    this.meshes.set(part, r)
+    return r
+  }
+  _growBatch(b, cap) {
+    const m = new THREE.InstancedMesh(b.geo, b.mat, cap)
+    m.castShadow = true
+    m.receiveShadow = true
+    m.frustumCulled = false
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    m.setColorAt(0, _col.set(1, 1, 1))
+    if (b.mesh) {
+      m.instanceMatrix.array.set(b.mesh.instanceMatrix.array)
+      m.instanceColor.array.set(b.mesh.instanceColor.array)
+      this.scene.remove(b.mesh)
+      b.mesh.dispose()
+    }
+    m.count = b.parts.length
+    b.mesh = m
+    this.scene.add(m)
   }
   partChanged(part, key) {
     if (key !== 'Decoration') this.physics.changed(part, key)
@@ -235,11 +299,20 @@ export class Engine {
   _updateMesh(part) {
     let r = this.meshes.get(part)
     const look = partLook(part)
+    const bkey = this._batchKey(part, look)
+    if (bkey) {
+      if (r && r.batch !== bkey) { this._dropRender(part, r); r = null }
+      if (!r) r = this._batchAdd(part, bkey)
+      const b = this.batches.get(bkey)
+      part._p.CFrame.toMatrix4(look.scale, _mat)
+      b.mesh.setMatrixAt(r.index, _mat)
+      b.mesh.setColorAt(r.index, part._p.Color.toThree(_col))
+      b.dirty = true
+      return
+    }
+    if (r && r.batch) { this._dropRender(part, r); r = null }
     if (!r || r.key !== look.key) {
-      if (r) {
-        this.scene.remove(r.mesh)
-        if (r.lights) this.lightCount -= r.lights
-      }
+      if (r) this._dropRender(part, r)
       const mesh = new THREE.Mesh(geometry(look.shape), material(part, look))
       mesh.matrixAutoUpdate = false
       mesh.userData.part = part
@@ -316,6 +389,12 @@ export class Engine {
     this.voxels.update()
     for (const p of this.renderDirty) if (p._ws && !p._destroyed) this._updateMesh(p)
     this.renderDirty.clear()
+    for (const b of this.batches.values()) {
+      if (!b.dirty) continue
+      b.dirty = false
+      b.mesh.instanceMatrix.needsUpdate = true
+      if (b.mesh.instanceColor) b.mesh.instanceColor.needsUpdate = true
+    }
     this._updateCamera()
     this._updateLighting()
     this._updateMouse()
@@ -522,7 +601,7 @@ function partLook(part) {
   const decals = part._children.filter((c) => c instanceof Decal || c instanceof Light)
   const dkey = decals.map((d) => `${d.ClassName}:${d._p.Texture || ''}:${d._p.Face || ''}:${d._p.Transparency ?? ''}:${d._p.Enabled ?? ''}`).join('|')
   const matKey = `${part._p.Color.ToHex()}|${part._p.Material}`
-  return { shape, scale, offset, glass, matKey, key: `${shape}|${matKey}|${dkey}` }
+  return { shape, scale, offset, glass, matKey, decorated: decals.length > 0, key: `${shape}|${matKey}|${dkey}` }
 }
 
 const geoCache = new Map()

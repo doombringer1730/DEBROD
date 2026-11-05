@@ -5,7 +5,7 @@
 // referenced by rbxassetid (meshes, images, sounds) only load inside Roblox,
 // so mesh parts and unions render as boxes of their size.
 import * as THREE from 'three'
-import { Instance, allProps, isNotCreatable } from './instance.js'
+import { Instance, allProps, isNotCreatable, adoptChild } from './instance.js'
 import { Vector3, Color3, CFrame } from './math.js'
 import { BasePart } from './parts.js'
 
@@ -339,9 +339,7 @@ export function buildInstances(parsed) {
       if ('Enabled' in inst._p) inst._p.Enabled = false
     }
     for (const c of n.children) {
-      const ci = make(c)
-      ci._parent = inst
-      inst._children.push(ci)
+      adoptChild(inst, make(c))
     }
     return inst
   }

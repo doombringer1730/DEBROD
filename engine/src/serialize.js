@@ -1,6 +1,6 @@
 // Place files: JSON with the terrain, Lighting settings and the instance trees
 // of the services that hold place content.
-import { Instance, allProps, isNotCreatable } from './instance.js'
+import { Instance, allProps, isNotCreatable, adoptChild } from './instance.js'
 import { Vector3, Color3, CFrame } from './math.js'
 
 export const PLACE_FORMAT = 'brickframe-place'
@@ -67,10 +67,7 @@ export function deserializeTree(list) {
     if (inst._aabbDirty !== undefined) inst._aabbDirty = true
     for (const k of o.k || []) {
       const c = dec(k)
-      if (c) {
-        c._parent = inst
-        inst._children.push(c)
-      }
+      if (c) adoptChild(inst, c)
     }
     return inst
   }
