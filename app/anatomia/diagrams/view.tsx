@@ -5,7 +5,13 @@ import { DIAGRAMS, type Shape } from './index.ts'
 // Draws a diagram with the given parts in red. No labels: during a round the
 // red part is the question, so naming it would give the answer away.
 
-export default function DiagramView({ name, part, label }: { name: string; part: string; label: string }) {
+export default function DiagramView({ name, part, label, onPick, nameOf }: {
+  name: string; part: string; label: string
+  /** Explore: called with the part names of the shape clicked. */
+  onPick?: (parts: string[]) => void
+  /** Explore: the name to show for a shape, if it is something you can learn. */
+  nameOf?: (parts: string[]) => string | null
+}) {
   const d = DIAGRAMS[name]
   if (!d) return null
   const on = new Set(part.split('+'))
@@ -23,16 +29,20 @@ export default function DiagramView({ name, part, label }: { name: string; part:
       {d.shapes.map((s, i) => {
         const hit = lit(s)
         if (s.x && !hit) return null
+        const parts = (s.p ?? '').split(' ').filter(Boolean)
+        const name = nameOf && parts.length ? nameOf(parts) : null
         const props = {
           className: `an-dg-${s.k}${hit ? ' is-on' : ''}`,
           transform: s.t,
           style: s.w != null ? { strokeWidth: s.w } : undefined,
           markerEnd: s.k === 'a' ? `url(#an-dg-ar${hit ? '-on' : ''})` : undefined,
+          ...(onPick && name ? { onClick: () => onPick(parts), 'data-pick': '' } : {}),
         }
-        if (s.d) return <path key={i} {...props} d={s.d} />
-        if (s.c) return <circle key={i} {...props} cx={s.c[0]} cy={s.c[1]} r={s.c[2]} />
-        if (s.e) return <ellipse key={i} {...props} cx={s.e[0]} cy={s.e[1]} rx={s.e[2]} ry={s.e[3]} />
-        if (s.r) return <rect key={i} {...props} x={s.r[0]} y={s.r[1]} width={s.r[2]} height={s.r[3]} rx={s.r[4] ?? 0} />
+        const tip = name ? <title>{name}</title> : null
+        if (s.d) return <path key={i} {...props} d={s.d}>{tip}</path>
+        if (s.c) return <circle key={i} {...props} cx={s.c[0]} cy={s.c[1]} r={s.c[2]}>{tip}</circle>
+        if (s.e) return <ellipse key={i} {...props} cx={s.e[0]} cy={s.e[1]} rx={s.e[2]} ry={s.e[3]}>{tip}</ellipse>
+        if (s.r) return <rect key={i} {...props} x={s.r[0]} y={s.r[1]} width={s.r[2]} height={s.r[3]} rx={s.r[4] ?? 0}>{tip}</rect>
         return null
       })}
     </svg>
