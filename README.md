@@ -117,3 +117,24 @@ your debrid provider. Use it only for content you have the right to watch.
 ## License
 
 [MIT](LICENSE)
+
+## Anatomía (study game)
+
+`/anatomia` is a typing game for studying anatomy notes (in Spanish). A
+structure lights up red on a 3D model, or a clue from the notes is shown, and
+you type its name. Letters you've typed turn red, and the rest show as dots. A
+wrong key flashes red, and after two misses the next key lights up yellow.
+Enter skips and Esc quits.
+
+- Content lives in `app/anatomia/data/units/*.json`, one file per unit. Each
+  item cites the page of the notes it comes from.
+- Answers ignore case and accents, and a leading "hueso/músculo/nervio…" is
+  optional. Synonyms go in `accept`.
+- Progress (best score per unit, missed items) is kept in the browser's
+  localStorage only.
+- 3D models in `public/anatomia/*.glb` come from BodyParts3D, © The Database
+  Center for Life Science, licensed under CC BY-SA 2.1 Japan.
+
+After editing content, run `npm run check:anatomia`. It confirms every answer
+is accepted with and without accents, and that every 3D item points at a mesh
+that exists in its model.
