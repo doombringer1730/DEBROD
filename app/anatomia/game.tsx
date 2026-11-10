@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { textOf, type Item, type Lang } from './engine'
+import Explore from './explore'
 import Learn from './learn'
 import { PlateLinks } from './plates'
 import Round, { type RoundResult } from './round'
@@ -15,6 +16,7 @@ type Screen =
   | { name: 'round'; key: number; title: string; unit: Unit | null; items: Item[]; retry: boolean }
   | { name: 'results'; title: string; unit: Unit | null; result: RoundResult }
   | { name: 'learn'; key: number; unit: Unit; items: Item[] }
+  | { name: 'explore'; unit: Unit | null }
 
 function shuffle<T>(a: T[]): T[] {
   const b = [...a]
@@ -138,6 +140,8 @@ export default function Game() {
     return <Round key={screen.key} title={screen.title} items={screen.items} lang={lang} onFinish={finish} onQuit={quit} />
   }
 
+  if (screen.name === 'explore') return <Explore lang={lang} start={screen.unit} onQuit={quit} />
+
   if (screen.name === 'learn') {
     const u = screen.unit
     const sessionIds = new Set(screen.items.map((i) => i.id))
@@ -199,6 +203,8 @@ export default function Game() {
   }
 
   const learning = progress.mode === 'learn'
+  const exploring = progress.mode === 'explore'
+  const termCount = UNITS.reduce((n, u) => n + u.items.length, 0)
   const chips = <T extends string | number>(label: string, options: readonly T[], value: T, name: (v: T) => string,
     set: (v: T) => void, short?: (v: T) => string) => (
     <div className="an-switch" role="group" aria-label={label}>
@@ -223,7 +229,7 @@ export default function Game() {
         <div className="an-controls">
           {chips('Language', ['es', 'en'] as const, lang, (l) => (l === 'es' ? 'Español' : 'English'),
             (l) => update((p) => ({ ...p, lang: l })), (l) => l.toUpperCase())}
-          {chips('Mode', ['play', 'learn'] as const, progress.mode, (m) => (m === 'play' ? 'Play' : 'Learn'),
+          {chips('Mode', ['play', 'learn', 'explore'] as const, progress.mode, (m) => (m === 'play' ? 'Play' : m === 'learn' ? 'Learn' : 'Explore'),
             (m) => update((p) => ({ ...p, mode: m })))}
           {chips('Round', SIZES, size as (typeof SIZES)[number], (n) => (n === 0 ? 'All' : String(n)),
             (n) => update((p) => ({ ...p, size: n })))}
@@ -231,7 +237,16 @@ export default function Game() {
       </header>
 
       <section className="an-review" aria-label="Review">
-        {mixing ? (
+        {exploring && !mixing ? (
+          <>
+            <p className="an-review-head">Explore <span className="an-muted">·</span> <span className="an-num">{termCount}</span> {lang === 'en' ? 'terms' : 'términos'}</p>
+            <div className="an-actions">
+              <button type="button" className="an-btn is-primary" onClick={() => setScreen({ name: 'explore', unit: null })}>
+                {lang === 'en' ? 'Explore everything' : 'Explorar todo'}
+              </button>
+            </div>
+          </>
+        ) : mixing ? (
           <>
             <p className="an-review-head">Mixed review <span className="an-muted">· pick units below</span></p>
             <div className="an-actions">
@@ -268,7 +283,7 @@ export default function Game() {
               <button type="button" className={`an-entry${mixing && on ? ' is-picked' : ''}`}
                 aria-pressed={mixing ? on : undefined}
                 onClick={() => {
-                  if (!mixing) return learning ? learnUnit(u) : playUnit(u)
+                  if (!mixing) return exploring ? setScreen({ name: 'explore', unit: u }) : learning ? learnUnit(u) : playUnit(u)
                   const s = new Set(picked)
                   if (on) s.delete(u.slug)
                   else s.add(u.slug)

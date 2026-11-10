@@ -136,6 +136,11 @@ Enter skips and Esc quits.
   items at a time: type each one out with the answer showing, then type the
   same five from memory; misses come back until they're right. Cards then show
   how many items are learned.
+- Explore mode (Mode → Explore) lists every term, by unit or across all of
+  them, searchable in both languages. Each one opens on its figure with what
+  the notes say about it, other terms on the same structure, and terms that
+  point at it. Drag the 3D model to turn it; hover a structure or a diagram
+  part to name it and click it to open it.
 - Plates (`app/anatomia/plates/`) are short step-by-step explanations,
   opened from the learn-mode pause screen and from missed items in results.
   Each one lists the items it explains, cites the pages of the notes and any

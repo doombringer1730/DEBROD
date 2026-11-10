@@ -8,7 +8,7 @@ export type Progress = {
   missed: Record<string, number> // item id → times missed and not yet cleared
   size: number // preferred round size, 0 = all
   lang: 'es' | 'en'
-  mode: 'play' | 'learn'
+  mode: 'play' | 'learn' | 'explore'
   learned: Record<string, number> // item id → when it was first recalled in learn mode
 }
 
@@ -24,7 +24,7 @@ export function loadProgress(): Progress {
       missed: p.missed ?? {},
       size: typeof p.size === 'number' ? p.size : 15,
       lang: p.lang === 'en' ? 'en' : 'es',
-      mode: p.mode === 'learn' ? 'learn' : 'play',
+      mode: p.mode === 'learn' || p.mode === 'explore' ? p.mode : 'play',
       learned: p.learned ?? {},
     }
   } catch {
