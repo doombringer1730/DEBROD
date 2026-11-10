@@ -141,6 +141,7 @@ def main():
     wanted: dict[str, dict[str, list[str]]] = {}
     for model, mesh, sources, _ in M.values():
         if sources:
+            assert '+' not in mesh, f'{mesh}: a combined target cannot have sources'
             wanted.setdefault(model, {})[mesh] = sources
 
     for model, ctx in NEW_MODELS.items():

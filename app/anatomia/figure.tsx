@@ -25,8 +25,13 @@ function loadModel(model: string): Promise<THREE.Group> {
   return p
 }
 
-/** "parietal" lights both parietal__L and parietal__R. */
-const isTarget = (name: string, mesh: string) => name === mesh || name.startsWith(`${mesh}__`)
+/** Which part of the target a node is, or -1. "parietal" lights both
+ *  parietal__L and parietal__R; "frontal+parietal" lights both bones. */
+const partOf = (name: string, mesh: string) =>
+  mesh.split('+').findIndex((m) => name === m || name.startsWith(`${m}__`))
+// Neighbouring parts of one target alternate two reds so the line between
+// them (a suture, a joint) stays visible.
+const RED_ALT = '#a9232c'
 
 function Model({ source, mesh, spin, tilt }: { source: THREE.Group; mesh: string; spin: number; tilt: number }) {
   const group = useRef<THREE.Group>(null)
@@ -42,9 +47,10 @@ function Model({ source, mesh, spin, tilt }: { source: THREE.Group; mesh: string
   useEffect(() => {
     scene.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return
-      const hit = isTarget(o.name, mesh)
+      const part = partOf(o.name, mesh)
+      const hit = part >= 0
       const m = o.material as THREE.MeshStandardMaterial
-      m.color.set(hit ? RED : BONE)
+      m.color.set(!hit ? BONE : part % 2 ? RED_ALT : RED)
       m.emissive.set(hit ? '#5a0d12' : '#000000')
       // Both go in three's transparent pass so renderOrder applies: the ghosted
       // context first without writing depth, then the target on top of it.

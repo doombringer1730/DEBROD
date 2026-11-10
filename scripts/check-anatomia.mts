@@ -16,6 +16,7 @@ function nodesOf(model: string): string[] {
   return nodeCache.get(model)!
 }
 
+const HINTS = new Set(['region', 'between', 'attaches', 'innervates', 'supplies', 'passes', 'along', 'source', 'example'])
 const plain = (s: string) => fold(s).replace(/ñ/g, 'n')
 let failures = 0
 const fail = (msg: string) => { failures++; console.log('FAIL', msg) }
@@ -33,8 +34,10 @@ for (const file of readdirSync(dir).sort()) {
     if (it.type === 'identify' && !it.mesh) fail(`${it.id}: 3D item without mesh`)
     if (it.mesh) {
       const model = it.model ?? 'skull'
-      if (!nodesOf(model).some((n) => n === it.mesh || n.startsWith(`${it.mesh}__`)))
-        fail(`${it.id}: mesh "${it.mesh}" not in ${model}.glb`)
+      for (const part of it.mesh.split('+'))
+        if (!nodesOf(model).some((n) => n === part || n.startsWith(`${part}__`)))
+          fail(`${it.id}: mesh "${part}" not in ${model}.glb`)
+      if (it.hint && !HINTS.has(it.hint)) fail(`${it.id}: unknown hint "${it.hint}"`)
     }
     for (const a of [it.answer, ...it.accept]) {
       for (const typed of [a, plain(a), a.toUpperCase(), a.replace(/ /g, '')])

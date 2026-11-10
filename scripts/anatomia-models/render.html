@@ -18,7 +18,7 @@ const only = q.get('only') ? q.get('only').split(',') : null
 if (only) { const drop = []; g.scene.traverse(o => { if (o.isMesh && !only.some(n => o.name === n || o.name.startsWith(n + '__'))) drop.push(o) }); drop.forEach(o => o.removeFromParent()) }
 g.scene.traverse(o => { if (!o.isMesh) return
   o.geometry.computeVertexNormals()
-  const hit = mesh && (o.name === mesh || o.name.startsWith(mesh + '__'))
+  const hit = mesh && mesh.split('+').some(m => o.name === m || o.name.startsWith(m + '__'))
   o.material = new THREE.MeshStandardMaterial({ roughness: 0.75, side: THREE.DoubleSide, color: hit ? '#e0323c' : '#d9d6cf',
     emissive: hit ? '#5a0d12' : '#000', transparent: true, opacity: hit ? 1 : ghost, depthWrite: !!hit || ghost === 1 })
   o.renderOrder = hit ? 2 : 1 })
