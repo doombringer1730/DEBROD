@@ -14,6 +14,7 @@ export type Item = {
   page: number
   model?: string // 3D model file in public/anatomia, default "skull"
   mesh?: string
+  region?: boolean // red marks where the answer is (its bone or organ), not the answer itself
   en: Text // the same item in English
 }
 

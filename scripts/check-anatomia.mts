@@ -30,7 +30,8 @@ for (const file of readdirSync(dir).sort()) {
     ids.add(it.id)
     if (!Number.isInteger(it.page) || it.page < 1 || it.page > 134) fail(`${it.id}: bad page ${it.page}`)
     if (it.type === 'clue' && !it.prompt) fail(`${it.id}: clue without prompt`)
-    if (it.type === 'identify') {
+    if (it.type === 'identify' && !it.mesh) fail(`${it.id}: 3D item without mesh`)
+    if (it.mesh) {
       const model = it.model ?? 'skull'
       if (!nodesOf(model).some((n) => n === it.mesh || n.startsWith(`${it.mesh}__`)))
         fail(`${it.id}: mesh "${it.mesh}" not in ${model}.glb`)

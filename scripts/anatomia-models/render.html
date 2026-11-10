@@ -1,0 +1,36 @@
+<!doctype html><html><body style="margin:0;background:transparent">
+<script type="importmap">{"imports":{"three":"./three/build/three.module.js","three/addons/":"./three/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+const q = new URLSearchParams(location.search)
+const model = q.get('model'), mesh = q.get('mesh') || '', size = +(q.get('size') || 400), W = +(q.get('w') || size), H = +(q.get('h') || size)
+const spin = +(q.get('spin') || -0.6), tilt = +(q.get('tilt') || 0.08), bg = q.get('bg')
+const r = new THREE.WebGLRenderer({ antialias: true, alpha: !bg, preserveDrawingBuffer: true })
+r.setSize(W, H); if (bg) r.setClearColor(bg); document.body.appendChild(r.domElement)
+const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(32, W / H, 0.1, 100); cam.position.set(0, 0, +(q.get('z') || 4.1))
+scene.add(new THREE.AmbientLight(0xffffff, 0.9))
+const d1 = new THREE.DirectionalLight(0xffffff, 1.6); d1.position.set(3, 4, 5); scene.add(d1)
+const d2 = new THREE.DirectionalLight(0xffffff, 0.5); d2.position.set(-4, -1, -3); scene.add(d2)
+const g = await new GLTFLoader().loadAsync(`./models/${model}.glb`)
+const ghost = +(q.get('ghost') || 0.22)
+const only = q.get('only') ? q.get('only').split(',') : null
+if (only) { const drop = []; g.scene.traverse(o => { if (o.isMesh && !only.some(n => o.name === n || o.name.startsWith(n + '__'))) drop.push(o) }); drop.forEach(o => o.removeFromParent()) }
+g.scene.traverse(o => { if (!o.isMesh) return
+  o.geometry.computeVertexNormals()
+  const hit = mesh && (o.name === mesh || o.name.startsWith(mesh + '__'))
+  o.material = new THREE.MeshStandardMaterial({ roughness: 0.75, side: THREE.DoubleSide, color: hit ? '#e0323c' : '#d9d6cf',
+    emissive: hit ? '#5a0d12' : '#000', transparent: true, opacity: hit ? 1 : ghost, depthWrite: !!hit || ghost === 1 })
+  o.renderOrder = hit ? 2 : 1 })
+const outer = new THREE.Group(), inner = new THREE.Group(); outer.rotation.x = tilt; inner.rotation.y = spin
+inner.add(g.scene); outer.add(inner); scene.add(outer)
+if (q.get('fit')) {
+  outer.updateMatrixWorld(true)
+  const box = new THREE.Box3().setFromObject(outer), c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3())
+  outer.position.sub(c)
+  const m = +q.get('fit'), vf = THREE.MathUtils.degToRad(32) / 2
+  const dist = Math.max(sz.y / 2 / Math.tan(vf), sz.x / 2 / (Math.tan(vf) * W / H)) * m + sz.z / 2
+  cam.position.set(0, 0, dist)
+}
+r.render(scene, cam); document.title = 'done'
+</script></body></html>

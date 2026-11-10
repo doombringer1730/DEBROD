@@ -132,8 +132,23 @@ Enter skips and Esc quits.
   optional. Synonyms go in `accept`.
 - Progress (best score per unit, missed items) is kept in the browser's
   localStorage only.
+- Learn mode (Mode → Learn on home) goes through a unit in page order, five
+  items at a time: type each one out with the answer showing, then type the
+  same five from memory; misses come back until they're right. Cards then show
+  how many items are learned.
+- Plates (`app/anatomia/plates/`) are short step-by-step explanations,
+  opened from the learn-mode pause screen and from missed items in results.
+  Each one lists the items it explains, cites the pages of the notes and any
+  outside source it was checked against, and loads only when opened. The
+  first is the adrenal cortex (p. 103).
 - 3D models in `public/anatomia/*.glb` come from BodyParts3D, © The Database
   Center for Life Science, licensed under CC BY-SA 2.1 Japan.
+- Clue items can show a figure too: give them `model` and `mesh`, plus
+  `"region": true` when the red part is where the answer lies (a landmark's
+  bone, an organ's part) rather than the answer itself. To add structures to
+  a model, list them in `scripts/anatomia-models/mapping.py` and run
+  `build.py` there (see its header). Card images in `public/anatomia/cards/`
+  are rendered with `render.html` and `cards.cjs` in the same folder.
 
 After editing content, run `npm run check:anatomia`. It confirms every answer
 is accepted with and without accents, and that every 3D item points at a mesh
