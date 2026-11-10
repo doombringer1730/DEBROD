@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { alive, candidates, fold, glyphs, isComplete, type Candidate, type Item } from './engine'
+import { alive, candidates, fold, glyphs, isComplete, textOf, type Candidate, type Item, type Lang } from './engine'
 
 const Figure = dynamic(() => import('./figure'), { ssr: false })
 
@@ -19,6 +19,7 @@ const ROWS = ['qwertyuiop', 'asdfghjklñ', 'zxcvbnm']
 const HINT_AFTER = 2
 const REVEAL_MS = 1500
 const NEXT_MS = 450
+const READY_MS = 900
 
 type State = {
   index: number
@@ -26,16 +27,17 @@ type State = {
   missesHere: number // wrong keys on the current letter
   struggled: boolean // this item needed a hint or was skipped
   phase: 'typing' | 'done' | 'reveal' | 'finished'
+  ready: boolean // an accepted answer is complete but a longer one could still follow
   missed: number[]
   correctKeys: number
   wrongKeys: number
   lastKey: { key: string; ok: boolean; n: number } | null
 }
 
-type Action = { type: 'key'; key: string } | { type: 'skip' } | { type: 'next' }
+type Action = { type: 'key'; key: string } | { type: 'skip' } | { type: 'next' } | { type: 'accept' }
 
 const initial: State = {
-  index: 0, typed: '', missesHere: 0, struggled: false, phase: 'typing',
+  index: 0, typed: '', missesHere: 0, struggled: false, phase: 'typing', ready: false,
   missed: [], correctKeys: 0, wrongKeys: 0, lastKey: null,
 }
 
@@ -46,10 +48,12 @@ function reducer(cands: Candidate[][]) {
       if (s.phase !== 'done' && s.phase !== 'reveal') return s
       const missed = s.struggled ? [...s.missed, s.index] : s.missed
       if (s.index + 1 >= cands.length) return { ...s, missed, phase: 'finished' }
-      return { ...s, missed, index: s.index + 1, typed: '', missesHere: 0, struggled: false, phase: 'typing', lastKey: null }
+      return { ...s, missed, index: s.index + 1, typed: '', missesHere: 0, struggled: false, phase: 'typing', ready: false, lastKey: null }
     }
     if (s.phase !== 'typing') return s
-    if (a.type === 'skip') return { ...s, struggled: true, phase: 'reveal' }
+    if (a.type === 'accept') return s.ready ? { ...s, ready: false, phase: 'done' } : s
+    // Enter accepts a finished short answer; otherwise it skips.
+    if (a.type === 'skip') return s.ready ? { ...s, ready: false, phase: 'done' } : { ...s, struggled: true, phase: 'reveal' }
     const typed = s.typed + a.key
     if (alive(cands[s.index], typed).length === 0) {
       const missesHere = s.missesHere + 1
@@ -59,9 +63,12 @@ function reducer(cands: Candidate[][]) {
         lastKey: { key: a.key, ok: false, n },
       }
     }
+    const complete = isComplete(cands[s.index], typed)
+    const longer = complete && alive(cands[s.index], typed).some((c) => c.norm.length > typed.length)
     return {
       ...s, typed, missesHere: 0, correctKeys: s.correctKeys + 1,
-      phase: isComplete(cands[s.index], typed) ? 'done' : 'typing',
+      phase: complete && !longer ? 'done' : 'typing',
+      ready: longer,
       lastKey: { key: a.key, ok: true, n },
     }
   }
@@ -72,13 +79,14 @@ const clock = (ms: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
-export default function Round({ title, items, onFinish, onQuit }: {
+export default function Round({ title, items, lang, onFinish, onQuit }: {
   title: string
+  lang: Lang
   items: Item[]
   onFinish: (r: RoundResult) => void
   onQuit: () => void
 }) {
-  const cands = useMemo(() => items.map(candidates), [items])
+  const cands = useMemo(() => items.map((it) => candidates(it, lang)), [items, lang])
   const [s, dispatch] = useReducer(useMemo(() => reducer(cands), [cands]), initial)
   const started = useRef(0)
   const [elapsed, setElapsed] = useState(0)
@@ -103,12 +111,28 @@ export default function Round({ title, items, onFinish, onQuit }: {
     return () => window.removeEventListener('keydown', onKey)
   }, [onQuit])
 
+  // A complete short answer is accepted after a pause unless more letters follow.
+  useEffect(() => {
+    if (!s.ready) return
+    const t = window.setTimeout(() => dispatch({ type: 'accept' }), READY_MS)
+    return () => window.clearTimeout(t)
+  }, [s.ready, s.typed])
+
   // Move on after the finished word, or the revealed answer, has been seen.
   useEffect(() => {
     if (s.phase !== 'done' && s.phase !== 'reveal') return
     const t = window.setTimeout(() => dispatch({ type: 'next' }), s.phase === 'reveal' ? REVEAL_MS : NEXT_MS)
     return () => window.clearTimeout(t)
   }, [s.phase, s.index])
+
+  // The 3D target to show: the current item, else the next 3D item so it is ready.
+  const figure = useMemo(() => {
+    for (let i = s.index; i < items.length; i++) {
+      const it = items[i]
+      if (it.type === 'identify' && it.mesh) return { model: it.model ?? 'skull', mesh: it.mesh }
+    }
+    return null
+  }, [items, s.index])
 
   const finished = s.phase === 'finished'
   useEffect(() => {
@@ -138,10 +162,17 @@ export default function Round({ title, items, onFinish, onQuit }: {
 
   const item = items[s.index]
   const reveal = s.phase === 'reveal'
-  const shown = reveal ? cands[s.index][0] : alive(cands[s.index], s.typed)[0] ?? cands[s.index][0]
+  const live = alive(cands[s.index], s.typed)
+  // While a short answer waits to be accepted, show it complete rather than the longer one's dots.
+  const shown = reveal ? cands[s.index][0]
+    : (s.ready && live.find((c) => c.norm.length === s.typed.length)) || live[0] || cands[s.index][0]
   const word = glyphs(shown, reveal ? shown.norm.length : s.typed.length)
   const hint = s.phase === 'typing' && s.missesHere >= HINT_AFTER ? shown.norm[s.typed.length] : null
-  const prompt = item.prompt || (item.type === 'identify' ? (item.model ?? 'skull') === 'skull' ? '¿Qué hueso está en rojo?' : '¿Qué estructura está en rojo?' : '')
+  const skull = (item.model ?? 'skull') === 'skull'
+  const fallback = lang === 'en'
+    ? skull ? 'Which bone is in red?' : 'Which structure is in red?'
+    : skull ? '¿Qué hueso está en rojo?' : '¿Qué estructura está en rojo?'
+  const prompt = textOf(item, lang).prompt || (item.type === 'identify' ? fallback : '')
 
   const keyClass = (k: string) => {
     if (flash?.key === k) return flash.ok ? 'an-key is-ok' : 'an-key is-bad'
@@ -163,21 +194,25 @@ export default function Round({ title, items, onFinish, onQuit }: {
       <p className="an-unit-name">{title}</p>
 
       <div className="an-figure">
-        {item.type === 'identify' && item.mesh ? (
-          <Figure model={item.model ?? 'skull'} mesh={item.mesh} />
-        ) : (
-          <p className="an-clue" lang="es">{prompt}</p>
+        {/* One set of 3D views lives for the whole round and is hidden on clue
+            items, so WebGL contexts aren't created and thrown away per item. */}
+        {figure && (
+          <div className="an-figure-3d" hidden={item.type !== 'identify'}>
+            <Figure model={figure.model} mesh={figure.mesh} paused={item.type !== 'identify'} />
+          </div>
         )}
+        {item.type !== 'identify' && <p className="an-clue" lang={lang}>{prompt}</p>}
       </div>
-      {item.type === 'identify' && <p className="an-prompt" lang="es">{prompt}</p>}
+      {item.type === 'identify' && <p className="an-prompt" lang={lang}>{prompt}</p>}
 
-      <div className={`an-word${reveal ? ' is-reveal' : ''}${s.phase === 'done' ? ' is-done' : ''}`} lang="es" aria-live="polite">
+      <div className={`an-word${reveal ? ' is-reveal' : ''}${s.phase === 'done' ? ' is-done' : ''}`} lang={lang} aria-live="polite">
         {word.map((g, i) => (
           <span key={i} className={`an-glyph is-${g.state}`}>{g.ch === ' ' ? ' ' : g.ch}</span>
         ))}
       </div>
       <p className="an-status">
-        {reveal ? `Skipped · p. ${item.page}` : hint ? 'Hint: the yellow key is next' : ' '}
+        {reveal ? `Skipped · p. ${item.page}` : hint ? 'Hint: the yellow key is next'
+          : s.ready ? 'Enter to accept, or keep typing' : '\u00a0'}
       </p>
 
       <div className="an-keyboard">

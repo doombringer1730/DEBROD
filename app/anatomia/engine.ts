@@ -1,5 +1,9 @@
 // Typing engine: answer matching, the dotted word and keyboard hints.
 
+export type Lang = 'es' | 'en'
+
+export type Text = { prompt: string; answer: string; accept: string[] }
+
 export type Item = {
   id: string
   unit: string
@@ -10,6 +14,12 @@ export type Item = {
   page: number
   model?: string // 3D model file in public/anatomia, default "skull"
   mesh?: string
+  en: Text // the same item in English
+}
+
+/** The item's prompt and answers in the chosen language. */
+export function textOf(item: Item, lang: Lang): Text {
+  return lang === 'en' ? item.en : item
 }
 
 export type Candidate = { display: string; norm: string }
@@ -42,7 +52,20 @@ export function keyOf(s: string): string {
   return fold(s).replace(/[^a-z0-9ñ]/g, '')
 }
 
-export function candidates(item: Item): Candidate[] {
+// English kind words come after the name: "frontal bone", "masseter muscle".
+const EN_KINDS: Record<string, RegExp> = {
+  bone: /\bbones?\b/,
+  muscle: /\bmuscles?\b|\bchewing\b/,
+  artery: /\barter(y|ies)\b/,
+  nerve: /\bnerves?\b|\bcranial\b/,
+  vein: /\bveins?\b/,
+  gland: /\bglands?\b/,
+  cartilage: /\bcartilages?\b/,
+  ligament: /\bligaments?\b/,
+}
+
+export function candidates(item: Item, lang: Lang = 'es'): Candidate[] {
+  if (lang === 'en') return englishCandidates(item)
   const out: Candidate[] = []
   const seen = new Set<string>()
   const add = (display: string) => {
@@ -65,6 +88,27 @@ export function candidates(item: Item): Candidate[] {
   for (const [word, re] of Object.entries(KINDS)) {
     if (!re.test(context)) continue
     for (const c of cores) if (!/^[ivx]+\d?$/i.test(c)) add(`${word} ${c}`)
+  }
+  return out
+}
+
+function englishCandidates(item: Item): Candidate[] {
+  const out: Candidate[] = []
+  const seen = new Set<string>()
+  const add = (display: string) => {
+    const norm = keyOf(display)
+    if (norm && !seen.has(norm)) {
+      seen.add(norm)
+      out.push({ display, norm })
+    }
+  }
+  const { prompt, answer, accept } = item.en
+  const bases = [answer, ...accept]
+  for (const b of bases) add(b)
+  const context = fold(prompt) || (item.type === 'identify' ? 'bone' : '')
+  for (const [word, re] of Object.entries(EN_KINDS)) {
+    if (!re.test(context)) continue
+    for (const b of bases) if (!/^[ivx]+\d?$/i.test(b) && !fold(b).endsWith(word)) add(`${b} ${word}`)
   }
   return out
 }
@@ -98,6 +142,6 @@ export function glyphs(c: Candidate, typedLength: number): Glyph[] {
 }
 
 /** Would a full answer typed as given be accepted? Used by the content check. */
-export function accepts(item: Item, input: string): boolean {
-  return isComplete(candidates(item), keyOf(input))
+export function accepts(item: Item, input: string, lang: Lang = 'es'): boolean {
+  return isComplete(candidates(item, lang), keyOf(input))
 }

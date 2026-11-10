@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Item } from './engine'
+import { textOf, type Item, type Lang } from './engine'
 import Round, { type RoundResult } from './round'
 import { loadProgress, saveProgress, type Progress } from './storage'
 import { UNITS, type Unit } from './units'
@@ -42,7 +42,7 @@ const clock = (ms: number) => {
 }
 
 export default function Game() {
-  const [progress, setProgress] = useState<Progress>({ best: {}, missed: {}, size: 15 })
+  const [progress, setProgress] = useState<Progress>({ best: {}, missed: {}, size: 15, lang: 'es' })
   const [screen, setScreen] = useState<Screen>({ name: 'home' })
   const [mixing, setMixing] = useState(false)
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -57,17 +57,21 @@ export default function Game() {
   }, [])
 
   const size = progress.size
+  const lang: Lang = progress.lang
+  const titleOf = (u: Unit) => (lang === 'en' ? u.titleEn : u.title)
+  // Best scores are kept per language; Spanish keeps the original keys.
+  const bestKey = (slug: string) => (lang === 'en' ? `${slug}:en` : slug)
   const take = (n: number) => (size === 0 ? n : Math.min(size, n))
 
   const start = (title: string, unit: Unit | null, items: Item[], retry = false) =>
     setScreen({ name: 'round', key: Date.now(), title, unit, items, retry })
 
-  const playUnit = (u: Unit) => start(u.title, u, shuffle(u.items).slice(0, take(u.items.length)))
+  const playUnit = (u: Unit) => start(titleOf(u), u, shuffle(u.items).slice(0, take(u.items.length)))
 
   const playMixed = () => {
     const all = UNITS.filter((u) => picked.has(u.slug)).flatMap((u) => u.items)
     if (!all.length) return
-    start('Mixed review', null, weightedPick(all, take(all.length), progress.missed))
+    start(lang === 'en' ? 'Mixed review' : 'Repaso mixto', null, weightedPick(all, take(all.length), progress.missed))
   }
 
   const finish = useCallback((result: RoundResult) => {
@@ -79,12 +83,15 @@ export default function Game() {
         for (const it of result.clean) delete missed[it.id]
         const best = { ...p.best }
         // Only a full unit round sets the unit's best score.
-        if (sc.unit && !sc.retry) best[sc.unit.slug] = Math.max(best[sc.unit.slug] ?? 0, pct(result))
+        if (sc.unit && !sc.retry) {
+          const k = bestKey(sc.unit.slug)
+          best[k] = Math.max(best[k] ?? 0, pct(result))
+        }
         return { ...p, best, missed }
       })
       return { name: 'results', title: sc.title, unit: sc.unit, result }
     })
-  }, [update])
+  }, [update, lang])
 
   const quit = useCallback(() => setScreen({ name: 'home' }), [])
 
@@ -94,7 +101,7 @@ export default function Game() {
   )
 
   if (screen.name === 'round') {
-    return <Round key={screen.key} title={screen.title} items={screen.items} onFinish={finish} onQuit={quit} />
+    return <Round key={screen.key} title={screen.title} items={screen.items} lang={lang} onFinish={finish} onQuit={quit} />
   }
 
   if (screen.name === 'results') {
@@ -113,11 +120,11 @@ export default function Game() {
         {result.missed.length > 0 ? (
           <>
             <h2 className="an-h2">Missed</h2>
-            <ul className="an-missed" lang="es">
+            <ul className="an-missed" lang={lang}>
               {result.missed.map((it) => (
                 <li key={it.id}>
-                  <span className="an-missed-answer">{it.answer}</span>
-                  <span className="an-missed-prompt">{it.prompt || 'Hueso en rojo'}{it.type === 'identify' ? ' (3D)' : ''}</span>
+                  <span className="an-missed-answer">{textOf(it, lang).answer}</span>
+                  <span className="an-missed-prompt">{textOf(it, lang).prompt || (lang === 'en' ? 'Bone in red' : 'Hueso en rojo')}{it.type === 'identify' ? ' (3D)' : ''}</span>
                   <span className="an-page">p. {it.page}</span>
                 </li>
               ))}
@@ -142,12 +149,21 @@ export default function Game() {
     <main className="an-home">
       <header className="an-home-top">
         <h1 className="an-title">Anatomía</h1>
+        <div className="an-controls">
+        <div className="an-sizes" role="group" aria-label="Language">
+          <span>Language</span>
+          {(['es', 'en'] as const).map((l) => (
+            <button key={l} type="button" className={`an-chip${lang === l ? ' is-on' : ''}`} aria-pressed={lang === l}
+              onClick={() => update((p) => ({ ...p, lang: l }))}>{l === 'es' ? 'Español' : 'English'}</button>
+          ))}
+        </div>
         <div className="an-sizes" role="group" aria-label="Round size">
           <span>Round</span>
           {SIZES.map((n) => (
             <button key={n} type="button" className={`an-chip${size === n ? ' is-on' : ''}`}
               onClick={() => update((p) => ({ ...p, size: n }))}>{n === 0 ? 'All' : n}</button>
           ))}
+        </div>
         </div>
       </header>
 
@@ -164,13 +180,13 @@ export default function Game() {
                 setPicked(s)
               }}>
               <span className="an-card-n">{u.n}</span>
-              <span className="an-card-title" lang="es">{u.title}</span>
+              <span className="an-card-title" lang={lang}>{titleOf(u)}</span>
               <span className="an-card-meta">
                 {u.items.length} items · pp. {u.pages}
                 {u.items.some((i) => i.type === 'identify') && ' · 3D'}
               </span>
               <span className="an-card-best">
-                {progress.best[u.slug] != null ? `Best ${progress.best[u.slug]}%` : 'Not played'}
+                {progress.best[bestKey(u.slug)] != null ? `Best ${progress.best[bestKey(u.slug)]}%` : 'Not played'}
                 {missedCount[u.slug] > 0 && ` · ${missedCount[u.slug]} to review`}
               </span>
             </button>
@@ -196,7 +212,7 @@ export default function Game() {
       </section>
 
       <footer className="an-footer">
-        Content from my notes (Anatomía 2). 3D models: BodyParts3D, © The Database Center for Life Science,
+        Content from my notes (Anatomía 2); the English mode is a translation of them. 3D models: BodyParts3D, © The Database Center for Life Science,
         licensed under <a href="https://creativecommons.org/licenses/by-sa/2.1/jp/deed.en" target="_blank" rel="noreferrer">CC BY-SA 2.1 Japan</a>.
       </footer>
     </main>
