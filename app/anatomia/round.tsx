@@ -180,6 +180,21 @@ export default function Round({ title, items, lang, onFinish, onQuit, copy = fal
   const has3d = !!item.mesh
   const regionNote = lang === 'en' ? 'The answer is on the part in red' : 'La respuesta está en la zona roja'
 
+  const en = lang === 'en'
+  // One tick per item: clean, missed, the current one, or still to come.
+  const missedSet = new Set(s.missed)
+  const tick = (i: number) => {
+    if (i < s.index) return missedSet.has(i) ? 'is-missed' : 'is-clean'
+    if (i > s.index) return ''
+    if (reveal || (s.phase === 'done' && s.struggled)) return 'is-missed'
+    return s.phase === 'done' ? 'is-clean' : 'is-now'
+  }
+  const missedSoFar = s.missed.length + (reveal ? 1 : 0)
+  const letters = shown.norm.length
+  const spoken = reveal ? `${en ? 'Skipped' : 'Saltada'}: ${shown.display}`
+    : s.phase === 'done' ? shown.display
+    : en ? `${s.typed.length} of ${letters} letters` : `${s.typed.length} de ${letters} letras`
+
   const keyClass = (k: string) => {
     if (flash?.key === k) return flash.ok ? 'an-key is-ok' : 'an-key is-bad'
     if (hint === k) return 'an-key is-hint'
@@ -190,44 +205,53 @@ export default function Round({ title, items, lang, onFinish, onQuit, copy = fal
     <div className="an-round" data-item={item.id}>
       <header className="an-bar">
         <button type="button" className="an-ghost" onClick={onQuit}>Esc · Quit</button>
-        <div className="an-progress" aria-label={`Item ${s.index + 1} of ${items.length}`}>
-          <div className="an-progress-fill" style={{ width: `${(s.index / items.length) * 100}%` }} />
+        <div className={`an-ticks${items.length > 60 ? ' is-dense' : ''}`} role="progressbar"
+          aria-valuemin={0} aria-valuemax={items.length} aria-valuenow={s.index}
+          aria-valuetext={`${en ? 'Item' : 'Pregunta'} ${s.index + 1} / ${items.length}, ${missedSoFar} ${en ? 'missed' : 'falladas'}`}>
+          {items.map((_, i) => <span key={i} className={`an-tick ${tick(i)}`} />)}
         </div>
-        <span className="an-count">{s.index + 1} / {items.length}</span>
-        <span className="an-timer">{clock(elapsed)}</span>
+        <span className="an-count an-num">{s.index + 1} / {items.length}</span>
+        {missedSoFar > 0 && <span className="an-count-missed"><span className="an-mark" aria-hidden="true">×</span><span className="an-num">{missedSoFar}</span></span>}
+        <span className="an-timer an-num">{clock(elapsed)}</span>
       </header>
 
       <p className="an-unit-name">{title}</p>
 
-      <div className="an-figure">
+      <div className={`an-stage${has3d ? ' has-figure' : ''}`}>
         {/* One set of 3D views lives for the whole round and is hidden on items
             without a figure, so WebGL contexts aren't created and thrown away per item. */}
         {figure && (
-          <div className="an-figure-3d" hidden={!has3d}>
+          <div className="an-figure-3d" hidden={!has3d} role="img"
+            aria-label={en ? '3D model, one structure highlighted in red' : 'Modelo 3D, una estructura resaltada en rojo'}>
             <Figure model={figure.model} mesh={figure.mesh} paused={!has3d} />
           </div>
         )}
-        {!has3d && <p className="an-clue" lang={lang}>{prompt}</p>}
-      </div>
-      {has3d && item.type === 'identify' && <p className="an-prompt" lang={lang}>{prompt}</p>}
-      {has3d && item.type === 'clue' && (
-        <p className="an-clue is-under" lang={lang}>
-          {prompt}
-          {item.region && <span className="an-region-note">{regionNote}</span>}
-        </p>
-      )}
+        {item.type === 'identify' ? (
+          <p className="an-prompt" lang={lang}>{prompt}</p>
+        ) : (
+          <div className={`an-clue-block${has3d ? ' is-under' : ''}`}>
+            <p className="an-clue" lang={lang}>
+              {prompt}
+              {item.region && <span className="an-region-note">{regionNote}</span>}
+            </p>
+            <span className="an-margin-page an-num" aria-label={`${en ? 'page' : 'página'} ${item.page}`}>p. {item.page}</span>
+          </div>
+        )}
 
-      <div className={`an-word${reveal ? ' is-reveal' : ''}${s.phase === 'done' ? ' is-done' : ''}`} lang={lang} aria-live="polite">
-        {word.map((g, i) => (
-          <span key={i} className={`an-glyph is-${ghost[i] ? 'ghost' : g.state}`}>{g.ch === ' ' ? ' ' : g.ch}</span>
-        ))}
+        <div className={`an-word${reveal ? ' is-reveal' : ''}${s.phase === 'done' ? ' is-done' : ''}`} lang={lang} aria-hidden="true">
+          {word.map((g, i) => (
+            <span key={i} className={`an-glyph is-${ghost[i] ? 'ghost' : g.state}`}>{g.ch === ' ' ? '\u00a0' : g.ch}</span>
+          ))}
+        </div>
+        <p className="an-visually-hidden" aria-live="polite">{spoken}</p>
+        <p className="an-status">
+          {reveal ? <><span className="an-mark" aria-hidden="true">×</span>{en ? 'Skipped' : 'Saltada'} · <span className="an-num">p. {item.page}</span></>
+            : hint ? 'Hint: the yellow key is next'
+            : s.ready ? 'Enter to accept, or keep typing'
+            : copy ? <>{en ? 'Type it out to learn it' : 'Escríbela para aprenderla'}{item.type === 'identify' && <> · <span className="an-num">p. {item.page}</span></>}</>
+            : '\u00a0'}
+        </p>
       </div>
-      <p className="an-status">
-        {reveal ? `Skipped · p. ${item.page}` : hint ? 'Hint: the yellow key is next'
-          : s.ready ? 'Enter to accept, or keep typing'
-          : copy ? (lang === 'en' ? `Type it out to learn it · p. ${item.page}` : `Escríbela para aprenderla · p. ${item.page}`)
-          : '\u00a0'}
-      </p>
 
       <div className="an-keyboard">
         {ROWS.map((row) => (
