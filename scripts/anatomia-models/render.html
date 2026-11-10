@@ -14,6 +14,8 @@ const d1 = new THREE.DirectionalLight(0xffffff, 1.6); d1.position.set(3, 4, 5); 
 const d2 = new THREE.DirectionalLight(0xffffff, 0.5); d2.position.set(-4, -1, -3); scene.add(d2)
 const g = await new GLTFLoader().loadAsync(`./models/${model}.glb`)
 const ghost = +(q.get('ghost') || 0.22)
+const only = q.get('only') ? q.get('only').split(',') : null
+if (only) { const drop = []; g.scene.traverse(o => { if (o.isMesh && !only.some(n => o.name === n || o.name.startsWith(n + '__'))) drop.push(o) }); drop.forEach(o => o.removeFromParent()) }
 g.scene.traverse(o => { if (!o.isMesh) return
   o.geometry.computeVertexNormals()
   const hit = mesh && (o.name === mesh || o.name.startsWith(mesh + '__'))

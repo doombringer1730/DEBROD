@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { textOf, type Item, type Lang } from './engine'
+import { PlateLinks } from './plates'
 import Round, { type RoundResult } from './round'
 
 // Learn mode: items in the order of the notes, a few at a time. Each group is
@@ -103,6 +104,7 @@ export default function Learn({ title, items, lang, onLearned, onPractice, onMor
             </li>
           ))}
         </ul>
+        <PlateLinks items={group} lang={lang} />
         <div className="an-actions">
           <button type="button" className="an-btn is-primary" onClick={() => recall(stage.group)}>
             {en ? 'Start · Enter' : 'Empezar · Enter'}

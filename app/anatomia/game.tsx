@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { textOf, type Item, type Lang } from './engine'
 import Learn from './learn'
+import { PlateLinks } from './plates'
 import Round, { type RoundResult } from './round'
 import { EMPTY, loadProgress, saveProgress, type Progress } from './storage'
 import { UNITS, type Unit } from './units'
@@ -180,6 +181,7 @@ export default function Game() {
                 </li>
               ))}
             </ul>
+            <PlateLinks items={result.missed} lang={lang} />
           </>
         ) : (
           <p className="an-perfect"><span className="an-mark is-clean" aria-hidden="true">✓</span>No misses.</p>

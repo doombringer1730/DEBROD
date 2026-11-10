@@ -10,4 +10,7 @@
   (→ `public/anatomia`) on port 8765, run `node cards.cjs <out dir>`, then convert
   the PNGs to WebP in `public/anatomia/cards/`.
 
+- `plates.cjs` — renders the locator images for plates (e.g. the kidneys and adrenals
+  for the adrenal plate) the same way; `render.html` takes `only=` to keep just some meshes.
+
 After any change run `npm run check:anatomia`.
