@@ -104,7 +104,7 @@ export default function Explore({ lang, start, onQuit }: { lang: Lang; start: Un
     <main className={`an-explore${showDetail ? ' shows-detail' : ''}`}>
       <header className="an-explore-bar">
         <button type="button" className="an-ghost" onClick={onQuit}>Esc · {en ? 'Home' : 'Inicio'}</button>
-        <h1 className="an-explore-title">{en ? 'Explore' : 'Explorar'}</h1>
+        <h1 className="an-explore-title an-title-l">{en ? 'Explore' : 'Explorar'}</h1>
         <select className="an-select" value={unit} onChange={(e) => setUnit(e.target.value)} aria-label={en ? 'Unit' : 'Unidad'}>
           <option value="all">{en ? 'All units' : 'Todas las unidades'}</option>
           {UNITS.map((u) => <option key={u.slug} value={u.slug}>{String(u.n).padStart(2, '0')} · {en ? u.titleEn : u.title}</option>)}
@@ -185,7 +185,7 @@ function Detail({ entry, lang, onSelect, onBack }: { entry: Entry; lang: Lang; o
 
       <div className="an-explore-info">
         <p className="an-unit-name">{String(unit.n).padStart(2, '0')} · {en ? unit.titleEn : unit.title} · <span className="an-num">p. {item.page}</span></p>
-        <h2 className="an-explore-term" lang={lang}>{tx.answer}</h2>
+        <h2 className="an-explore-term an-display" lang={lang}>{tx.answer}</h2>
         <p className="an-explore-alt">
           <span lang={en ? 'es' : 'en'}>{en ? 'ES' : 'EN'} · {other.answer}</span>
           {tx.accept.length > 0 && <span lang={lang}> · {en ? 'also' : 'también'}: {tx.accept.join(', ')}</span>}

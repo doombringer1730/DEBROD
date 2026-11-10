@@ -90,7 +90,7 @@ export default function Learn({ title, items, lang, onLearned, onPractice, onMor
     return (
       <main className="an-results an-learn">
         <p className="an-unit-name">{head(stage.group)}</p>
-        <h1 className="an-learn-title">{en ? 'Now from memory' : 'Ahora de memoria'}</h1>
+        <h1 className="an-learn-title an-title-l">{en ? 'Now from memory' : 'Ahora de memoria'}</h1>
         <p className="an-learn-lede">
           {en ? `The same ${group.length} come back in a new order, without the answer.`
             : `Las mismas ${group.length} vuelven en otro orden, sin la respuesta.`}
@@ -121,7 +121,7 @@ export default function Learn({ title, items, lang, onLearned, onPractice, onMor
   return (
     <main className="an-results an-learn">
       <p className="an-unit-name">{title} · {en ? 'Learn' : 'Aprender'}</p>
-      <h1 className="an-score">{learned}<span className="an-score-of"> / {items.length}</span></h1>
+      <h1 className="an-score an-display">{learned}<span className="an-score-of"> / {items.length}</span></h1>
       <dl className="an-stats">
         <div><dt>{en ? 'First try' : 'A la primera'}</dt><dd>{firstTry.length}</dd></div>
         <div><dt>{en ? 'Second try or later' : 'Tras repasar'}</dt><dd>{later.length}</dd></div>
@@ -129,7 +129,7 @@ export default function Learn({ title, items, lang, onLearned, onPractice, onMor
       </dl>
       {notYet.length > 0 && (
         <>
-          <h2 className="an-h2">{en ? 'Still to learn' : 'Por aprender'}</h2>
+          <h2 className="an-h2 an-title-l">{en ? 'Still to learn' : 'Por aprender'}</h2>
           <ul className="an-missed" lang={lang}>
             {notYet.map((id) => byId.get(id)!).map((it) => (
               <li key={it.id}>

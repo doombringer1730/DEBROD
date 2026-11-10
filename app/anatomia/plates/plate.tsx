@@ -83,7 +83,7 @@ export default function Plate({ def, lang, onClose, visual }: {
         <header className="an-plate-head">
           <div>
             <p className="an-unit-name">{t(def.kicker)}</p>
-            <h2 className="an-plate-title" id="an-plate-title" tabIndex={-1} ref={heading}>{t(def.title)}</h2>
+            <h2 className="an-plate-title an-title-l" id="an-plate-title" tabIndex={-1} ref={heading}>{t(def.title)}</h2>
           </div>
           <button type="button" className="an-ghost" onClick={onClose}>{en ? 'Close · Esc' : 'Cerrar · Esc'}</button>
         </header>

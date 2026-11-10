@@ -112,10 +112,19 @@ export default function Round({ title, items, lang, onFinish, onQuit, copy = fal
     return () => window.clearInterval(t)
   }, [])
 
+  // Focus mode hides everything but the figure, the clue and the word.
+  const [focus, setFocus] = useState(false)
+  useEffect(() => { try { setFocus(window.localStorage.getItem('anatomia:focus') === '1') } catch { /* no storage */ } }, [])
+  const toggleFocus = () => setFocus((f) => {
+    try { window.localStorage.setItem('anatomia:focus', f ? '0' : '1') } catch { /* no storage */ }
+    return !f
+  })
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       if (e.key === 'Escape') return onQuit()
+      if (e.key === '/') { e.preventDefault(); return toggleFocus() }
       if (e.key === 'Enter') { e.preventDefault(); return dispatch({ type: 'skip' }) }
       if (e.key === ' ') return e.preventDefault() // spaces are filled in for you
       if ([...e.key].length !== 1) return // Shift, Dead, arrows…
@@ -218,7 +227,8 @@ export default function Round({ title, items, lang, onFinish, onQuit, copy = fal
   }
 
   return (
-    <div className="an-round" data-item={item.id}>
+    <div className={`an-round${focus ? ' is-focus' : ''}`} data-item={item.id}>
+      <p className="an-focus-exit" aria-hidden="true">/ · {en ? 'leave focus' : 'salir del foco'}</p>
       <header className="an-bar">
         <button type="button" className="an-ghost" onClick={onQuit}>Esc · Quit</button>
         <div className={`an-ticks${items.length > 60 ? ' is-dense' : ''}`} role="progressbar"
@@ -229,6 +239,9 @@ export default function Round({ title, items, lang, onFinish, onQuit, copy = fal
         <span className="an-count an-num">{s.index + 1} / {items.length}</span>
         {missedSoFar > 0 && <span className="an-count-missed"><span className="an-mark" aria-hidden="true">×</span><span className="an-num">{missedSoFar}</span></span>}
         <span className="an-timer an-num">{clock(elapsed)}</span>
+        <button type="button" className="an-ghost an-focus-toggle" onClick={toggleFocus} aria-pressed={focus}>
+          {en ? 'Focus' : 'Foco'} · <kbd>/</kbd>
+        </button>
       </header>
 
       <p className="an-unit-name">{title}</p>
@@ -261,10 +274,16 @@ export default function Round({ title, items, lang, onFinish, onQuit, copy = fal
           </div>
         )}
 
-        <div className={`an-word${reveal ? ' is-reveal' : ''}${s.phase === 'done' ? ' is-done' : ''}`} lang={lang} aria-hidden="true">
-          {word.map((g, i) => (
-            <span key={i} className={`an-glyph is-${ghost[i] ? 'ghost' : g.state}`}>{g.ch === ' ' ? '\u00a0' : g.ch}</span>
-          ))}
+        <div className="an-word-wrap" aria-hidden="true">
+          <div className={`an-word an-display${reveal ? ' is-reveal' : ''}${s.phase === 'done' ? ' is-done' : ''}`} lang={lang}>
+            {word.map((g, i) => (
+              <span key={i} className={`an-glyph is-${ghost[i] ? 'ghost' : g.state}`}>{g.ch === ' ' ? '\u00a0' : g.ch}</span>
+            ))}
+          </div>
+          {/* The signature line: it fills as the word is typed. */}
+          <div className={`an-underline${reveal ? ' is-reveal' : ''}`}>
+            <span style={{ width: `${reveal || s.phase === 'done' ? 100 : (s.typed.length / Math.max(1, letters)) * 100}%` }} />
+          </div>
         </div>
         <p className="an-visually-hidden" aria-live="polite">{spoken}</p>
         <p className="an-status">

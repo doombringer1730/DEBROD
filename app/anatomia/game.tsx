@@ -159,7 +159,7 @@ export default function Game() {
     return (
       <main className="an-results">
         <p className="an-unit-name">{title}</p>
-        <h1 className="an-score" tabIndex={-1} ref={focusOnMount}>
+        <h1 className="an-score an-display" tabIndex={-1} ref={focusOnMount}>
           {pct(result)}%<span className="an-visually-hidden"> {en ? 'clean' : 'sin fallos'}</span>
         </h1>
         <div className={`an-replay${result.items.length > 60 ? ' is-dense' : ''}`} aria-hidden="true">
@@ -175,7 +175,7 @@ export default function Game() {
         </dl>
         {result.missed.length > 0 ? (
           <>
-            <h2 className="an-h2">Missed <span className="an-num an-muted">{result.missed.length}</span></h2>
+            <h2 className="an-h2 an-title-l">Missed <span className="an-num an-muted">{result.missed.length}</span></h2>
             <ul className="an-missed" lang={lang}>
               {result.missed.map((it) => (
                 <li key={it.id}>
