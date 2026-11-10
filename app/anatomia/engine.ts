@@ -16,6 +16,8 @@ export type Item = {
   page: number
   model?: string // 3D model file in public/anatomia, default "skull"
   mesh?: string // a node in the model; "a+b" lights several
+  diagram?: string // a schematic in app/anatomia/diagrams, for items with no 3D structure
+  part?: string // the part of the diagram drawn in red; "a+b" lights several
   /** What the red means when it is not the answer itself (see HINTS in round.tsx). */
   hint?: Hint
   en: Text // the same item in English

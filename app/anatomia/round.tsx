@@ -5,6 +5,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { alive, candidates, fold, glyphs, isComplete, textOf, type Candidate, type Hint, type Item, type Lang } from './engine'
 
 const Figure = dynamic(() => import('./figure'), { ssr: false })
+const DiagramView = dynamic(() => import('./diagrams/view'), { ssr: false })
 
 export type RoundResult = {
   items: Item[]
@@ -191,6 +192,8 @@ export default function Round({ title, items, lang, onFinish, onQuit, copy = fal
     : skull ? '¿Qué hueso está en rojo?' : '¿Qué estructura está en rojo?'
   const prompt = textOf(item, lang).prompt || (item.type === 'identify' ? fallback : '')
   const has3d = !!item.mesh
+  const hasDiagram = !item.mesh && !!item.diagram
+  const hasFig = has3d || hasDiagram
   const hintNote = item.hint ? HINTS[item.hint][lang] : null
 
   const en = lang === 'en'
@@ -230,7 +233,7 @@ export default function Round({ title, items, lang, onFinish, onQuit, copy = fal
 
       <p className="an-unit-name">{title}</p>
 
-      <div className={`an-stage${has3d ? ' has-figure' : ''}`}>
+      <div className={`an-stage${hasFig ? ' has-figure' : ''}`}>
         {/* One set of 3D views lives for the whole round and is hidden on items
             without a figure, so WebGL contexts aren't created and thrown away per item. */}
         {figure && (
@@ -239,10 +242,17 @@ export default function Round({ title, items, lang, onFinish, onQuit, copy = fal
             <Figure model={figure.model} mesh={figure.mesh} paused={!has3d} />
           </div>
         )}
+        {hasDiagram && (
+          <div className="an-figure-2d">
+            <DiagramView name={item.diagram!} part={item.part ?? ''}
+              label={en ? 'Simplified diagram, one part highlighted in red' : 'Esquema simplificado, una parte resaltada en rojo'} />
+            <span className="an-figure-2d-note">{en ? 'Simplified diagram' : 'Esquema simplificado'}</span>
+          </div>
+        )}
         {item.type === 'identify' ? (
           <p className="an-prompt" lang={lang}>{prompt}</p>
         ) : (
-          <div className={`an-clue-block${has3d ? ' is-under' : ''}`}>
+          <div className={`an-clue-block${hasFig ? ' is-under' : ''}`}>
             <p className="an-clue" lang={lang}>
               {prompt}
               {hintNote && <span className="an-region-note">{hintNote}</span>}

@@ -441,6 +441,7 @@ M.update({
     'snc-022': ('encefalo', 'frontal+parietal', None, B),
     'snc-047': ('encefalo', 'cerebral_media', ['~middle cerebral artery$'], X),
     'snc-052': ('encefalo', 'cerebral_media', ['~middle cerebral artery$'], X),
+    'snc-051': ('encefalo', 'poligono_willis', None, EX),
     'snc-054': ('encefalo', 'hipofisis', None, AL),
 
     # Pares craneales: where they leave the skull, and what they supply

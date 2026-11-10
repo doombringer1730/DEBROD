@@ -4,6 +4,7 @@
 // Run: node --experimental-strip-types scripts/check-anatomia.mts
 import { readFileSync, readdirSync } from 'node:fs'
 import { accepts, fold, type Item } from '../app/anatomia/engine.ts'
+import { DIAGRAMS, partsOf } from '../app/anatomia/diagrams/index.ts'
 
 const dir = new URL('../app/anatomia/data/units/', import.meta.url)
 const nodeCache = new Map<string, string[]>()
@@ -37,6 +38,14 @@ for (const file of readdirSync(dir).sort()) {
       for (const part of it.mesh.split('+'))
         if (!nodesOf(model).some((n) => n === part || n.startsWith(`${part}__`)))
           fail(`${it.id}: mesh "${part}" not in ${model}.glb`)
+      if (it.hint && !HINTS.has(it.hint)) fail(`${it.id}: unknown hint "${it.hint}"`)
+    }
+    if (it.diagram) {
+      const d = DIAGRAMS[it.diagram]
+      if (!d) fail(`${it.id}: no diagram "${it.diagram}"`)
+      else for (const part of (it.part ?? '').split('+'))
+        if (!partsOf(d).has(part)) fail(`${it.id}: part "${part}" not in diagram ${it.diagram}`)
+      if (it.mesh) fail(`${it.id}: both a mesh and a diagram`)
       if (it.hint && !HINTS.has(it.hint)) fail(`${it.id}: unknown hint "${it.hint}"`)
     }
     for (const a of [it.answer, ...it.accept]) {
