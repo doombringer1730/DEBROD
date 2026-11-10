@@ -1,6 +1,6 @@
 // Content check for the Anatomía game: every answer and synonym must be
 // accepted typed with and without accents, every item must cite a page, and
-// every 3D item must name a mesh that exists in its model in public/anatomia/.
+// every item must have an English version, and every 3D item must name a mesh that exists in its model in public/anatomia/.
 // Run: node --experimental-strip-types scripts/check-anatomia.mts
 import { readFileSync, readdirSync } from 'node:fs'
 import { accepts, fold, type Item } from '../app/anatomia/engine.ts'
@@ -39,6 +39,14 @@ for (const file of readdirSync(dir).sort()) {
       for (const typed of [a, plain(a), a.toUpperCase(), a.replace(/ /g, '')])
         if (!accepts(it, typed)) fail(`${it.id}: "${typed}" not accepted`)
     }
+    if (!it.en?.answer) fail(`${it.id}: no English answer`)
+    else {
+      if (it.type === 'clue' && !it.en.prompt) fail(`${it.id}: no English prompt`)
+      for (const a of [it.en.answer, ...it.en.accept]) {
+        for (const typed of [a, plain(a), a.toUpperCase()])
+          if (!accepts(it, typed, 'en')) fail(`${it.id}: English "${typed}" not accepted`)
+      }
+    }
   }
   console.log(`${file.padEnd(28)} ${String(items.length).padStart(3)} items`)
 }
@@ -56,6 +64,14 @@ probe('07-cara.json', 'cara-007', 'businador', false) // typo in the notes is no
 probe('04-pares.json', 'pares-048', 'XII', true)
 probe('13-miembro-superior.json', 'miembro-superior-012', 'ulna', true)
 probe('14-miembro-inferior.json', 'miembro-inferior-014', 'fibula', true)
+const probeEn = (unit: string, id: string, typed: string, want: boolean) => {
+  const it: Item = JSON.parse(readFileSync(new URL(unit, dir), 'utf8')).find((i: Item) => i.id === id)
+  if (accepts(it, typed, 'en') !== want) fail(`${id}: English "${typed}" should ${want ? '' : 'not '}be accepted`)
+}
+probeEn('02-craneo.json', 'craneo-004', 'occipital bone', true)
+probeEn('02-craneo.json', 'craneo-004', 'occipital', true)
+probeEn('02-craneo.json', 'craneo-004', 'hueso occipital', false)
+probeEn('07-cara.json', 'cara-044', 'masseter muscle', true)
 
 console.log(`\n${total} items, ${failures} failures`)
 process.exit(failures ? 1 : 0)

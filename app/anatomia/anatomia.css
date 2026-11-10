@@ -25,6 +25,7 @@
 .an-home, .an-results { max-width: 1040px; margin: 0 auto; padding: 28px 16px 40px; }
 .an-home-top { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; margin-bottom: 24px; }
 .an-title { margin: 0; font: 400 56px/1 var(--an-serif), serif; font-variation-settings: 'opsz' 144; letter-spacing: -0.02em; }
+.an-controls { display: flex; flex-wrap: wrap; gap: 10px 24px; }
 .an-sizes { display: flex; align-items: center; gap: 6px; color: var(--an-muted); font-size: 13px; }
 .an-sizes span { margin-right: 4px; }
 .an-chip { border: 1px solid var(--an-line); background: none; border-radius: 999px; padding: 4px 12px; cursor: pointer; }
@@ -61,6 +62,8 @@
 .an-clue { margin: 0; max-width: 760px; text-align: center; font: 350 clamp(24px, 3.4vw, 36px)/1.25 var(--an-serif), serif; font-variation-settings: 'opsz' 36; color: #cfcdc8; text-wrap: balance; }
 .an-prompt { margin: 0; color: var(--an-muted); }
 .an-figure-note { color: var(--an-muted); }
+.an-figure-3d { width: 100%; }
+.an-figure-3d[hidden] { display: none; }
 .an-skull { width: 100%; display: grid; grid-template-columns: 1fr 2.2fr 1fr; align-items: center; gap: 8px; position: relative; }
 .an-skull-main { aspect-ratio: 1; max-height: 46vh; width: 100%; }
 .an-skull-side { aspect-ratio: 1; width: 100%; opacity: .75; }
@@ -110,3 +113,18 @@
   .an-missed li { grid-template-columns: 1fr auto; }
   .an-missed-prompt { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* Keyboard focus: a plain ring instead of DEBROD's cyan glow. */
+.an-root button:focus { box-shadow: none; outline: none; }
+.an-root button:focus-visible { outline: 2px solid var(--an-text); outline-offset: 2px; box-shadow: none; }
+.an-root .an-card:focus-visible { border-color: var(--an-text); }
+@media (prefers-reduced-motion: reduce) {
+  .an-root *, .an-root *::before, .an-root *::after { animation: none !important; transition: none !important; }
+}
+/* Hover: undo DEBROD's cyan glow and border on every button in the game. */
+.an-root button:hover:not(:disabled) { box-shadow: none; border-color: #4a4d57; color: inherit; }
+.an-root .an-btn.is-primary:hover:not(:disabled) { border-color: var(--an-red); color: #fff; filter: brightness(1.08); }
+.an-root .an-chip.is-on:hover:not(:disabled) { border-color: var(--an-text); color: var(--an-bg); }
+.an-root .an-key:hover:not(:disabled) { color: var(--an-key-text); }
+.an-root .an-key.is-ok:hover, .an-root .an-key.is-bad:hover { color: #fff; }
+.an-root .an-key.is-hint:hover { color: #1a1a1a; }

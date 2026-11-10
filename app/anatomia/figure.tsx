@@ -69,13 +69,14 @@ function Model({ source, mesh, spin, tilt }: { source: THREE.Group; mesh: string
   )
 }
 
-function View({ source, mesh, spin, tilt, className }: {
-  source: THREE.Group | null; mesh: string; spin: number; tilt: number; className: string
+function View({ source, mesh, spin, tilt, className, paused }: {
+  source: THREE.Group | null; mesh: string; spin: number; tilt: number; className: string; paused: boolean
 }) {
   return (
     <div className={className}>
       {source && (
-        <Canvas camera={{ position: [0, 0, 4.1], fov: 32 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
+        <Canvas camera={{ position: [0, 0, 4.1], fov: 32 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}
+          frameloop={paused ? 'never' : 'always'}>
           <ambientLight intensity={0.9} />
           <directionalLight position={[3, 4, 5]} intensity={1.6} />
           <directionalLight position={[-4, -1, -3]} intensity={0.5} />
@@ -87,7 +88,7 @@ function View({ source, mesh, spin, tilt, className }: {
 }
 
 /** The lit model: one large slow-turning view flanked by two smaller ones from other angles. */
-export default function Figure({ model, mesh }: { model: string; mesh: string }) {
+export default function Figure({ model, mesh, paused = false }: { model: string; mesh: string; paused?: boolean }) {
   const [loaded, setLoaded] = useState<{ model: string; scene: THREE.Group } | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -102,9 +103,9 @@ export default function Figure({ model, mesh }: { model: string; mesh: string })
   if (failed) return <p className="an-figure-note">The 3D model could not be loaded.</p>
   return (
     <div className="an-skull">
-      <View className="an-skull-side" source={source} mesh={mesh} spin={Math.PI * 0.75} tilt={0.5} />
-      <View className="an-skull-main" source={source} mesh={mesh} spin={-0.6} tilt={0.08} />
-      <View className="an-skull-side" source={source} mesh={mesh} spin={-Math.PI * 0.9} tilt={-0.55} />
+      <View className="an-skull-side" source={source} mesh={mesh} spin={Math.PI * 0.75} tilt={0.5} paused={paused} />
+      <View className="an-skull-main" source={source} mesh={mesh} spin={-0.6} tilt={0.08} paused={paused} />
+      <View className="an-skull-side" source={source} mesh={mesh} spin={-Math.PI * 0.9} tilt={-0.55} paused={paused} />
       {!source && <p className="an-figure-note">Loading model…</p>}
     </div>
   )
