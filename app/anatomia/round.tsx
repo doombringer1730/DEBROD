@@ -2,9 +2,10 @@
 
 import dynamic from 'next/dynamic'
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { alive, candidates, fold, glyphs, isComplete, textOf, type Candidate, type Item, type Lang } from './engine'
+import { alive, candidates, fold, glyphs, isComplete, textOf, type Candidate, type Hint, type Item, type Lang } from './engine'
 
 const Figure = dynamic(() => import('./figure'), { ssr: false })
+const DiagramView = dynamic(() => import('./diagrams/view'), { ssr: false })
 
 export type RoundResult = {
   items: Item[]
@@ -16,6 +17,19 @@ export type RoundResult = {
 }
 
 const ROWS = ['qwertyuiop', 'asdfghjklñ', 'zxcvbnm']
+
+// What the red means when it is not the answer itself.
+const HINTS: Record<Hint, { es: string; en: string }> = {
+  region: { es: 'La respuesta está en la zona roja', en: 'The answer is on the part in red' },
+  between: { es: 'Está entre las partes en rojo', en: 'It lies between the parts in red' },
+  attaches: { es: 'Se une a lo que está en rojo', en: 'It attaches to what is in red' },
+  innervates: { es: 'En rojo, lo que inerva', en: 'In red: what this nerve supplies' },
+  supplies: { es: 'En rojo, lo que irriga', en: 'In red: what this vessel supplies' },
+  passes: { es: 'Pasa por la zona en rojo', en: 'It passes through the part in red' },
+  along: { es: 'Está junto a lo que está en rojo', en: 'It lies next to what is in red' },
+  source: { es: 'Se produce en la zona en rojo', en: 'It is made in the part in red' },
+  example: { es: 'En rojo, un ejemplo', en: 'In red: an example' },
+}
 const HINT_AFTER = 2
 const REVEAL_MS = 1500
 const NEXT_MS = 450
@@ -178,7 +192,9 @@ export default function Round({ title, items, lang, onFinish, onQuit, copy = fal
     : skull ? '¿Qué hueso está en rojo?' : '¿Qué estructura está en rojo?'
   const prompt = textOf(item, lang).prompt || (item.type === 'identify' ? fallback : '')
   const has3d = !!item.mesh
-  const regionNote = lang === 'en' ? 'The answer is on the part in red' : 'La respuesta está en la zona roja'
+  const hasDiagram = !item.mesh && !!item.diagram
+  const hasFig = has3d || hasDiagram
+  const hintNote = item.hint ? HINTS[item.hint][lang] : null
 
   const en = lang === 'en'
   // One tick per item: clean, missed, the current one, or still to come.
@@ -217,7 +233,7 @@ export default function Round({ title, items, lang, onFinish, onQuit, copy = fal
 
       <p className="an-unit-name">{title}</p>
 
-      <div className={`an-stage${has3d ? ' has-figure' : ''}`}>
+      <div className={`an-stage${hasFig ? ' has-figure' : ''}`}>
         {/* One set of 3D views lives for the whole round and is hidden on items
             without a figure, so WebGL contexts aren't created and thrown away per item. */}
         {figure && (
@@ -226,13 +242,20 @@ export default function Round({ title, items, lang, onFinish, onQuit, copy = fal
             <Figure model={figure.model} mesh={figure.mesh} paused={!has3d} />
           </div>
         )}
+        {hasDiagram && (
+          <div className="an-figure-2d">
+            <DiagramView name={item.diagram!} part={item.part ?? ''}
+              label={en ? 'Simplified diagram, one part highlighted in red' : 'Esquema simplificado, una parte resaltada en rojo'} />
+            <span className="an-figure-2d-note">{en ? 'Simplified diagram' : 'Esquema simplificado'}</span>
+          </div>
+        )}
         {item.type === 'identify' ? (
           <p className="an-prompt" lang={lang}>{prompt}</p>
         ) : (
-          <div className={`an-clue-block${has3d ? ' is-under' : ''}`}>
+          <div className={`an-clue-block${hasFig ? ' is-under' : ''}`}>
             <p className="an-clue" lang={lang}>
               {prompt}
-              {item.region && <span className="an-region-note">{regionNote}</span>}
+              {hintNote && <span className="an-region-note">{hintNote}</span>}
             </p>
             <span className="an-margin-page an-num" aria-label={`${en ? 'page' : 'página'} ${item.page}`}>p. {item.page}</span>
           </div>

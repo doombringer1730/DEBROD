@@ -338,3 +338,20 @@
   .an-plate-caption { font-size: 18px; }
 }
 @media (prefers-reduced-motion: reduce) { .an-plate-timer { display: none; } }
+
+/* ---- Diagrams for items with no 3D structure ---- */
+.an-figure-2d { position: relative; width: 100%; border-top: 1px solid var(--an-rule); border-bottom: 1px solid var(--an-rule); padding: var(--s2) 0; margin-bottom: var(--s3); display: grid; justify-items: center; }
+.an-figure-2d-note { position: absolute; right: 0; bottom: var(--s1); font-size: 10px; font-style: italic; color: var(--an-muted); }
+.an-dg { display: block; width: 100%; max-width: 640px; height: auto; max-height: min(36vh, 380px); fill-rule: evenodd; }
+.an-dg-b { fill: rgb(217 214 207 / .12); stroke: rgb(236 235 232 / .26); }
+.an-dg-s { fill: rgb(217 214 207 / .26); stroke: rgb(236 235 232 / .38); }
+.an-dg-q { fill: rgb(217 214 207 / .1); stroke: rgb(236 235 232 / .38); stroke-dasharray: 4 3; }
+.an-dg-o { fill: #0d0e0f; stroke: rgb(236 235 232 / .24); }
+.an-dg-pl { fill: rgb(217 214 207 / .07); stroke: rgb(236 235 232 / .32); }
+.an-dg-c { fill: none; stroke: rgb(217 214 207 / .55); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.an-dg-l { fill: none; stroke: rgb(236 235 232 / .4); stroke-width: 1.5; }
+.an-dg-a { fill: none; stroke: rgb(236 235 232 / .55); stroke-width: 3; stroke-linecap: round; }
+.an-dg :is(.an-dg-b, .an-dg-s, .an-dg-q, .an-dg-o, .an-dg-pl) { transition: fill .3s, stroke .3s; }
+.an-dg :is(.an-dg-b, .an-dg-s, .an-dg-q, .an-dg-o, .an-dg-pl).is-on { fill: #e0323c; stroke: #ff8a90; }
+.an-dg :is(.an-dg-c, .an-dg-l, .an-dg-a).is-on { stroke: #e0323c; }
+@media (max-width: 640px) { .an-dg { max-height: 28vh; } }

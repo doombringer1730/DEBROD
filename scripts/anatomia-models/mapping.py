@@ -1,17 +1,35 @@
 # Which structure lights up for each clue item.
 #
-# item id -> (model, mesh, sources, region)
+# item id -> (model, mesh, sources, hint)
 #   model    a file in public/anatomia/ (without .glb)
-#   mesh     node name in that model; reused if it exists, otherwise built
-#   sources  None to reuse an existing mesh, or BodyParts3D concept names
+#   mesh     node name in that model; reused if it exists, otherwise built.
+#            "a+b" lights several existing meshes at once (sources None).
+#   sources  None to reuse existing meshes, or BodyParts3D concept names
 #            (from isa/partof_element_parts.txt). "~regex" matches every
 #            concept whose name matches. Only parts inside the model's view
 #            are kept, so "putamen" in a one-sided limb model keeps one side.
-#   region   True when red marks where the answer is (a bone for one of its
-#            landmarks, an organ for one of its parts), not the answer itself.
+#   hint     what the red means when it is not the answer itself, shown
+#            under the figure (see HINTS in app/anatomia/round.tsx):
+#            region  the answer is on the part in red (a landmark's bone)
+#            between the answer lies between the parts in red
+#            attaches it attaches to the parts in red
+#            innervates  in red, what this nerve supplies
+#            supplies    in red, what this vessel supplies
+#            passes  it passes through the part in red
+#            along   it lies next to the part in red
+#            source  it is made in the part in red
+#            example in red, an example of it
 
-R = True   # region
-X = False  # the structure itself
+X = None        # the structure itself
+R = 'region'
+B = 'between'
+AT = 'attaches'
+INN = 'innervates'
+SUP = 'supplies'
+PAS = 'passes'
+AL = 'along'
+SRC = 'source'
+EX = 'example'
 
 NEW_MODELS = {
     # model -> concepts drawn as ghosted context around the targets
@@ -20,7 +38,7 @@ NEW_MODELS = {
 
 M = {
     # Fundamentos
-    'fundamentos-044': ('minf', 'rotula', None, R),
+    'fundamentos-044': ('minf', 'rotula', None, EX),
     'fundamentos-059': ('minf', 'cuadriceps', ['rectus femoris', 'vastus lateralis', 'vastus medialis', 'vastus intermedius'], X),
 
     # Cráneo: landmarks on the bone they belong to
@@ -373,3 +391,210 @@ M = {
     'miembro-inferior-026': ('minf', 'cuadrado_femoral', ['quadratus femoris'], X),
     'miembro-inferior-027': ('minf', 'gemelos', ['gemellus superior', 'gemellus inferior'], X),
 }
+
+# Second pass: every remaining item with an honest place to show.
+M.update({
+    # Fundamentos: examples named in the notes, and parts of a long bone
+    'fundamentos-014': ('msup', 'radio', None, EX),
+    'fundamentos-015': ('msup', 'radio', None, EX),
+    'fundamentos-019': ('skull', 'mandibula', None, EX),
+    'fundamentos-030': ('skull', 'oreja', None, EX),
+    'fundamentos-042': ('minf', 'femur', None, R),
+    'fundamentos-043': ('minf', 'femur', None, R),
+    'fundamentos-048': ('skull', 'incisivos', None, EX),
+    'fundamentos-050': ('columna', 'discos', None, EX),
+    'fundamentos-052': ('columna', 'atlas+axis', None, EX),
+    'fundamentos-053': ('minf', 'coxal+femur', None, EX),
+    'fundamentos-055': ('mano', 'trapecio_hueso', None, EX),
+    'fundamentos-056': ('minf', 'femur+tibia', None, EX),
+    'fundamentos-061': ('pelvis', 'esfinter_externo', None, EX),
+
+    # Cráneo: sutures and points between the bones that meet there
+    'craneo-015': ('skull', 'frontal+parietal', None, B),
+    'craneo-016': ('skull', 'parietal', None, B),
+    'craneo-017': ('skull', 'parietal+occipital', None, B),
+    'craneo-019': ('skull', 'frontal+parietal', None, B),
+    'craneo-020': ('skull', 'parietal', None, R),
+    'craneo-021': ('skull', 'parietal+occipital', None, B),
+    'craneo-023': ('skull', 'parietal+occipital+temporal', None, B),
+    'craneo-024': ('skull', 'esfenoides+temporal+parietal+frontal', None, B),
+    'craneo-025': ('skull', 'parietal+temporal', None, B),
+    'craneo-026': ('skull', 'frontal', None, R),
+    'craneo-027': ('skull', 'frontal+nasal', None, B),
+    'craneo-031': ('skull', 'vomer', None, AL),
+    'craneo-041': ('skull', 'esfenoides+occipital', None, R),
+    'craneo-046': ('skull', 'esfenoides+temporal+occipital', None, B),
+    'craneo-050': ('skull', 'temporal+occipital', None, B),
+    'craneo-053': ('skull', 'etmoides+lagrimal+frontal', None, R),
+    'craneo-056': ('skull', 'esfenoides+maxilar', None, B),
+    'craneo-061': ('skull', 'nasal+maxilar', None, B),
+    'craneo-068': ('skull', 'mandibula', None, AT),
+    'craneo-069': ('skull', 'mandibula', None, AT),
+
+    # SNC
+    'snc-009': ('encefalo', 'hipofisis', None, AL),
+    'snc-015': ('encefalo', 'frontal+parietal+temporal+occipital', None, R),
+    'snc-016': ('encefalo', 'frontal+parietal+temporal+occipital', None, R),
+    'snc-017': ('encefalo', 'frontal+parietal+temporal+occipital+ventriculos_laterales', None, X),
+    'snc-018': ('encefalo', 'talamo+hipotalamo+tercer_ventriculo', None, X),
+    'snc-021': ('encefalo', 'frontal+temporal', None, B),
+    'snc-022': ('encefalo', 'frontal+parietal', None, B),
+    'snc-047': ('encefalo', 'cerebral_media', ['~middle cerebral artery$'], X),
+    'snc-052': ('encefalo', 'cerebral_media', ['~middle cerebral artery$'], X),
+    'snc-051': ('encefalo', 'poligono_willis', None, EX),
+    'snc-054': ('encefalo', 'hipofisis', None, AL),
+
+    # Pares craneales: where they leave the skull, and what they supply
+    'pares-005': ('skull', 'trigemino', ['branch of trigeminal nerve'], X),
+    'pares-019': ('skull', 'etmoides', None, PAS),
+    'pares-027': ('skull', 'trigemino', ['branch of trigeminal nerve'], X),
+    'pares-028': ('skull', 'esfenoides', None, PAS),
+    'pares-029': ('skull', 'esfenoides', None, PAS),
+    'pares-031': ('ojo', 'recto_lateral', None, INN),
+    'pares-033': ('skull', 'temporal', None, PAS),
+    'pares-035': ('cuello', 'lengua', None, INN),
+    'pares-043': ('cuello', 'lengua', None, INN),
+    'pares-044': ('cuello', 'estilofaringeo', None, INN),
+    'pares-045': ('skull', 'temporal+occipital', None, B),
+    'pares-046': ('cuello', 'constrictores', None, INN),
+    'pares-047': ('cuello', 'ecm', None, INN),
+    'pares-048': ('cuello', 'lengua', None, INN),
+    'pares-049': ('cuello', 'lengua', None, R),
+
+    # Ojo
+    'ojo-006': ('ojo', 'tarso', None, R),
+    'ojo-019': ('ojo', 'iris+cuerpo_ciliar', None, R),
+    'ojo-023': ('ojo', 'cornea', None, AL),
+    'ojo-026': ('ojo', 'iris', None, R),
+    'ojo-027': ('ojo', 'iris', None, R),
+    'ojo-032': ('ojo', 'retina', None, R),
+    'ojo-033': ('ojo', 'retina', None, R),
+    'ojo-036': ('encefalo', 'occipital', None, R),
+    'ojo-044': ('ojo', 'nervio_optico', None, AL),
+
+    # Cara
+    'cara-010': ('skull', 'nasal', None, R),
+    'cara-014': ('skull', 'cornete_inferior', None, AL),
+    'cara-015': ('skull', 'vomer', None, AL),
+    'cara-016': ('skull', 'cartilago_septal', None, R),
+    'cara-025': ('cuello', 'lengua', None, AT),
+    'cara-035': ('cuello', 'lengua', None, AT),
+    'cara-036': ('cuello', 'lengua', None, SUP),
+    'cara-045': ('skull', 'temporal+mandibula', None, AT),
+    'cara-046': ('skull', 'esfenoides+mandibula', None, AT),
+    'cara-047': ('skull', 'mandibula', None, AT),
+    'cara-048': ('cuello', 'constrictores', None, R),
+    'cara-052': ('cuello', 'constrictores', None, R),
+
+    # Cuello
+    'cuello-003': ('cuello', 'carotida_comun+carotida_interna+yugular_interna', None, R),
+    'cuello-004': ('torax', 'diafragma', None, INN),
+    'cuello-021': ('cuello', 'cricoides+aritenoides', None, AT),
+    'cuello-022': ('cuello', 'cricoides+aritenoides', None, AT),
+    'cuello-025': ('cuello', 'vocal', None, INN),
+    'cuello-026': ('cuello', 'cartilago_tiroides+cricoides+epiglotis+aritenoides', None, INN),
+    'cuello-033': ('encefalo', 'hipofisis', None, SRC),
+
+    # SNP, médula y columna
+    'snp-011': ('columna', 'sacro', None, R),
+    'snp-013': ('columna', 'medula', None, R),
+    'snp-014': ('columna', 'medula', None, R),
+    'snp-015': ('columna', 'medula', None, AL),
+    'snp-017': ('columna', 'cervicales+lumbares', None, R),
+    'snp-018': ('columna', 'toracicas+sacro', None, R),
+    'snp-019': ('columna', 'lumbares', None, R),
+    'snp-020': ('columna', 'lumbares', None, R),
+    'snp-021': ('columna', 'lumbares', None, R),
+    'snp-023': ('columna', 'lumbares', None, R),
+    'snp-031': ('columna', 'atlas+axis', None, B),
+    'snp-032': ('columna', 'atlas', None, R),
+    'snp-039': ('columna', 'lumbares+sacro', None, B),
+
+    # Tórax
+    'torax-008': ('torax', 'diafragma', None, INN),
+    'torax-014': ('torax', 'traquea', None, AL),
+    'torax-017': ('torax', 'pulmon_derecho+pulmon_izquierdo', None, R),
+    'torax-018': ('torax', 'pulmon_derecho+pulmon_izquierdo', None, R),
+    'torax-019': ('torax', 'pulmon_derecho+pulmon_izquierdo', None, R),
+    'torax-020': ('torax', 'pulmon_derecho+pulmon_izquierdo', None, R),
+    'torax-021': ('torax', 'pulmon_derecho+pulmon_izquierdo', None, AL),
+    'torax-022': ('torax', 'pulmon_derecho+pulmon_izquierdo', None, AL),
+    'torax-026': ('torax', 'pulmon_derecho+pulmon_izquierdo', None, R),
+    'torax-027': ('torax', 'pulmon_derecho+pulmon_izquierdo', None, R),
+    'torax-028': ('torax', 'pulmon_derecho+pulmon_izquierdo', None, R),
+    'torax-029': ('torax', 'tronco_pulmonar+venas_pulmonares', None, X),
+    'torax-033': ('torax', 'corazon', None, R),
+    'torax-035': ('torax', 'corazon', None, R),
+    'torax-048': ('abdomen', 'esofago+estomago', None, B),
+    'torax-049': ('cuello', 'constrictores', None, R),
+    'torax-052': ('corazon', 'auricula_derecha', None, R),
+    'torax-053': ('corazon', 'auricula_derecha', None, R),
+    'torax-054': ('torax', 'corazon', None, AL),
+    'torax-055': ('torax', 'corazon', None, R),
+    'torax-056': ('torax', 'corazon', None, R),
+    'torax-057': ('torax', 'corazon', None, R),
+    'torax-058': ('corazon', 'auricula_derecha', None, R),
+    'torax-060': ('corazon', 'auricula_derecha', None, R),
+    'torax-061': ('corazon', 'tricuspide', None, AL),
+    'torax-068': ('corazon', 'marginal_derecha', ['marginal branch of right coronary artery'], X),
+
+    # Abdomen
+    'abdomen-017': ('minf', 'femur', None, R),
+    'abdomen-022': ('abdomen', 'rinon+pancreas+suprarrenal', None, EX),
+    'abdomen-025': ('abdomen', 'estomago+colon_transverso', None, B),
+    'abdomen-036': ('abdomen', 'yeyuno+ileon', None, R),
+    'abdomen-037': ('abdomen', 'duodeno+yeyuno', None, B),
+    'abdomen-039': ('abdomen', 'duodeno', None, R),
+    'abdomen-040': ('abdomen', 'duodeno', None, R),
+    'abdomen-042': ('abdomen', 'pancreas', None, R),
+    'abdomen-046': ('abdomen', 'colon_ascendente+colon_transverso', None, B),
+    'abdomen-047': ('abdomen', 'colon_transverso+colon_descendente', None, B),
+    'abdomen-049': ('abdomen', 'colon_ascendente+colon_transverso+colon_descendente', None, R),
+    'abdomen-050': ('abdomen', 'colon_ascendente+colon_transverso+colon_descendente', None, R),
+    'abdomen-051': ('abdomen', 'ileocolica', ['~ileocolic artery$'], X),
+    'abdomen-056': ('abdomen', 'higado', None, R),
+    'abdomen-057': ('abdomen', 'higado', None, R),
+    'abdomen-059': ('abdomen', 'higado', None, R),
+    'abdomen-060': ('abdomen', 'vesicula', None, SUP),
+    'abdomen-061': ('abdomen', 'pancreas', None, SRC),
+    'abdomen-066': ('abdomen', 'bazo+estomago', None, B),
+    'abdomen-071': ('abdomen', 'suprarrenal', None, SRC),
+    'abdomen-072': ('abdomen', 'suprarrenal', None, SRC),
+    'abdomen-076': ('abdomen', 'tronco_celiaco', None, AL),
+
+    # Pelvis y periné
+    'pelvis-007': ('minf', 'coxal+femur', None, B),
+    'pelvis-008': ('pelvis', 'coxal+sacro', None, R),
+    'pelvis-009': ('pelvis', 'coxal+sacro', None, R),
+    'pelvis-011': ('pelvis', 'coxal+sacro', None, EX),
+    'pelvis-012': ('pelvis', 'sacro+coxal', None, AT),
+    'pelvis-013': ('pelvis', 'sacro+coxal', None, AT),
+    'pelvis-016': ('pelvis', 'pudenda_interna', ['internal pudendal vein'], R),
+    'pelvis-025': ('pelvis', 'testiculo', None, SRC),
+    'pelvis-026': ('pelvis', 'testiculo', None, R),
+    'pelvis-032': ('pelvis', 'vesicula_seminal', None, AL),
+    'pelvis-035': ('pelvis', 'testiculo', None, AT),
+    'pelvis-039': ('pelvis', 'cuerpos_cavernosos', None, AL),
+    'pelvis-069': ('pelvis', 'cuerpos_cavernosos+coxal', None, AT),
+    'pelvis-070': ('pelvis', 'cuerpo_esponjoso', ['corpus spongiosum of penis'], AT),
+
+    # Miembro superior
+    'miembro-superior-002': ('msup', 'escapula+humero', None, B),
+    'miembro-superior-036': ('msup', 'biceps+coracobraquial', None, INN),
+    'miembro-superior-040': ('msup', 'triceps', None, INN),
+    'miembro-superior-043': ('msup', 'flexor_cubital_carpo', ['~flexor carpi ulnaris$'], INN),
+    'miembro-superior-044': ('msup', 'flexor_superficial_dedos', ['flexor digitorum superficialis'], INN),
+    'miembro-superior-046': ('mano', 'retinaculo_flexor', None, PAS),
+    'miembro-superior-053': ('msup', 'arteria_radial', ['radial artery'], X),
+    'miembro-superior-058': ('msup', 'clavicula+escapula', None, B),
+
+    # Miembro inferior
+    'miembro-inferior-004': ('minf', 'coxal+femur', None, B),
+    'miembro-inferior-007': ('minf', 'femur', None, AT),
+    'miembro-inferior-009': ('minf', 'rotula+tibia', None, B),
+    'miembro-inferior-010': ('minf', 'femur', None, R),
+    'miembro-inferior-016': ('minf', 'femur+tibia', None, B),
+    'miembro-inferior-017': ('minf', 'tibia+perone', None, B),
+    'miembro-inferior-018': ('minf', 'femur+tibia+perone', None, AT),
+    'miembro-inferior-019': ('minf', 'rotula', None, AL),
+})

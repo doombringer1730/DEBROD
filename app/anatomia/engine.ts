@@ -2,6 +2,8 @@
 
 export type Lang = 'es' | 'en'
 
+export type Hint = 'region' | 'between' | 'attaches' | 'innervates' | 'supplies' | 'passes' | 'along' | 'source' | 'example'
+
 export type Text = { prompt: string; answer: string; accept: string[] }
 
 export type Item = {
@@ -13,8 +15,11 @@ export type Item = {
   accept: string[]
   page: number
   model?: string // 3D model file in public/anatomia, default "skull"
-  mesh?: string
-  region?: boolean // red marks where the answer is (its bone or organ), not the answer itself
+  mesh?: string // a node in the model; "a+b" lights several
+  diagram?: string // a schematic in app/anatomia/diagrams, for items with no 3D structure
+  part?: string // the part of the diagram drawn in red; "a+b" lights several
+  /** What the red means when it is not the answer itself (see HINTS in round.tsx). */
+  hint?: Hint
   en: Text // the same item in English
 }
 

@@ -143,9 +143,16 @@ Enter skips and Esc quits.
   first is the adrenal cortex (p. 103).
 - 3D models in `public/anatomia/*.glb` come from BodyParts3D, © The Database
   Center for Life Science, licensed under CC BY-SA 2.1 Japan.
-- Clue items can show a figure too: give them `model` and `mesh`, plus
-  `"region": true` when the red part is where the answer lies (a landmark's
-  bone, an organ's part) rather than the answer itself. To add structures to
+- Clue items can show a figure too: give them `model` and `mesh` (`"a+b"`
+  lights several meshes), plus a `hint` when the red is not the answer itself:
+  `region`, `between`, `attaches`, `innervates`, `supplies`, `passes`,
+  `along`, `source` or `example`. The round shows what the red means.
+- Items with no 3D structure (the inner ear, concepts, anatomy BodyParts3D
+  lacks) use a schematic diagram instead: `diagram` names one in
+  `app/anatomia/diagrams/` and `part` the piece drawn in red. Diagrams are
+  plain data (shapes tagged with part names), so the content check verifies
+  every part exists. They are marked as simplified and carry no labels during
+  a round. To add structures to
   a model, list them in `scripts/anatomia-models/mapping.py` and run
   `build.py` there (see its header). Card images in `public/anatomia/cards/`
   are rendered with `render.html` and `cards.cjs` in the same folder.
