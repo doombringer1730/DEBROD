@@ -79,8 +79,9 @@ const clock = (ms: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
-export default function Round({ title, items, lang, onFinish, onQuit }: {
+export default function Round({ title, items, lang, onFinish, onQuit, copy = false }: {
   title: string
+  copy?: boolean // learning: the whole answer is shown and you type it out
   lang: Lang
   items: Item[]
   onFinish: (r: RoundResult) => void
@@ -166,7 +167,10 @@ export default function Round({ title, items, lang, onFinish, onQuit }: {
   // While a short answer waits to be accepted, show it complete rather than the longer one's dots.
   const shown = reveal ? cands[s.index][0]
     : (s.ready && live.find((c) => c.norm.length === s.typed.length)) || live[0] || cands[s.index][0]
-  const word = glyphs(shown, reveal ? shown.norm.length : s.typed.length)
+  const word = glyphs(shown, reveal || copy ? shown.norm.length : s.typed.length)
+  // In copy mode the letters still to type are shown faintly instead of as dots.
+  let letter = 0
+  const ghost = word.map((g) => g.state !== 'gap' && copy && !reveal && letter++ >= s.typed.length)
   const hint = s.phase === 'typing' && s.missesHere >= HINT_AFTER ? shown.norm[s.typed.length] : null
   const skull = (item.model ?? 'skull') === 'skull'
   const fallback = lang === 'en'
@@ -215,12 +219,14 @@ export default function Round({ title, items, lang, onFinish, onQuit }: {
 
       <div className={`an-word${reveal ? ' is-reveal' : ''}${s.phase === 'done' ? ' is-done' : ''}`} lang={lang} aria-live="polite">
         {word.map((g, i) => (
-          <span key={i} className={`an-glyph is-${g.state}`}>{g.ch === ' ' ? ' ' : g.ch}</span>
+          <span key={i} className={`an-glyph is-${ghost[i] ? 'ghost' : g.state}`}>{g.ch === ' ' ? ' ' : g.ch}</span>
         ))}
       </div>
       <p className="an-status">
         {reveal ? `Skipped · p. ${item.page}` : hint ? 'Hint: the yellow key is next'
-          : s.ready ? 'Enter to accept, or keep typing' : '\u00a0'}
+          : s.ready ? 'Enter to accept, or keep typing'
+          : copy ? (lang === 'en' ? `Type it out to learn it · p. ${item.page}` : `Escríbela para aprenderla · p. ${item.page}`)
+          : '\u00a0'}
       </p>
 
       <div className="an-keyboard">

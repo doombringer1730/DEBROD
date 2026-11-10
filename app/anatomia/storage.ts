@@ -8,9 +8,11 @@ export type Progress = {
   missed: Record<string, number> // item id → times missed and not yet cleared
   size: number // preferred round size, 0 = all
   lang: 'es' | 'en'
+  mode: 'play' | 'learn'
+  learned: Record<string, number> // item id → when it was first recalled in learn mode
 }
 
-const EMPTY: Progress = { best: {}, missed: {}, size: 15, lang: 'es' }
+export const EMPTY: Progress = { best: {}, missed: {}, size: 15, lang: 'es', mode: 'play', learned: {} }
 
 export function loadProgress(): Progress {
   try {
@@ -22,6 +24,8 @@ export function loadProgress(): Progress {
       missed: p.missed ?? {},
       size: typeof p.size === 'number' ? p.size : 15,
       lang: p.lang === 'en' ? 'en' : 'es',
+      mode: p.mode === 'learn' ? 'learn' : 'play',
+      learned: p.learned ?? {},
     }
   } catch {
     return { ...EMPTY }

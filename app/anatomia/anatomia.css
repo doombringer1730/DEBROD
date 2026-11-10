@@ -42,6 +42,8 @@
 .an-card-n { color: var(--an-red); font-size: 11px; font-weight: 500; letter-spacing: .04em; }
 .an-card-title { font: 420 23px/1.15 var(--an-serif), serif; font-variation-settings: 'opsz' 48; letter-spacing: -0.01em; }
 .an-card-meta, .an-card-best { color: var(--an-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.an-learned-bar { display: block; height: 3px; margin: 4px 0 6px; background: var(--an-line); border-radius: 3px; overflow: hidden; }
+.an-learned-bar span { display: block; height: 100%; background: var(--an-text); }
 .an-mixed { margin-top: 20px; padding: 16px; border: 1px dashed var(--an-line); border-radius: 12px; display: grid; gap: 12px; justify-items: start; }
 .an-mixed p { margin: 0; color: var(--an-muted); }
 .an-footer { margin-top: 32px; color: var(--an-muted); font-size: 12px; }
@@ -78,6 +80,7 @@
 }
 .an-glyph.is-typed { color: var(--an-red); }
 .an-glyph.is-todo { color: #4c4f58; }
+.an-glyph.is-ghost { color: #5d606b; }
 .an-word.is-done .an-glyph { color: var(--an-red); animation: an-pop .35s ease-out; }
 .an-word.is-reveal .an-glyph { color: var(--an-yellow); }
 @keyframes an-pop { 50% { transform: translateY(-4px); } }
@@ -131,3 +134,9 @@
 .an-root .an-key:hover:not(:disabled) { color: var(--an-key-text); }
 .an-root .an-key.is-ok:hover, .an-root .an-key.is-bad:hover { color: #fff; }
 .an-root .an-key.is-hint:hover { color: #1a1a1a; }
+
+/* Learn */
+.an-learn-title { margin: 8px 0 4px; font: 400 44px/1.1 var(--an-serif), serif; font-variation-settings: 'opsz' 144; letter-spacing: -0.02em; }
+.an-learn-lede { margin: 0 0 20px; color: var(--an-muted); }
+.an-missed-answer.is-plain { color: var(--an-text); }
+.an-score-of { color: var(--an-muted); font-size: .45em; letter-spacing: 0; }

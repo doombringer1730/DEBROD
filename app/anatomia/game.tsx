@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { textOf, type Item, type Lang } from './engine'
+import Learn from './learn'
 import Round, { type RoundResult } from './round'
-import { loadProgress, saveProgress, type Progress } from './storage'
+import { EMPTY, loadProgress, saveProgress, type Progress } from './storage'
 import { UNITS, type Unit } from './units'
 
 const SIZES = [5, 15, 30, 0] as const
@@ -12,6 +13,7 @@ type Screen =
   | { name: 'home' }
   | { name: 'round'; key: number; title: string; unit: Unit | null; items: Item[]; retry: boolean }
   | { name: 'results'; title: string; unit: Unit | null; result: RoundResult }
+  | { name: 'learn'; key: number; unit: Unit; items: Item[] }
 
 function shuffle<T>(a: T[]): T[] {
   const b = [...a]
@@ -42,7 +44,7 @@ const clock = (ms: number) => {
 }
 
 export default function Game() {
-  const [progress, setProgress] = useState<Progress>({ best: {}, missed: {}, size: 15, lang: 'es' })
+  const [progress, setProgress] = useState<Progress>(EMPTY)
   const [screen, setScreen] = useState<Screen>({ name: 'home' })
   const [mixing, setMixing] = useState(false)
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -67,6 +69,27 @@ export default function Game() {
     setScreen({ name: 'round', key: Date.now(), title, unit, items, retry })
 
   const playUnit = (u: Unit) => start(titleOf(u), u, shuffle(u.items).slice(0, take(u.items.length)))
+
+  // Learn mode works through a unit in the order of the notes, unlearned items first.
+  const byPage = (a: Item, b: Item) => a.page - b.page || a.id.localeCompare(b.id)
+  const unlearned = (u: Unit, learned = progress.learned) => u.items.filter((i) => !learned[i.id]).sort(byPage)
+  const learnUnit = (u: Unit, learned = progress.learned) => {
+    const left = unlearned(u, learned)
+    const pool = left.length ? left : [...u.items].sort(byPage)
+    setScreen({ name: 'learn', key: Date.now(), unit: u, items: pool.slice(0, take(pool.length)) })
+  }
+  const markLearned = useCallback((ids: string[]) => {
+    if (!ids.length) return
+    update((p) => {
+      const learned = { ...p.learned }
+      const missed = { ...p.missed }
+      for (const id of ids) {
+        learned[id] ??= Date.now()
+        delete missed[id]
+      }
+      return { ...p, learned, missed }
+    })
+  }, [update])
 
   const playMixed = () => {
     const all = UNITS.filter((u) => picked.has(u.slug)).flatMap((u) => u.items)
@@ -95,6 +118,10 @@ export default function Game() {
 
   const quit = useCallback(() => setScreen({ name: 'home' }), [])
 
+  const learnedCount = useMemo(
+    () => Object.fromEntries(UNITS.map((u) => [u.slug, u.items.filter((i) => progress.learned[i.id]).length])),
+    [progress.learned],
+  )
   const missedCount = useMemo(
     () => Object.fromEntries(UNITS.map((u) => [u.slug, u.items.filter((i) => progress.missed[i.id]).length])),
     [progress.missed],
@@ -102,6 +129,15 @@ export default function Game() {
 
   if (screen.name === 'round') {
     return <Round key={screen.key} title={screen.title} items={screen.items} lang={lang} onFinish={finish} onQuit={quit} />
+  }
+
+  if (screen.name === 'learn') {
+    const u = screen.unit
+    const sessionIds = new Set(screen.items.map((i) => i.id))
+    const more = unlearned(u).some((i) => !sessionIds.has(i.id))
+    return <Learn key={screen.key} title={titleOf(u)} items={screen.items} lang={lang}
+      onLearned={markLearned} onQuit={quit} onPractice={() => playUnit(u)}
+      onMore={more ? () => learnUnit(u) : null} />
   }
 
   if (screen.name === 'results') {
@@ -157,6 +193,13 @@ export default function Game() {
               onClick={() => update((p) => ({ ...p, lang: l }))}>{l === 'es' ? 'Español' : 'English'}</button>
           ))}
         </div>
+        <div className="an-sizes" role="group" aria-label="Mode">
+          <span>Mode</span>
+          {(['play', 'learn'] as const).map((m) => (
+            <button key={m} type="button" className={`an-chip${progress.mode === m ? ' is-on' : ''}`} aria-pressed={progress.mode === m}
+              onClick={() => update((p) => ({ ...p, mode: m }))}>{m === 'play' ? 'Play' : 'Learn'}</button>
+          ))}
+        </div>
         <div className="an-sizes" role="group" aria-label="Round size">
           <span>Round</span>
           {SIZES.map((n) => (
@@ -173,7 +216,7 @@ export default function Game() {
           return (
             <button key={u.slug} type="button" className={`an-card${mixing && on ? ' is-picked' : ''}`}
               onClick={() => {
-                if (!mixing) return playUnit(u)
+                if (!mixing) return progress.mode === 'learn' ? learnUnit(u) : playUnit(u)
                 const s = new Set(picked)
                 if (on) s.delete(u.slug)
                 else s.add(u.slug)
@@ -186,10 +229,17 @@ export default function Game() {
                 {u.items.length} items · pp. {u.pages}
                 {u.items.some((i) => i.mesh) && ` · ${u.items.filter((i) => i.mesh).length} in 3D`}
               </span>
-              <span className="an-card-best">
+              {progress.mode === 'learn' ? (
+                <span className="an-card-best">
+                  <span className="an-learned-bar" aria-hidden="true">
+                    <span style={{ width: `${(learnedCount[u.slug] / u.items.length) * 100}%` }} />
+                  </span>
+                  {learnedCount[u.slug]} / {u.items.length} learned
+                </span>
+              ) : <span className="an-card-best">
                 {progress.best[bestKey(u.slug)] != null ? `Best ${progress.best[bestKey(u.slug)]}%` : 'Not played'}
                 {missedCount[u.slug] > 0 && ` · ${missedCount[u.slug]} to review`}
-              </span>
+              </span>}
             </button>
           )
         })}
