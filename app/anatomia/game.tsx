@@ -179,11 +179,12 @@ export default function Game() {
                 else s.add(u.slug)
                 setPicked(s)
               }}>
+              <img className="an-card-img" src={`/anatomia/cards/${u.slug}.webp`} alt="" width={480} height={300} loading="lazy" />
               <span className="an-card-n">{u.n}</span>
               <span className="an-card-title" lang={lang}>{titleOf(u)}</span>
               <span className="an-card-meta">
                 {u.items.length} items · pp. {u.pages}
-                {u.items.some((i) => i.type === 'identify') && ' · 3D'}
+                {u.items.some((i) => i.mesh) && ` · ${u.items.filter((i) => i.mesh).length} in 3D`}
               </span>
               <span className="an-card-best">
                 {progress.best[bestKey(u.slug)] != null ? `Best ${progress.best[bestKey(u.slug)]}%` : 'Not played'}

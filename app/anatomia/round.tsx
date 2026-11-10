@@ -129,7 +129,7 @@ export default function Round({ title, items, lang, onFinish, onQuit }: {
   const figure = useMemo(() => {
     for (let i = s.index; i < items.length; i++) {
       const it = items[i]
-      if (it.type === 'identify' && it.mesh) return { model: it.model ?? 'skull', mesh: it.mesh }
+      if (it.mesh) return { model: it.model ?? 'skull', mesh: it.mesh }
     }
     return null
   }, [items, s.index])
@@ -173,6 +173,8 @@ export default function Round({ title, items, lang, onFinish, onQuit }: {
     ? skull ? 'Which bone is in red?' : 'Which structure is in red?'
     : skull ? '¿Qué hueso está en rojo?' : '¿Qué estructura está en rojo?'
   const prompt = textOf(item, lang).prompt || (item.type === 'identify' ? fallback : '')
+  const has3d = !!item.mesh
+  const regionNote = lang === 'en' ? 'The answer is on the part in red' : 'La respuesta está en la zona roja'
 
   const keyClass = (k: string) => {
     if (flash?.key === k) return flash.ok ? 'an-key is-ok' : 'an-key is-bad'
@@ -194,16 +196,22 @@ export default function Round({ title, items, lang, onFinish, onQuit }: {
       <p className="an-unit-name">{title}</p>
 
       <div className="an-figure">
-        {/* One set of 3D views lives for the whole round and is hidden on clue
-            items, so WebGL contexts aren't created and thrown away per item. */}
+        {/* One set of 3D views lives for the whole round and is hidden on items
+            without a figure, so WebGL contexts aren't created and thrown away per item. */}
         {figure && (
-          <div className="an-figure-3d" hidden={item.type !== 'identify'}>
-            <Figure model={figure.model} mesh={figure.mesh} paused={item.type !== 'identify'} />
+          <div className="an-figure-3d" hidden={!has3d}>
+            <Figure model={figure.model} mesh={figure.mesh} paused={!has3d} />
           </div>
         )}
-        {item.type !== 'identify' && <p className="an-clue" lang={lang}>{prompt}</p>}
+        {!has3d && <p className="an-clue" lang={lang}>{prompt}</p>}
       </div>
-      {item.type === 'identify' && <p className="an-prompt" lang={lang}>{prompt}</p>}
+      {has3d && item.type === 'identify' && <p className="an-prompt" lang={lang}>{prompt}</p>}
+      {has3d && item.type === 'clue' && (
+        <p className="an-clue is-under" lang={lang}>
+          {prompt}
+          {item.region && <span className="an-region-note">{regionNote}</span>}
+        </p>
+      )}
 
       <div className={`an-word${reveal ? ' is-reveal' : ''}${s.phase === 'done' ? ' is-done' : ''}`} lang={lang} aria-live="polite">
         {word.map((g, i) => (

@@ -36,6 +36,7 @@
   background: var(--an-panel); border: 1px solid var(--an-line); border-radius: 12px; padding: 14px 16px;
   transition: border-color .15s, transform .15s;
 }
+.an-card-img { display: block; width: calc(100% + 32px); max-width: none; height: auto; aspect-ratio: 8 / 5; margin: -14px -16px 6px; object-fit: contain; background: #16171b; border-bottom: 1px solid var(--an-line); border-radius: 11px 11px 0 0; }
 .an-card:hover { border-color: #4a4d57; transform: translateY(-1px); }
 .an-card.is-picked { border-color: var(--an-red); box-shadow: inset 0 0 0 1px var(--an-red); }
 .an-card-n { color: var(--an-red); font-size: 11px; font-weight: 500; letter-spacing: .04em; }
@@ -61,6 +62,8 @@
 .an-figure { width: 100%; min-height: 230px; display: grid; place-items: center; margin: 8px 0; }
 .an-clue { margin: 0; max-width: 760px; text-align: center; font: 350 clamp(24px, 3.4vw, 36px)/1.25 var(--an-serif), serif; font-variation-settings: 'opsz' 36; color: #cfcdc8; text-wrap: balance; }
 .an-prompt { margin: 0; color: var(--an-muted); }
+.an-clue.is-under { font-size: clamp(19px, 2.4vw, 26px); }
+.an-region-note { display: block; margin-top: 6px; font: 400 13px/1.5 var(--an-sans), sans-serif; color: var(--an-muted); }
 .an-figure-note { color: var(--an-muted); }
 .an-figure-3d { width: 100%; }
 .an-figure-3d[hidden] { display: none; }
